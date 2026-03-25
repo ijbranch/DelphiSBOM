@@ -26,11 +26,14 @@ type
 
     function FindUnitFile( const AUnitName: string; const ASearchPaths: TArray<string> ): string;
     function GetCommonRootDirs: TArray<string>;
+    function IsProjectDirectory( const ADirectory: string ): Boolean;
+    function GetAllPasUnitNames( const ADirectory: string ): TArray<string>;
     function DetectLicence( const ADirectory: string; out ALicenceFile: string ): string;
-    function DetectVendor( const APasFile: string ): string;
+    function DetectVendor( const ADirectory: string ): string;
     function DetectVersion( const ADirectory: string ): string;
     function ComputePrefix( const AUnitNames: TArray<string> ): string;
     function MapLicenceText( const AText: string ): string;
+    function ExtractVendorFromFile( const APasFile: string ): string;
 
     procedure Log( ALevel: TLogLevel; const AMessage: string );
   public
@@ -153,25 +156,40 @@ begin
             if UnitToFile.ContainsKey( FirstUnit ) then
               ActualDir := ExcludeTrailingPathDelimiter( ExtractFilePath( UnitToFile[ FirstUnit ] ) );
 
-            Lib.Directory       := ActualDir;
-            Lib.Name            := ExtractFileName( ActualDir );
-            Lib.Units           := DirPair.Value.ToArray;
-            Lib.SuggestedPrefix := ComputePrefix( Lib.Units );
-            Lib.Confirmed       := False;
-
             // Skip if this is the project's own directory
             if SameText( ExcludeTrailingPathDelimiter( ActualDir ),
                          ExcludeTrailingPathDelimiter( AProjectDir ) ) then
+            begin
+              Log( llInfo, Format( 'Skipping project directory: %s', [ ActualDir ] ) );
               Continue;
+            end;
+
+            // Skip directories that contain .dpr or .dproj files (other projects, not libraries)
+            if IsProjectDirectory( ActualDir ) then
+            begin
+              Log( llInfo, Format( 'Skipping project directory (contains .dpr): %s', [ ActualDir ] ) );
+              Continue;
+            end;
+
+            Lib.Directory := ActualDir;
+            Lib.Name      := ExtractFileName( ActualDir );
+            Lib.Units     := DirPair.Value.ToArray;
+            Lib.Confirmed := False;
+
+            // Compute prefix from ALL .pas files in the directory, not just unclassified ones
+            var AllUnitNames := GetAllPasUnitNames( ActualDir );
+
+            if Length( AllUnitNames ) > 0 then
+              Lib.SuggestedPrefix := ComputePrefix( AllUnitNames )
+            else
+              Lib.SuggestedPrefix := ComputePrefix( Lib.Units );
 
             // Detect metadata
             var LicFile := '';
-            Lib.Licence    := DetectLicence( ActualDir, LicFile );
+            Lib.Licence     := DetectLicence( ActualDir, LicFile );
             Lib.LicenceFile := LicFile;
-            Lib.Version    := DetectVersion( ActualDir );
-
-            if UnitToFile.ContainsKey( FirstUnit ) then
-              Lib.Vendor := DetectVendor( UnitToFile[ FirstUnit ] );
+            Lib.Version     := DetectVersion( ActualDir );
+            Lib.Vendor      := DetectVendor( ActualDir );
 
             Log( llInfo, Format( 'Discovered library: %s (%d units, dir: %s)',
               [ Lib.Name, Length( Lib.Units ), Lib.Directory ] ) );
@@ -198,6 +216,48 @@ begin
 
   finally
     AllPaths.Free;
+  end;
+
+end;
+
+// ---------------------------------------------------------------------------
+//  Directory classification helpers
+// ---------------------------------------------------------------------------
+
+function TLibraryDiscovery.IsProjectDirectory( const ADirectory: string ): Boolean;
+begin
+
+  Result := False;
+
+  try
+    var DprFiles := TDirectory.GetFiles( ADirectory, '*.dpr', TSearchOption.soTopDirectoryOnly );
+
+    if Length( DprFiles ) > 0 then
+      Exit( True );
+
+    var DprojFiles := TDirectory.GetFiles( ADirectory, '*.dproj', TSearchOption.soTopDirectoryOnly );
+
+    if Length( DprojFiles ) > 0 then
+      Exit( True );
+  except
+    // Access denied — treat as not a project directory
+  end;
+
+end;
+
+function TLibraryDiscovery.GetAllPasUnitNames( const ADirectory: string ): TArray<string>;
+begin
+
+  Result := nil;
+
+  try
+    var PasFiles := TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly );
+    SetLength( Result, Length( PasFiles ) );
+
+    for var I := 0 to High( PasFiles ) do
+      Result[ I ] := TPath.GetFileNameWithoutExtension( PasFiles[ I ] );
+  except
+    // Access denied
   end;
 
 end;
@@ -417,7 +477,28 @@ end;
 //  Vendor/author detection from .pas header
 // ---------------------------------------------------------------------------
 
-function TLibraryDiscovery.DetectVendor( const APasFile: string ): string;
+function TLibraryDiscovery.DetectVendor( const ADirectory: string ): string;
+begin
+
+  Result := '';
+
+  // Try multiple .pas files in the directory until we find vendor info
+  try
+    var PasFiles := TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly );
+
+    for var PasFile in PasFiles do
+    begin
+      Result := ExtractVendorFromFile( PasFile );
+
+      if Result <> '' then Exit;
+    end;
+  except
+    // Access denied
+  end;
+
+end;
+
+function TLibraryDiscovery.ExtractVendorFromFile( const APasFile: string ): string;
 begin
 
   Result := '';
@@ -430,8 +511,42 @@ begin
     begin
       var Line := Trim( Lines[ I ] );
 
-      // Look for "Copyright (c) YYYY Name" or "Copyright YYYY Name"
+      // Look for "Copyright (c) YYYY Name", "Copyright YYYY Name", or "© YYYY Name"
       var CopyrightPos := Pos( 'Copyright', Line );
+      var CopyrightSymbolPos := Pos( '©', Line );
+
+      // Handle © symbol appearing without "Copyright" word
+      if ( CopyrightPos = 0 ) and ( CopyrightSymbolPos > 0 ) then
+      begin
+        var After := Trim( Copy( Line, CopyrightSymbolPos + 2, Length( Line ) ) );
+
+        // Strip year(s) and delimiters
+        while ( After.Length > 0 ) and ( CharInSet( After[ 1 ], [ '0'..'9', '-', ',', ' ' ] ) or ( Ord( After[ 1 ] ) = 8211 ) ) do
+          Delete( After, 1, 1 );
+
+        After := Trim( After );
+
+        // Strip trailing comment markers and punctuation
+        After := StringReplace( After, '*)', '', [] );
+        After := StringReplace( After, ')', '', [] );
+        After := StringReplace( After, '}', '', [] );
+        After := Trim( After );
+
+        if After.EndsWith( '.' ) then
+          After := Copy( After, 1, After.Length - 1 );
+
+        // Strip "All rights reserved" suffix
+        var ArPos := Pos( '. All rights', After );
+
+        if ArPos > 0 then
+          After := Trim( Copy( After, 1, ArPos - 1 ) );
+
+        if After.Length > 2 then
+        begin
+          Result := Trim( After );
+          Exit;
+        end;
+      end;
 
       if CopyrightPos > 0 then
       begin
@@ -444,8 +559,8 @@ begin
         else if After.StartsWith( '©' ) then
           After := Trim( Copy( After, 3, Length( After ) ) );
 
-        // Strip year(s) like "2020" or "2020-2026" or "2020, 2026"
-        while ( After.Length > 0 ) and ( CharInSet( After[ 1 ], [ '0'..'9', '-', ',', ' ' ] ) ) do
+        // Strip year(s) like "2020" or "2020-2026" or "2020–2026" or "2020, 2026"
+        while ( After.Length > 0 ) and ( CharInSet( After[ 1 ], [ '0'..'9', '-', ',', ' ' ] ) or ( After[ 1 ] = '–' ) ) do
           Delete( After, 1, 1 );
 
         After := Trim( After );
@@ -459,6 +574,12 @@ begin
         // Strip trailing period
         if After.EndsWith( '.' ) then
           After := Copy( After, 1, After.Length - 1 );
+
+        // Strip "All rights reserved" suffix
+        var ArPos2 := Pos( '. All rights', After );
+
+        if ArPos2 > 0 then
+          After := Trim( Copy( After, 1, ArPos2 - 1 ) );
 
         if After.Length > 2 then
         begin

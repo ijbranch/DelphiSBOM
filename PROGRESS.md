@@ -9,11 +9,11 @@
 
 **Phase:** 1 — MVP Implementation
 **Step:** 10 of 10 — Manual testing
-**Status:** Ready for testing
+**Status:** IN PROGRESS — library discovery feature added, tested against DBiWorkflow, fixes applied
 
 ## Next Action
 
-Run the application and test against a real Delphi project. Ian to provide a `.dpr`/`.dproj` and `components.json` for testing. Verify: RTL auto-detection, unit classification, SBOM JSON output, UI responsiveness during processing.
+Re-test against DBiWorkflow after discovery fixes (project directory exclusion, improved prefix computation, vendor/licence extraction). Verify that IndySMTPEmailTest and DBiCommonFiles are no longer falsely identified as libraries, and that GITLAKLib gets prefix `gll` from all .pas files in directory.
 
 ## Blockers / Questions for Ian
 
@@ -65,4 +65,4 @@ Run the application and test against a real Delphi project. Ian to provide a `.d
 | Date | Session | Summary |
 |------|---------|---------|
 | 2026-03-26 | 1 | Plan created, refined through 6 iterations (v0.1 → v0.6). All 14 design decisions resolved. VCL pivot, threading model (`TTask.Run` + `TThread.Queue`), exception handling, registry enumeration (dynamic, not hardcoded), graceful degradation all specified. Progress tracking set up. Plan finalised and ready to execute. |
-| 2026-03-26 | 2 | Steps 1-9 complete. All units implemented and compiling clean: `uTypes`, `uProjectParser`, `uRTLScanner`, `uManifestLoader`, `uUnitClassifier`, `uSBOMBuilder`, `uSBOMEngine`, `uMainForm` (full VCL UI with background threading). Multiple Delphi compiler issues resolved (inline var type inference, `TProc` const parameter mismatch, `TTask.Run` anonymous method capture failures — solved with `TThread` descendants). Ready for Step 10: manual testing with a real project. |
+| 2026-03-26 | 2 | Steps 1-9 complete. All units implemented and compiling clean. Multiple Delphi compiler issues resolved (`TTask.Run` capture failures solved with `TThread` descendants, `TProc` const mismatch, inline var type inference). First test against itself — 3 bugs fixed (UUID braces, Delphi version mapping, VerInfo fallback). Tested against DBiWorkflow — identified false positives in library discovery (project directories misidentified as libraries). Added `uLibraryDiscovery.pas` for automatic library discovery with file system scanning, vendor extraction from source headers, licence detection from LICENSE files. Fixed project directory exclusion, prefix computation from all .pas files, © and en-dash handling in copyright parsing. All four build configs (Debug/Release × Win32/Win64) clean. |

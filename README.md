@@ -39,26 +39,36 @@ that have no awareness of the Delphi ecosystem.
 
 1. **Parse** your Delphi `.dpr` and `.dproj` files to extract project metadata
    and the full unit list
-2. **Classify** each unit as RTL/VCL (Embarcadero), third-party (from your
+2. **Scan** the Delphi installation to identify RTL/VCL/FMX units automatically
+3. **Classify** each unit as RTL/VCL (Embarcadero), third-party (from the
    `components.json` manifest), or your own code
-3. **Generate** a valid CycloneDX 1.5 JSON SBOM file
+4. **Discover** — for any unclassified units, scan the file system to find their
+   `.pas` source files, group them by library directory, and extract metadata
+   (vendor from source headers, licence from LICENSE files)
+5. **Review & Save** — confirm discovered libraries in the app, then save to
+   `components.json` with one click
+6. **Generate** a valid CycloneDX 1.5 JSON SBOM file
 
 ## Quick Start
 
-1. Place a `components.json` file in your Delphi project directory describing
-   your third-party dependencies (see `Samples/components.sample.json` for an
-   example)
-2. Run DelphiSBOM and browse to your `.dpr` or `.dproj` file
-3. Click **Generate SBOM**
-4. Find your `<ProjectName>.cdx.json` in the project directory
+1. Run DelphiSBOM and browse to your `.dpr` or `.dproj` file
+2. Click **Generate SBOM**
+3. Review the results — discovered third-party libraries are shown with
+   auto-detected names, vendors, and licences
+4. Click **Save Libraries & Regenerate SBOM** to confirm and save
+5. Find your `<ProjectName>.cdx.json` in the project directory
+
+No manual JSON editing required. DelphiSBOM creates and maintains
+`components.json` for you based on what it discovers on disk.
 
 ## The `components.json` Manifest
 
-This is the heart of DelphiSBOM. You maintain a simple JSON file listing your
-third-party libraries with version, vendor, licence, and unit-matching rules.
-DelphiSBOM uses this to classify units it finds in your project.
+DelphiSBOM uses a `components.json` file to track your project's third-party
+libraries. This file is created automatically when you first scan a project,
+and updated when you confirm discovered libraries.
 
-See `Samples/components.sample.json` for a fully commented example, and
+You can also edit it manually for fine-tuning. See
+`Samples/components.sample.json` for a fully commented example, and
 `Docs/SCHEMA.md` for the complete schema reference.
 
 ## Requirements

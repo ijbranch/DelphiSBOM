@@ -7,4 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
-- Initial project setup — repository structure, CLAUDE.md, README, LICENCE
+- Complete MVP: VCL application generating CycloneDX 1.5 JSON SBOMs from Delphi projects
+- Project parser: extracts unit list from `.dpr`, version/platform/search paths from `.dproj`
+- RTL scanner: auto-detects Delphi installation from registry, scans `.dcu` files
+- Unit classifier: RTL/VCL, third-party (exact + prefix matching), own code, unclassified
+- SBOM builder: CycloneDX 1.5 JSON with PURL, licence, supplier metadata
+- Automatic library discovery: scans file system for unclassified units, groups by directory,
+  extracts vendor from source headers, detects licence from LICENSE files
+- One-click "Save Libraries & Regenerate SBOM" to update components.json and re-run
+- Background threading for UI responsiveness during scanning
+- Auto-creation of default components.json when missing
+- Delphi version mapping (MSBuild ProjectVersion → product version)
+- Repository documentation: README, CLAUDE.md, SCHEMA.md, CYCLONEDX-NOTES.md
+
+### Fixed
+- UUID braces stripped from SBOM serialNumber
+- Project version fallback to VerInfo_Keys when individual elements absent
+- Project directories (containing .dpr/.dproj) excluded from library discovery
+- Unit prefix computed from all .pas files in directory, not just unclassified ones
+- Copyright symbol (©) and en-dash (–) handled in vendor extraction
