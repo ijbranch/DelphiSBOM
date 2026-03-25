@@ -447,6 +447,18 @@ begin
     if FileExists( FullPath ) then
       Exit( FullPath );
 
+    // Also search the parent directory (handles cases where IDE path
+    // points to a subdirectory like Extras/ but units are in the parent)
+    var ParentDir := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( SearchDir ) ) );
+
+    if ( ParentDir <> '' ) and ( ParentDir <> SearchDir ) then
+    begin
+      FullPath := TPath.Combine( ParentDir, FileName );
+
+      if FileExists( FullPath ) then
+        Exit( FullPath );
+    end;
+
     // Also search one level of subdirectories
     if TDirectory.Exists( SearchDir ) then
     begin
