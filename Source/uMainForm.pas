@@ -283,7 +283,13 @@ begin
   FProcessing := False;
 
   CreateControls;
-  DetectDelphiPath;
+
+  try
+    DetectDelphiPath;
+  except
+    on E: Exception do
+      LogMessage( llWarning, 'Could not auto-detect Delphi path: ' + E.Message );
+  end;
 
 end;
 
@@ -431,8 +437,7 @@ begin
   FBtnSaveRegen.Width   := 260;
   FBtnSaveRegen.Caption := 'Save Libraries && Regenerate SBOM';
   FBtnSaveRegen.OnClick := BtnSaveRegenClick;
-  FBtnSaveRegen.Enabled   := False;
-  FBtnMarkOwnCode.Enabled := False;
+  FBtnSaveRegen.Enabled := False;
 
   FBtnMarkOwnCode := TButton.Create( Self );
   FBtnMarkOwnCode.Parent  := PnlDiscButtons;
