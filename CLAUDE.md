@@ -22,7 +22,7 @@ and describe the partial state in the Next Action line.
 
 ## Build Requirements
 
-- **Delphi 12+**, Win64, VCL application
+- **Delphi 10.3 Rio or later** (minimum), Win32/Win64, VCL application. Developed and tested on Delphi 13 Florence
 - **No third-party dependencies** — the project must compile with a clean
   Delphi installation and nothing else
 - Allowed RTL units: `System.JSON`, `Xml.XMLDoc`, `Xml.XMLIntf`,

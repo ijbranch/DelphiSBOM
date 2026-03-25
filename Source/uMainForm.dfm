@@ -1,7 +1,7 @@
 object MainForm: TMainForm
   Left = 0
   Top = 0
-  Caption = 'DelphiSBOM '#8212' CycloneDX SBOM Generator'
+  Caption = 'DelphiSBOM - CycloneDX SBOM Generator'
   ClientHeight = 640
   ClientWidth = 900
   Color = clBtnFace

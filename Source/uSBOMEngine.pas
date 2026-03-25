@@ -131,7 +131,9 @@ begin
         Result.DiscoveredLibraries := Discovery.Discover(
           UnclassifiedNames.ToArray,
           Result.ProjectInfo.SearchPaths,
-          Result.ProjectInfo.ProjectDir
+          Result.ProjectInfo.ProjectDir,
+          AOptions.DelphiPath,
+          Result.ProjectInfo.TargetPlatform
         );
       finally
         UnclassifiedNames.Free;

@@ -53,7 +53,7 @@ Shows timestamped messages during processing:
 
 The app could not find a Delphi installation in the Windows registry. This means RTL units cannot be classified and will appear as unclassified.
 
-**Fix:** Click Browse next to the Delphi Path field and navigate to your Delphi installation directory (e.g. `C:\Program Files (x86)\Embarcadero\Studio\37.0`).
+**Fix:** Click Browse next to the Delphi Path field and navigate to your Delphi installation directory (e.g. `C:\Program Files (x86)\Embarcadero\Studio\37.0` for Delphi 13). DelphiSBOM requires Delphi 10.3 Rio or later to build, but can scan RTL units from any Delphi installation.
 
 ### All units show as unclassified
 

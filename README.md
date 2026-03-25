@@ -74,13 +74,17 @@ You can also edit it manually for fine-tuning. See
 ## Requirements
 
 - Windows (Win32 or Win64)
-- A Delphi 12+ installation (for RTL unit auto-detection)
+- A Delphi installation (for RTL unit auto-detection)
 - No runtime dependencies — single standalone `.exe`
 
 ## Building from Source
 
-Open `Source/DelphiSBOM.dproj` in Delphi 12 or later and compile. No
-third-party libraries are required — the project uses only the Delphi RTL.
+Open `Source/DelphiSBOM.dproj` in Delphi and compile. No third-party
+libraries are required — the project uses only the Delphi RTL.
+
+**Minimum compiler version:** Delphi 10.3 Rio (uses inline variable
+declarations and other 10.3+ language features). Tested and developed
+on Delphi 13 Florence.
 
 ## Licence
 

@@ -25,7 +25,7 @@ DelphiSBOM is a standalone Windows application. No installer is required.
 
 ### Building from Source
 
-1. Open `Source/DelphiSBOM.dproj` in Delphi 12 or later
+1. Open `Source/DelphiSBOM.dproj` in Delphi 10.3 Rio or later
 2. Select your target platform (Win32 or Win64)
 3. Build (Ctrl+F9) or Run (F9)
 

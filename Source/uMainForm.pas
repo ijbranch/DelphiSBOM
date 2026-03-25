@@ -276,7 +276,7 @@ end;
 procedure TMainForm.FormCreate( Sender: TObject );
 begin
 
-  Caption     := 'DelphiSBOM — CycloneDX SBOM Generator';
+  Caption     := 'DelphiSBOM - CycloneDX SBOM Generator';
   FProcessing := False;
 
   CreateControls;
@@ -611,7 +611,7 @@ begin
 
   // Classification summary
   FMmoSummary.Lines.Add( 'Classification Summary' );
-  FMmoSummary.Lines.Add( '══════════════════════' );
+  FMmoSummary.Lines.Add( '======================' );
   FMmoSummary.Lines.Add( Format( 'RTL/VCL units:      %5d', [ AResult.Summary.RTLCount ] ) );
   FMmoSummary.Lines.Add( Format( 'Third-party units:  %5d', [ AResult.Summary.ThirdPartyCount ] ) );
   FMmoSummary.Lines.Add( Format( 'Own-code units:     %5d', [ AResult.Summary.OwnCodeCount ] ) );
@@ -622,7 +622,7 @@ begin
   if Length( AResult.Manifest.Components ) > 0 then
   begin
     FMmoSummary.Lines.Add( 'Third-Party Components' );
-    FMmoSummary.Lines.Add( '──────────────────────' );
+    FMmoSummary.Lines.Add( '----------------------' );
 
     for var Comp in AResult.Manifest.Components do
       FMmoSummary.Lines.Add( Format( '  %s %s', [ Comp.Name, Comp.Version ] ) );
@@ -630,7 +630,7 @@ begin
 
   if ( not AResult.RTLScanAvailable ) then
   begin
-    FMmoDiscovery.Lines.Add( '⚠ RTL scanning was unavailable — some units may be RTL' );
+    FMmoDiscovery.Lines.Add( '[WARNING] RTL scanning was unavailable - some units may be RTL' );
     FMmoDiscovery.Lines.Add( '' );
   end;
 
@@ -663,7 +663,7 @@ begin
       begin
         var Lib := FDiscoveredLibraries[ I ];
 
-        FMmoDiscovery.Lines.Add( Format( '── %s ──', [ Lib.Name ] ) );
+        FMmoDiscovery.Lines.Add( Format( '-- %s --', [ Lib.Name ] ) );
         FMmoDiscovery.Lines.Add( Format( '  Directory: %s', [ Lib.Directory ] ) );
 
         if Lib.Version <> '' then

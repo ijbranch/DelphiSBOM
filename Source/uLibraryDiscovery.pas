@@ -26,6 +26,7 @@ type
 
     function FindUnitFile( const AUnitName: string; const ASearchPaths: TArray<string> ): string;
     function GetCommonRootDirs: TArray<string>;
+    function GetDelphiLibraryPaths( const ADelphiPath: string; const APlatform: string ): TArray<string>;
     function IsProjectDirectory( const ADirectory: string ): Boolean;
     function GetAllPasUnitNames( const ADirectory: string ): TArray<string>;
     function DetectLicence( const ADirectory: string; out ALicenceFile: string ): string;
@@ -46,13 +47,15 @@ type
     /// </summary>
     function Discover( const AUnclassifiedUnits: TArray<string>;
       const ASearchPaths: TArray<string>;
-      const AProjectDir: string ): TArray<TDiscoveredLibrary>;
+      const AProjectDir: string;
+      const ADelphiPath: string = '';
+      const APlatform: string = '' ): TArray<TDiscoveredLibrary>;
   end;
 
 implementation
 
 uses
-  System.IOUtils, System.StrUtils, System.Math;
+  System.IOUtils, System.StrUtils, System.Math, System.Win.Registry, Winapi.Windows;
 
 { TLibraryDiscovery }
 
@@ -83,7 +86,9 @@ end;
 
 function TLibraryDiscovery.Discover( const AUnclassifiedUnits: TArray<string>;
   const ASearchPaths: TArray<string>;
-  const AProjectDir: string ): TArray<TDiscoveredLibrary>;
+  const AProjectDir: string;
+  const ADelphiPath: string;
+  const APlatform: string ): TArray<TDiscoveredLibrary>;
 begin
 
   FFoundDirs.Clear;
@@ -102,6 +107,13 @@ begin
       if TDirectory.Exists( Expanded ) then
         AllPaths.Add( Expanded );
     end;
+
+    // Add Delphi IDE library paths from registry
+    var IDEPaths := GetDelphiLibraryPaths( ADelphiPath, APlatform );
+
+    for var IP in IDEPaths do
+      if ( not AllPaths.Contains( IP ) ) and TDirectory.Exists( IP ) then
+        AllPaths.Add( IP );
 
     // Add common root directories
     var RootDirs := GetCommonRootDirs;
@@ -221,6 +233,97 @@ begin
 end;
 
 // ---------------------------------------------------------------------------
+//  Delphi IDE library paths from registry
+// ---------------------------------------------------------------------------
+
+function TLibraryDiscovery.GetDelphiLibraryPaths( const ADelphiPath: string; const APlatform: string ): TArray<string>;
+begin
+
+  Result := nil;
+
+  var Reg := TRegistry.Create( KEY_READ );
+  try
+    Reg.RootKey := HKEY_CURRENT_USER;
+
+    // Find the highest BDS version
+    if Reg.OpenKeyReadOnly( 'Software\Embarcadero\BDS' ) then
+    begin
+      var SubKeys := TStringList.Create;
+      try
+        Reg.GetKeyNames( SubKeys );
+        Reg.CloseKey;
+
+        var HighestVer        := '';
+        var HighestVal: Double := 0.0;
+        var FmtSettings       := TFormatSettings.Create( 'en-US' );
+
+        for var I := 0 to SubKeys.Count - 1 do
+        begin
+          var NumVal: Double := 0.0;
+
+          if TryStrToFloat( SubKeys[ I ], NumVal, FmtSettings ) then
+            if NumVal > HighestVal then
+            begin
+              HighestVal := NumVal;
+              HighestVer := SubKeys[ I ];
+            end;
+        end;
+
+        if HighestVer <> '' then
+        begin
+          var Platform := APlatform;
+
+          if Platform = '' then
+            Platform := 'Win64';
+
+          // Read the library search path from the IDE settings
+          var LibKey := Format( 'Software\Embarcadero\BDS\%s\Library\%s', [ HighestVer, Platform ] );
+
+          if Reg.OpenKeyReadOnly( LibKey ) then
+          begin
+            if Reg.ValueExists( 'Search Path' ) then
+            begin
+              var PathStr := Reg.ReadString( 'Search Path' );
+
+              // Resolve $(BDS) variable
+              if ( ADelphiPath <> '' ) then
+                PathStr := StringReplace( PathStr, '$(BDS)', ADelphiPath, [ rfReplaceAll, rfIgnoreCase ] );
+
+              // Resolve $(BDSLIB)
+              PathStr := StringReplace( PathStr, '$(BDSLIB)', TPath.Combine( ADelphiPath, 'lib' ), [ rfReplaceAll, rfIgnoreCase ] );
+
+              var Parts := PathStr.Split( [ ';' ] );
+              var Paths := TList<string>.Create;
+              try
+                for var P in Parts do
+                begin
+                  var Trimmed := Trim( P );
+
+                  if ( Trimmed <> '' ) and ( not Trimmed.StartsWith( '$(' ) ) then
+                    Paths.Add( Trimmed );
+                end;
+
+                Result := Paths.ToArray;
+                Log( llInfo, Format( 'Found %d Delphi IDE library paths', [ Length( Result ) ] ) );
+              finally
+                Paths.Free;
+              end;
+            end;
+
+            Reg.CloseKey;
+          end;
+        end;
+      finally
+        SubKeys.Free;
+      end;
+    end;
+  finally
+    Reg.Free;
+  end;
+
+end;
+
+// ---------------------------------------------------------------------------
 //  Directory classification helpers
 // ---------------------------------------------------------------------------
 
@@ -230,15 +333,27 @@ begin
   Result := False;
 
   try
+    // If the directory contains .dpk files, it's a library (packages = library distribution)
+    // even if it also has .dpr files (demos, tests, examples)
+    var DpkFiles := TDirectory.GetFiles( ADirectory, '*.dpk', TSearchOption.soTopDirectoryOnly );
+
+    if Length( DpkFiles ) > 0 then
+      Exit( False );
+
+    // Check for .dpr files — indicates a standalone project, not a library
     var DprFiles := TDirectory.GetFiles( ADirectory, '*.dpr', TSearchOption.soTopDirectoryOnly );
 
     if Length( DprFiles ) > 0 then
-      Exit( True );
+    begin
+      // Additional check: if there are many .pas files (10+) alongside the .dpr,
+      // it's likely a library with a demo/test project, not a standalone app
+      var PasFiles := TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly );
 
-    var DprojFiles := TDirectory.GetFiles( ADirectory, '*.dproj', TSearchOption.soTopDirectoryOnly );
+      if Length( PasFiles ) >= 10 then
+        Exit( False );
 
-    if Length( DprojFiles ) > 0 then
       Exit( True );
+    end;
   except
     // Access denied — treat as not a project directory
   end;
