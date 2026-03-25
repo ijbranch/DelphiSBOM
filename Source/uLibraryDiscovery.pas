@@ -200,7 +200,24 @@ begin
             var DirName := ExtractFileName( ActualDir );
 
             if IsGenericDirectoryName( DirName ) then
-              Lib.Name := ExtractFileName( ExtractFilePath( ExcludeTrailingPathDelimiter( ActualDir ) ) ) + ' - ' + DirName
+            begin
+              var ParentPath := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( ActualDir ) ) );
+              var ParentName := ExtractFileName( ParentPath );
+
+              if ( ParentName <> '' ) and ( not IsGenericDirectoryName( ParentName ) ) then
+                Lib.Name := ParentName + ' - ' + DirName
+              else
+              begin
+                // Go up one more level
+                var GrandParentPath := ExcludeTrailingPathDelimiter( ExtractFilePath( ParentPath ) );
+                var GrandParentName := ExtractFileName( GrandParentPath );
+
+                if GrandParentName <> '' then
+                  Lib.Name := GrandParentName + ' - ' + DirName
+                else
+                  Lib.Name := DirName;
+              end;
+            end
             else
               Lib.Name := DirName;
             Lib.Units     := DirPair.Value.ToArray;
