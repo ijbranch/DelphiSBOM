@@ -69,6 +69,7 @@ type
     TargetPlatform : string;   // e.g. 'Win32', 'Win64'
     SearchPaths    : TArray<string>;  // DCC_UnitSearchPath entries
     Units          : TArray<string>;  // Unit names from the .dpr uses clause
+    OwnCodeUnits   : TArray<string>;  // Units with 'in' file references (own code)
   end;
 
   /// <summary>

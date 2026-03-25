@@ -659,7 +659,7 @@ begin
     if Length( FDiscoveredLibraries ) > 0 then
     begin
       FMmoDiscovery.Lines.Add( 'DISCOVERED LIBRARIES' );
-      FMmoDiscovery.Lines.Add( '════════════════════' );
+      FMmoDiscovery.Lines.Add( '====================' );
       FMmoDiscovery.Lines.Add( 'The following libraries were found on disk.' );
       FMmoDiscovery.Lines.Add( 'Click "Save Libraries & Regenerate SBOM" to add them to components.json.' );
       FMmoDiscovery.Lines.Add( '' );

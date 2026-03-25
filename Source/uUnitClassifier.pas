@@ -25,14 +25,17 @@ type
     FRTLScanner: TRTLScanner;
     FManifest: TManifest;
     FRTLScanAvailable: Boolean;
+    FOwnCodeUnits: TArray<string>;
 
     function MatchExact( const AUnitName: string ): Integer;
     function MatchPrefix( const AUnitName: string ): Integer;
+    function IsOwnCode( const AUnitName: string ): Boolean;
 
     procedure Log( ALevel: TLogLevel; const AMessage: string );
   public
     constructor Create( ALogProc: TProc<TLogLevel, string>;
-      ARTLScanner: TRTLScanner; const AManifest: TManifest; ARTLScanAvailable: Boolean );
+      ARTLScanner: TRTLScanner; const AManifest: TManifest; ARTLScanAvailable: Boolean;
+      const AOwnCodeUnits: TArray<string> );
 
     /// <summary>
     ///   Classifies all units and returns the results.
@@ -50,7 +53,8 @@ implementation
 { TUnitClassifier }
 
 constructor TUnitClassifier.Create( ALogProc: TProc<TLogLevel, string>;
-  ARTLScanner: TRTLScanner; const AManifest: TManifest; ARTLScanAvailable: Boolean );
+  ARTLScanner: TRTLScanner; const AManifest: TManifest; ARTLScanAvailable: Boolean;
+  const AOwnCodeUnits: TArray<string> );
 begin
 
   inherited Create;
@@ -58,6 +62,7 @@ begin
   FRTLScanner       := ARTLScanner;
   FManifest         := AManifest;
   FRTLScanAvailable := ARTLScanAvailable;
+  FOwnCodeUnits     := AOwnCodeUnits;
 
 end;
 
@@ -117,9 +122,14 @@ begin
       Continue;
     end;
 
-    // Priority 3/4: Own code vs unclassified
-    // For now, anything not matched is unclassified.
-    // Own-code detection (search path based) can be refined later.
+    // Priority 3: Own code (units with 'in' file reference in .dpr)
+    if IsOwnCode( OriginalName ) then
+    begin
+      Result[ I ].Classification := ucOwnCode;
+      Continue;
+    end;
+
+    // Priority 4: Unclassified
     Result[ I ].Classification := ucUnclassified;
   end;
 
@@ -157,6 +167,17 @@ begin
         Exit( I );
 
   Result := -1;
+
+end;
+
+function TUnitClassifier.IsOwnCode( const AUnitName: string ): Boolean;
+begin
+
+  for var OwnUnit in FOwnCodeUnits do
+    if SameText( AUnitName, OwnUnit ) then
+      Exit( True );
+
+  Result := False;
 
 end;
 

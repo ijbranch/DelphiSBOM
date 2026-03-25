@@ -27,9 +27,9 @@ type
   private
     FLog: TLogProc;
 
-    function ParseDprUses( const ADprFile: string ): TArray<string>;
+    function ParseDprUses( const ADprFile: string; out AOwnCodeUnits: TArray<string> ): TArray<string>;
     function ExtractUsesBlock( const AContent: string ): string;
-    function SplitUnitNames( const AUsesBlock: string ): TArray<string>;
+    function SplitUnitNames( const AUsesBlock: string; out AOwnCodeUnits: TArray<string> ): TArray<string>;
     procedure ParseDprojMetadata( const ADprojFile: string; var AInfo: TProjectInfo );
     function FindDprojFile( const ADprFile: string ): string;
     function FindNodeText( const ANode: IXMLNode; const AName: string ): string;
@@ -122,8 +122,8 @@ begin
   if DprFile <> '' then
   begin
     Log( llInfo, Format( 'Parsing uses clause from %s', [ ExtractFileName( DprFile ) ] ) );
-    Result.Units := ParseDprUses( DprFile );
-    Log( llInfo, Format( 'Found %d units in uses clause', [ Length( Result.Units ) ] ) );
+    Result.Units := ParseDprUses( DprFile, Result.OwnCodeUnits );
+    Log( llInfo, Format( 'Found %d units in uses clause (%d own code)', [ Length( Result.Units ), Length( Result.OwnCodeUnits ) ] ) );
   end;
 
   if DprojFile <> '' then
@@ -153,8 +153,10 @@ end;
 //  .dpr parsing — extract unit names from the uses clause
 // ---------------------------------------------------------------------------
 
-function TProjectParser.ParseDprUses( const ADprFile: string ): TArray<string>;
+function TProjectParser.ParseDprUses( const ADprFile: string; out AOwnCodeUnits: TArray<string> ): TArray<string>;
 begin
+
+  AOwnCodeUnits := nil;
 
   var Content := TFile.ReadAllText( ADprFile, TEncoding.UTF8 );
   var UsesBlock := ExtractUsesBlock( Content );
@@ -165,7 +167,7 @@ begin
     Exit( nil );
   end;
 
-  Result := SplitUnitNames( UsesBlock );
+  Result := SplitUnitNames( UsesBlock, AOwnCodeUnits );
 
 end;
 
@@ -188,10 +190,11 @@ begin
 
 end;
 
-function TProjectParser.SplitUnitNames( const AUsesBlock: string ): TArray<string>;
+function TProjectParser.SplitUnitNames( const AUsesBlock: string; out AOwnCodeUnits: TArray<string> ): TArray<string>;
 begin
 
   var Units := TList<string>.Create;
+  var OwnCode := TList<string>.Create;
   try
     var Parts := AUsesBlock.Split( [ ',' ] );
 
@@ -201,10 +204,11 @@ begin
 
       if Trimmed = '' then Continue;
 
-      // Remove 'in ''<filename>''' reference if present
+      // Detect and remove 'in ''<filename>''' reference — marks this as own code
       var InPos := Pos( ' in ', LowerCase( Trimmed ) );
+      var IsOwnCode := InPos > 0;
 
-      if InPos > 0 then
+      if IsOwnCode then
         Trimmed := Trim( Copy( Trimmed, 1, InPos - 1 ) );
 
       // Remove any compiler directives {$...}
@@ -230,11 +234,18 @@ begin
       Trimmed := Trim( Trimmed );
 
       if ( Trimmed <> '' ) and IsValidUnitName( Trimmed ) then
+      begin
         Units.Add( Trimmed );
+
+        if IsOwnCode then
+          OwnCode.Add( Trimmed );
+      end;
     end;
 
-    Result := Units.ToArray;
+    Result         := Units.ToArray;
+    AOwnCodeUnits  := OwnCode.ToArray;
   finally
+    OwnCode.Free;
     Units.Free;
   end;
 

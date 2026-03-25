@@ -104,7 +104,7 @@ begin
       Log( llWarning, Format( 'Manifest not found at %s — no third-party classification available', [ ManifestPath ] ) );
 
     // Step 4: Classify units
-    var Classifier := TUnitClassifier.Create( FLog, Scanner, Result.Manifest, Result.RTLScanAvailable );
+    var Classifier := TUnitClassifier.Create( FLog, Scanner, Result.Manifest, Result.RTLScanAvailable, Result.ProjectInfo.OwnCodeUnits );
     try
       Result.ClassifiedUnits := Classifier.Classify( Result.ProjectInfo.Units );
       Result.Summary         := TUnitClassifier.Summarise( Result.ClassifiedUnits );
