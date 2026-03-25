@@ -333,14 +333,51 @@ begin
 
   Inc( CurrentTop, 42 );
 
-  // Results panel
+  // Bottom area — contains results panel, splitter, and log panel
+  // Using a wrapper panel with aligned children so the splitter works
+  var PnlBottom := TPanel.Create( Self );
+  PnlBottom.Parent     := Self;
+  PnlBottom.Left       := 12;
+  PnlBottom.Top        := CurrentTop;
+  PnlBottom.Width      := ClientWidth - 24;
+  PnlBottom.Height     := ClientHeight - CurrentTop - 12;
+  PnlBottom.Anchors    := [ akLeft, akTop, akRight, akBottom ];
+  PnlBottom.BevelOuter := bvNone;
+  PnlBottom.Caption    := '';
+
+  // Log panel (at the bottom, alBottom)
+  var PnlLog := TPanel.Create( Self );
+  PnlLog.Parent     := PnlBottom;
+  PnlLog.Align      := alBottom;
+  PnlLog.Height     := 200;
+  PnlLog.BevelOuter := bvNone;
+  PnlLog.Caption    := '';
+
+  var LblLog := TLabel.Create( Self );
+  LblLog.Parent     := PnlLog;
+  LblLog.Align      := alTop;
+  LblLog.Caption    := 'Log';
+  LblLog.Font.Style := [ fsBold ];
+
+  FMmoLog := TMemo.Create( Self );
+  FMmoLog.Parent     := PnlLog;
+  FMmoLog.Align      := alClient;
+  FMmoLog.ReadOnly   := True;
+  FMmoLog.ScrollBars := ssBoth;
+  FMmoLog.Font.Name  := 'Consolas';
+  FMmoLog.Font.Size  := 9;
+
+  // Horizontal splitter between results and log
+  var SplitterH := TSplitter.Create( Self );
+  SplitterH.Parent := PnlBottom;
+  SplitterH.Align  := alBottom;
+  SplitterH.Height := 5;
+  SplitterH.Top    := PnlLog.Top - 1;
+
+  // Results panel (fills remaining space, alClient)
   FPnlResults := TPanel.Create( Self );
-  FPnlResults.Parent     := Self;
-  FPnlResults.Left       := 12;
-  FPnlResults.Top        := CurrentTop;
-  FPnlResults.Width      := ClientWidth - 24;
-  FPnlResults.Height     := 200;
-  FPnlResults.Anchors    := [ akLeft, akTop, akRight ];
+  FPnlResults.Parent     := PnlBottom;
+  FPnlResults.Align      := alClient;
   FPnlResults.BevelOuter := bvLowered;
   FPnlResults.Caption    := '';
 
@@ -392,30 +429,6 @@ begin
   FMmoDiscovery.ScrollBars := ssVertical;
   FMmoDiscovery.Font.Name  := 'Consolas';
   FMmoDiscovery.Font.Size  := 9;
-
-  Inc( CurrentTop, 210 );
-
-  // Log panel
-  var LblLog := TLabel.Create( Self );
-  LblLog.Parent     := Self;
-  LblLog.Left       := 12;
-  LblLog.Top        := CurrentTop;
-  LblLog.Caption    := 'Log';
-  LblLog.Font.Style := [ fsBold ];
-
-  Inc( CurrentTop, 20 );
-
-  FMmoLog := TMemo.Create( Self );
-  FMmoLog.Parent     := Self;
-  FMmoLog.Left       := 12;
-  FMmoLog.Top        := CurrentTop;
-  FMmoLog.Width      := ClientWidth - 24;
-  FMmoLog.Height     := ClientHeight - CurrentTop - 12;
-  FMmoLog.Anchors    := [ akLeft, akTop, akRight, akBottom ];
-  FMmoLog.ReadOnly   := True;
-  FMmoLog.ScrollBars := ssBoth;
-  FMmoLog.Font.Name  := 'Consolas';
-  FMmoLog.Font.Size  := 9;
 
   // Dialogs
   FDlgOpenProject := TOpenDialog.Create( Self );
