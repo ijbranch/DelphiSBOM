@@ -55,6 +55,7 @@ type
     LastUpdated   : string;
     Supplier      : TSupplierInfo;
     Components    : TArray<TComponentEntry>;
+    OwnCodeUnits  : TArray<string>;  // Units explicitly marked as own code by the user
   end;
 
   /// <summary>

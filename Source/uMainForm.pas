@@ -88,6 +88,7 @@ type
     FMmoSummary      : TMemo;
     FMmoDiscovery    : TMemo;
     FBtnSaveRegen    : TButton;
+    FBtnMarkOwnCode  : TButton;
 
     // Log panel
     FMmoLog : TMemo;
@@ -117,6 +118,8 @@ type
     procedure DetectDelphiPath;
     procedure DisplayDiscoveredLibraries;
     procedure BtnSaveRegenClick( Sender: TObject );
+    procedure BtnMarkOwnCodeClick( Sender: TObject );
+    function GetUnresolvedUnits: TArray<string>;
   public
     procedure SetProcessing( AValue: Boolean );
     procedure LogMessage( ALevel: TLogLevel; const AMessage: string );
@@ -414,13 +417,29 @@ begin
   LblDiscovery.Caption    := '  Discovered Libraries / Unclassified Units';
   LblDiscovery.Font.Style := [ fsBold ];
 
+  // Button panel at bottom of discovery area
+  var PnlDiscButtons := TPanel.Create( Self );
+  PnlDiscButtons.Parent     := FPnlDiscovery;
+  PnlDiscButtons.Align      := alBottom;
+  PnlDiscButtons.Height     := 30;
+  PnlDiscButtons.BevelOuter := bvNone;
+  PnlDiscButtons.Caption    := '';
+
   FBtnSaveRegen := TButton.Create( Self );
-  FBtnSaveRegen.Parent  := FPnlDiscovery;
-  FBtnSaveRegen.Align   := alBottom;
-  FBtnSaveRegen.Height  := 30;
+  FBtnSaveRegen.Parent  := PnlDiscButtons;
+  FBtnSaveRegen.Align   := alLeft;
+  FBtnSaveRegen.Width   := 260;
   FBtnSaveRegen.Caption := 'Save Libraries && Regenerate SBOM';
   FBtnSaveRegen.OnClick := BtnSaveRegenClick;
-  FBtnSaveRegen.Enabled := False;
+  FBtnSaveRegen.Enabled   := False;
+  FBtnMarkOwnCode.Enabled := False;
+
+  FBtnMarkOwnCode := TButton.Create( Self );
+  FBtnMarkOwnCode.Parent  := PnlDiscButtons;
+  FBtnMarkOwnCode.Align   := alClient;
+  FBtnMarkOwnCode.Caption := 'Mark Unresolved as Own Code';
+  FBtnMarkOwnCode.OnClick := BtnMarkOwnCodeClick;
+  FBtnMarkOwnCode.Enabled := False;
 
   FMmoDiscovery := TMemo.Create( Self );
   FMmoDiscovery.Parent     := FPnlDiscovery;
@@ -535,7 +554,8 @@ begin
   FMmoLog.Clear;
   FMmoSummary.Clear;
   FMmoDiscovery.Clear;
-  FBtnSaveRegen.Enabled := False;
+  FBtnSaveRegen.Enabled   := False;
+  FBtnMarkOwnCode.Enabled := False;
 
   var Options: TSBOMOptions;
   Options.ProjectFile     := Trim( FEdtProject.Text );
@@ -614,7 +634,8 @@ begin
 
   FMmoSummary.Clear;
   FMmoDiscovery.Clear;
-  FBtnSaveRegen.Enabled := False;
+  FBtnSaveRegen.Enabled   := False;
+  FBtnMarkOwnCode.Enabled := False;
   FLastResult := AResult;
 
   if ( not AResult.Success ) then
@@ -732,10 +753,13 @@ begin
       begin
         FMmoDiscovery.Lines.Add( 'UNRESOLVED UNITS' );
         FMmoDiscovery.Lines.Add( '================' );
-        FMmoDiscovery.Lines.Add( 'No .pas files found for these units:' );
+        FMmoDiscovery.Lines.Add( 'No .pas files found. Click "Mark Unresolved as Own Code"' );
+        FMmoDiscovery.Lines.Add( 'if these are your own project files:' );
 
         for var U in UnfoundUnits do
           FMmoDiscovery.Lines.Add( '  ' + U );
+
+        FBtnMarkOwnCode.Enabled := True;
       end;
     finally
       UnfoundUnits.Free;
@@ -775,6 +799,67 @@ begin
   // Re-run generation
   LogMessage( llInfo, 'Regenerating SBOM with updated manifest...' );
   BtnGenerateClick( Self );
+
+end;
+
+procedure TMainForm.BtnMarkOwnCodeClick( Sender: TObject );
+begin
+
+  var UnresolvedUnits := GetUnresolvedUnits;
+
+  if Length( UnresolvedUnits ) = 0 then Exit;
+
+  var ManifestPath := Trim( FEdtManifest.Text );
+
+  if ManifestPath = '' then
+  begin
+    ShowMessage( 'No manifest file specified.' );
+    Exit;
+  end;
+
+  var Loader := TManifestLoader.Create(
+    procedure ( ALevel: TLogLevel; AMsg: string )
+    begin
+      LogMessage( ALevel, AMsg );
+    end );
+  try
+    Loader.SaveOwnCodeUnits( ManifestPath, UnresolvedUnits );
+  finally
+    Loader.Free;
+  end;
+
+  LogMessage( llInfo, 'Regenerating SBOM with own-code units marked...' );
+  BtnGenerateClick( Self );
+
+end;
+
+function TMainForm.GetUnresolvedUnits: TArray<string>;
+begin
+
+  var Unfound := TList<string>.Create;
+  try
+    for var CU in FLastResult.ClassifiedUnits do
+    begin
+      if CU.Classification <> ucUnclassified then Continue;
+
+      var Found := False;
+
+      for var Lib in FDiscoveredLibraries do
+        for var U in Lib.Units do
+          if SameText( U, CU.OriginalName ) then
+          begin
+            Found := True;
+            Break;
+          end;
+
+      if ( not Found ) then
+        Unfound.Add( CU.OriginalName );
+    end;
+
+    Result := Unfound.ToArray;
+  finally
+    Unfound.Free;
+  end;
 
 end;
 

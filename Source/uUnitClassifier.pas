@@ -173,8 +173,14 @@ end;
 function TUnitClassifier.IsOwnCode( const AUnitName: string ): Boolean;
 begin
 
+  // Check units with 'in' file references from .dpr
   for var OwnUnit in FOwnCodeUnits do
     if SameText( AUnitName, OwnUnit ) then
+      Exit( True );
+
+  // Check units explicitly marked as own code in components.json
+  for var ManifestOwn in FManifest.OwnCodeUnits do
+    if SameText( AUnitName, ManifestOwn ) then
       Exit( True );
 
   Result := False;

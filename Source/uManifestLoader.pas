@@ -44,6 +44,12 @@ type
     /// </summary>
     procedure SaveDiscoveredLibraries( const AManifestFile: string;
       const ALibraries: TArray<TDiscoveredLibrary> );
+
+    /// <summary>
+    ///   Adds unit names to the own_code_units array in components.json.
+    /// </summary>
+    procedure SaveOwnCodeUnits( const AManifestFile: string;
+      const AUnitNames: TArray<string> );
   end;
 
 implementation
@@ -172,6 +178,19 @@ begin
     end
     else
       Log( llWarning, 'No components array found in manifest' );
+
+    // Load own_code_units array
+    var OwnCodeArray: TJSONArray;
+
+    if Root.TryGetValue<TJSONArray>( 'own_code_units', OwnCodeArray ) then
+    begin
+      SetLength( Result.OwnCodeUnits, OwnCodeArray.Count );
+
+      for var I := 0 to OwnCodeArray.Count - 1 do
+        Result.OwnCodeUnits[ I ] := OwnCodeArray.Items[ I ].Value;
+
+      Log( llInfo, Format( 'Loaded %d own-code unit exclusions', [ Length( Result.OwnCodeUnits ) ] ) );
+    end;
 
   finally
     JsonVal.Free;
@@ -319,6 +338,76 @@ begin
     TFile.WriteAllText( AManifestFile, Root.Format, TEncoding.UTF8 );
 
     Log( llInfo, Format( 'Manifest saved to %s', [ AManifestFile ] ) );
+
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TManifestLoader.SaveOwnCodeUnits( const AManifestFile: string;
+  const AUnitNames: TArray<string> );
+begin
+
+  var Content := '';
+
+  if FileExists( AManifestFile ) then
+    Content := TFile.ReadAllText( AManifestFile, TEncoding.UTF8 );
+
+  var Root: TJSONObject;
+
+  if Content <> '' then
+  begin
+    var Parsed := TJSONObject.ParseJSONValue( Content );
+
+    if ( Assigned( Parsed ) ) and ( Parsed is TJSONObject ) then
+      Root := Parsed as TJSONObject
+    else
+    begin
+      Parsed.Free;
+      Root := TJSONObject.Create;
+    end;
+  end
+  else
+    Root := TJSONObject.Create;
+
+  try
+    // Get or create the own_code_units array
+    var OwnCodeArray: TJSONArray;
+
+    if Root.TryGetValue<TJSONArray>( 'own_code_units', OwnCodeArray ) then
+    begin
+      for var UnitName in AUnitNames do
+      begin
+        var AlreadyExists := False;
+
+        for var I := 0 to OwnCodeArray.Count - 1 do
+          if SameText( OwnCodeArray.Items[ I ].Value, UnitName ) then
+          begin
+            AlreadyExists := True;
+            Break;
+          end;
+
+        if ( not AlreadyExists ) then
+          OwnCodeArray.Add( UnitName );
+      end;
+    end
+    else
+    begin
+      OwnCodeArray := TJSONArray.Create;
+
+      for var UnitName in AUnitNames do
+        OwnCodeArray.Add( UnitName );
+
+      Root.AddPair( 'own_code_units', OwnCodeArray );
+    end;
+
+    Root.RemovePair( 'last_updated' );
+    Root.AddPair( 'last_updated', FormatDateTime( 'yyyy-mm-dd', Now ) );
+
+    TFile.WriteAllText( AManifestFile, Root.Format, TEncoding.UTF8 );
+
+    Log( llInfo, Format( 'Saved %d own-code units to manifest', [ Length( AUnitNames ) ] ) );
 
   finally
     Root.Free;
