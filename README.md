@@ -2,12 +2,38 @@
 
 A CycloneDX 1.5 SBOM (Software Bill of Materials) generator for Delphi applications.
 
+## What is an SBOM?
+
+A **Software Bill of Materials (SBOM)** is a formal, machine-readable inventory
+of all components, libraries, and dependencies that make up a software
+application — essentially a "ingredients list" for software. SBOMs are
+becoming a regulatory requirement in many jurisdictions:
+
+- **EU Cyber Resilience Act** (effective December 2027) requires manufacturers
+  of products with digital elements to provide an SBOM
+- **US Executive Order 14028** recommends SBOMs for software sold to the
+  federal government
+- **FDA** requires SBOMs for medical device software
+
+## What is CycloneDX?
+
+**CycloneDX** is an open standard for SBOMs maintained by OWASP (the Open
+Worldwide Application Security Project). It defines a structured format
+(JSON or XML) for describing software components, their versions, suppliers,
+licences, and relationships. DelphiSBOM generates CycloneDX 1.5 JSON — the
+current stable version of the specification.
+
+CycloneDX is one of two widely adopted SBOM formats (the other being SPDX).
+It was designed specifically for security and software supply chain use cases,
+making it the natural choice for compliance with regulations like the EU CRA.
+
+More information: https://cyclonedx.org
+
 ## Purpose
 
 DelphiSBOM helps Delphi developers produce standards-compliant SBOMs to meet
-emerging regulatory requirements — principally the EU Cyber Resilience Act
-(effective December 2027) — without relying on generic SBOM tools that have
-no awareness of the Delphi ecosystem.
+these emerging regulatory requirements without relying on generic SBOM tools
+that have no awareness of the Delphi ecosystem.
 
 ## How It Works
 
@@ -37,7 +63,7 @@ See `Samples/components.sample.json` for a fully commented example, and
 
 ## Requirements
 
-- Windows (Win64)
+- Windows (Win32 or Win64)
 - A Delphi 12+ installation (for RTL unit auto-detection)
 - No runtime dependencies — single standalone `.exe`
 
