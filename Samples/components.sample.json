@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "last_updated": "2026-03-26",
+  "supplier": {
+    "name": "Your Company Name",
+    "url": "https://example.com"
+  },
+  "components": [
+    {
+      "name": "OmniThreadLibrary",
+      "version": "3.7.8",
+      "vendor": "Primož Gabrijelčič",
+      "vendor_url": "https://github.com/gabr42/OmniThreadLibrary",
+      "licence": "BSD-3-Clause",
+      "licence_url": "https://opensource.org/licenses/BSD-3-Clause",
+      "type": "library",
+      "units_prefix": ["Otl"],
+      "units_exact": ["GpLists", "GpStuff", "HVStringBuilder", "HVStringData"],
+      "notes": "High-performance threading library for Delphi"
+    },
+    {
+      "name": "Indy",
+      "version": "10.6.3",
+      "vendor": "Indy Project",
+      "vendor_url": "https://www.indyproject.org",
+      "licence": "Modified-BSD",
+      "licence_url": "https://www.indyproject.org/license/",
+      "type": "library",
+      "units_prefix": ["IdHTTP", "IdSMTP", "IdTCP", "IdSSL", "IdMessage", "IdFTP"],
+      "units_exact": ["IdComponent", "IdGlobal", "IdStack", "IdThread", "IdURI"],
+      "notes": "Internet protocols library — ships with Delphi but is independently versioned"
+    },
+    {
+      "name": "Spring4D",
+      "version": "2.0",
+      "vendor": "Spring4D Team",
+      "vendor_url": "https://bitbucket.org/sglienke/spring4d",
+      "licence": "Apache-2.0",
+      "licence_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "type": "framework",
+      "units_prefix": ["Spring"],
+      "notes": "Dependency injection and collections framework for Delphi"
+    },
+    {
+      "name": "Virtual TreeView",
+      "version": "8.0",
+      "vendor": "Joachim Marder",
+      "vendor_url": "https://github.com/JAM-Software/Virtual-TreeView",
+      "licence": "LGPL-2.1-or-later",
+      "licence_url": "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html",
+      "type": "library",
+      "units_prefix": ["VirtualTrees"],
+      "notes": "High-performance tree view control"
+    },
+    {
+      "name": "SynEdit",
+      "version": "3.0",
+      "vendor": "SynEdit Contributors",
+      "vendor_url": "https://github.com/SynEdit/SynEdit",
+      "licence": "MPL-1.1",
+      "licence_url": "https://www.mozilla.org/en-US/MPL/1.1/",
+      "type": "library",
+      "units_prefix": ["SynEdit", "SynHighlighter", "SynMemo"],
+      "notes": "Syntax-highlighting editor component"
+    }
+  ]
+}

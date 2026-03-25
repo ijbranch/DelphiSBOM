@@ -1,0 +1,35 @@
+# Delphi compiled output
+*.dcu
+*.dcp
+*.bpl
+*.exe
+*.dll
+*.bpi
+*.drc
+*.map
+*.dres
+*.rsm
+*.tds
+*.lib
+
+# IDE files
+*.identcache
+*.local
+*.stat
+*.skincfg
+*.dsk
+__history/
+__recovery/
+*.~*
+
+# Build output directories
+Win32/
+Win64/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Generated SBOM output (do not version control)
+*.cdx.json
+*.sbom-report.txt
