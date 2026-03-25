@@ -28,6 +28,7 @@ type
     function GetCommonRootDirs: TArray<string>;
     function GetDelphiLibraryPaths( const ADelphiPath: string; const APlatform: string ): TArray<string>;
     function IsProjectDirectory( const ADirectory: string ): Boolean;
+    function IsGenericDirectoryName( const AName: string ): Boolean;
     function GetAllPasUnitNames( const ADirectory: string ): TArray<string>;
     function DetectLicence( const ADirectory: string; out ALicenceFile: string ): string;
     function DetectVendor( const ADirectory: string ): string;
@@ -176,6 +177,16 @@ begin
               Continue;
             end;
 
+            // Skip directories that share the same parent as the project (related project code)
+            var ProjectParent := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( AProjectDir ) ) );
+            var DirParent     := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( ActualDir ) ) );
+
+            if ( ProjectParent <> '' ) and SameText( ProjectParent, DirParent ) then
+            begin
+              Log( llInfo, Format( 'Skipping sibling project directory: %s', [ ActualDir ] ) );
+              Continue;
+            end;
+
             // Skip directories that contain .dpr or .dproj files (other projects, not libraries)
             if IsProjectDirectory( ActualDir ) then
             begin
@@ -184,7 +195,14 @@ begin
             end;
 
             Lib.Directory := ActualDir;
-            Lib.Name      := ExtractFileName( ActualDir );
+
+            // Use parent directory name if current name is generic
+            var DirName := ExtractFileName( ActualDir );
+
+            if IsGenericDirectoryName( DirName ) then
+              Lib.Name := ExtractFileName( ExtractFilePath( ExcludeTrailingPathDelimiter( ActualDir ) ) ) + ' - ' + DirName
+            else
+              Lib.Name := DirName;
             Lib.Units     := DirPair.Value.ToArray;
             Lib.Confirmed := False;
 
@@ -357,6 +375,22 @@ begin
   except
     // Access denied — treat as not a project directory
   end;
+
+end;
+
+function TLibraryDiscovery.IsGenericDirectoryName( const AName: string ): Boolean;
+begin
+
+  var GenericNames: TArray<string> := [
+    'source', 'src', 'lib', 'code', 'extras', 'delphi', 'pascal',
+    'common', 'shared', 'include', 'units', 'packages', 'components'
+  ];
+
+  for var GN in GenericNames do
+    if SameText( AName, GN ) then
+      Exit( True );
+
+  Result := False;
 
 end;
 

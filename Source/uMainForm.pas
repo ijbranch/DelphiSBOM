@@ -731,7 +731,7 @@ begin
       if UnfoundUnits.Count > 0 then
       begin
         FMmoDiscovery.Lines.Add( 'UNRESOLVED UNITS' );
-        FMmoDiscovery.Lines.Add( '════════════════' );
+        FMmoDiscovery.Lines.Add( '================' );
         FMmoDiscovery.Lines.Add( 'No .pas files found for these units:' );
 
         for var U in UnfoundUnits do
