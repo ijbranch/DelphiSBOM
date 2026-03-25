@@ -251,6 +251,101 @@ Regenerate your SBOM whenever you:
 
 The process takes seconds — just click Generate SBOM.
 
+## What To Do With Your SBOM
+
+Generating the `.cdx.json` file is the first step. Here's how SBOMs are
+typically used in practice.
+
+### Ship With Your Product
+
+The SBOM should accompany your software when you deliver it. For the EU Cyber
+Resilience Act, it must be provided as part of the product's technical
+documentation. For FDA-regulated medical devices, it is submitted with regulatory
+filings (510(k) or PMA).
+
+Include the `.cdx.json` file in your release package, or make it available via
+a download link alongside the software.
+
+### Commit to Version Control
+
+Commit both `components.json` and the generated `.cdx.json` alongside each
+release tag. This creates a permanent, auditable record of exactly what
+components were in each version of your software.
+
+```
+git add components.json MyApp.cdx.json
+git commit -m "docs: update SBOM for release 4.1.0"
+git tag v4.1.0
+```
+
+### Vulnerability Monitoring
+
+The most valuable ongoing use of an SBOM is **continuous vulnerability
+monitoring**. Tools like [OWASP Dependency-Track](https://dependencytrack.org/)
+ingest your CycloneDX SBOM and automatically check every component against
+vulnerability databases (NVD/CVE).
+
+If a security vulnerability is published for any library in your SBOM — for
+example, a CVE affecting the version of OpenSSL that Indy uses — you are
+alerted immediately, even months after the SBOM was generated.
+
+**How to set up Dependency-Track:**
+
+1. Install Dependency-Track (available as Docker container or WAR file)
+2. Create a project in the Dependency-Track UI
+3. Upload your `.cdx.json` file (via the UI or REST API)
+4. Dependency-Track will analyse the components and report any known
+   vulnerabilities
+
+This turns a static compliance document into an active security monitoring
+tool.
+
+### Licence Compliance
+
+Legal and compliance teams use SBOMs to verify that all third-party licences
+are compatible with your product's distribution model. Common concerns include:
+
+- **GPL libraries** in proprietary/commercial products (may require source
+  disclosure)
+- **LGPL libraries** (generally safe for dynamic linking, restrictions on
+  static linking)
+- **Commercial licences** that require per-developer or per-deployment fees
+
+The `licenses` field in the SBOM uses SPDX identifiers, making automated
+licence compliance checking straightforward with tools like
+[FOSSology](https://www.fossology.org/) or
+[FOSSA](https://fossa.com/).
+
+### Supply Chain Auditing
+
+Customers, procurement teams, and enterprise buyers increasingly request SBOMs
+before purchasing or deploying software. Having a ready-to-deliver SBOM
+demonstrates:
+
+- You know what's in your software
+- You track your dependencies actively
+- You can respond quickly to vulnerability disclosures
+- You meet regulatory requirements proactively
+
+### Regulatory Submission
+
+| Regulation | Requirement |
+|------------|-------------|
+| **EU Cyber Resilience Act** | SBOM required as part of technical documentation for products with digital elements. Effective December 2027 |
+| **US Executive Order 14028** | Recommends SBOMs for software sold to the US federal government |
+| **FDA Cybersecurity Guidance** | SBOMs required for medical device software submissions |
+| **NIS2 Directive** | EU directive requiring supply chain security measures, where SBOMs support compliance |
+
+### What DelphiSBOM Does Not Do (Yet)
+
+The following capabilities are planned for future versions:
+
+- **Vulnerability checking** — CVE lookup against component versions
+- **Licence compatibility analysis** — automated conflict detection
+- **SBOM signing** — cryptographic attestation of SBOM authenticity
+- **Registry upload** — direct integration with Dependency-Track or other platforms
+- **SBOM diffing** — compare two SBOMs to see what changed between versions
+
 ## Glossary
 
 | Term | Definition |
@@ -263,6 +358,10 @@ The process takes seconds — just click Generate SBOM.
 | **VCL** | Visual Component Library — Delphi's Windows UI framework |
 | **FMX** | FireMonkey — Delphi's cross-platform UI framework |
 | **EU CRA** | EU Cyber Resilience Act — regulation requiring SBOMs for digital products |
+| **NVD** | National Vulnerability Database — US government repository of vulnerability data |
+| **CVE** | Common Vulnerabilities and Exposures — standardised vulnerability identifiers |
+| **Dependency-Track** | OWASP tool for continuous SBOM analysis and vulnerability monitoring |
+| **NIS2** | EU directive on network and information security, includes supply chain requirements |
 
 ---
-*Version: 1.0 – 26 March 2026 08:30*
+*Version: 1.1 – 26 March 2026 09:45*
