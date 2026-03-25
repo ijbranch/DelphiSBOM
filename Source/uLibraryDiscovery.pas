@@ -785,7 +785,6 @@ begin
 
   for var CharIdx := 1 to First.Length do
   begin
-    var Ch := First[ CharIdx ];
     var AllMatch := True;
 
     for var I := 1 to High( AUnitNames ) do
