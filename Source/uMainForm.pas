@@ -570,6 +570,11 @@ begin
 
   FProcessing := AValue;
 
+  if AValue then
+    Screen.Cursor := crHourGlass
+  else
+    Screen.Cursor := crDefault;
+
   FBtnGenerate.Enabled   := not AValue;
   FBtnValidate.Enabled   := not AValue;
   FBtnProject.Enabled    := not AValue;
