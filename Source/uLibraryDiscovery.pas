@@ -314,38 +314,73 @@ begin
           // Read the library search path from the IDE settings
           var LibKey := Format( 'Software\Embarcadero\BDS\%s\Library\%s', [ HighestVer, Platform ] );
 
-          if Reg.OpenKeyReadOnly( LibKey ) then
-          begin
-            if Reg.ValueExists( 'Search Path' ) then
+          // Read custom IDE environment variables for path resolution
+          var EnvVars := TDictionary<string, string>.Create;
+          try
+            var EnvKey := Format( 'Software\Embarcadero\BDS\%s\Environment Variables', [ HighestVer ] );
+
+            if Reg.OpenKeyReadOnly( EnvKey ) then
             begin
-              var PathStr := Reg.ReadString( 'Search Path' );
-
-              // Resolve $(BDS) variable
-              if ( ADelphiPath <> '' ) then
-                PathStr := StringReplace( PathStr, '$(BDS)', ADelphiPath, [ rfReplaceAll, rfIgnoreCase ] );
-
-              // Resolve $(BDSLIB)
-              PathStr := StringReplace( PathStr, '$(BDSLIB)', TPath.Combine( ADelphiPath, 'lib' ), [ rfReplaceAll, rfIgnoreCase ] );
-
-              var Parts := PathStr.Split( [ ';' ] );
-              var Paths := TList<string>.Create;
+              var ValueNames := TStringList.Create;
               try
-                for var P in Parts do
-                begin
-                  var Trimmed := Trim( P );
+                Reg.GetValueNames( ValueNames );
 
-                  if ( Trimmed <> '' ) and ( not Trimmed.StartsWith( '$(' ) ) then
-                    Paths.Add( Trimmed );
-                end;
-
-                Result := Paths.ToArray;
-                Log( llInfo, Format( 'Found %d Delphi IDE library paths', [ Length( Result ) ] ) );
+                for var VN := 0 to ValueNames.Count - 1 do
+                  EnvVars.AddOrSetValue( ValueNames[ VN ], Reg.ReadString( ValueNames[ VN ] ) );
               finally
-                Paths.Free;
+                ValueNames.Free;
               end;
+
+              Reg.CloseKey;
+              Log( llInfo, Format( 'Loaded %d IDE environment variables', [ EnvVars.Count ] ) );
             end;
 
-            Reg.CloseKey;
+            // Add standard BDS variables
+            if ADelphiPath <> '' then
+            begin
+              EnvVars.AddOrSetValue( 'BDS', ADelphiPath );
+              EnvVars.AddOrSetValue( 'BDSLIB', TPath.Combine( ADelphiPath, 'lib' ) );
+              EnvVars.AddOrSetValue( 'BDSBIN', TPath.Combine( ADelphiPath, 'bin' ) );
+              EnvVars.AddOrSetValue( 'BDSCOMMONDIR', TPath.Combine( GetEnvironmentVariable( 'PUBLIC' ), 'Documents\Embarcadero\Studio\' + HighestVer ) );
+              EnvVars.AddOrSetValue( 'BDSUSERDIR', TPath.Combine( GetEnvironmentVariable( 'USERPROFILE' ), 'Documents\Embarcadero\Studio\' + HighestVer ) );
+              EnvVars.AddOrSetValue( 'BDSCatalogRepository', TPath.Combine( GetEnvironmentVariable( 'USERPROFILE' ), 'Documents\Embarcadero\Studio\' + HighestVer + '\CatalogRepository' ) );
+              EnvVars.AddOrSetValue( 'BDSCatalogRepositoryAllUsers', TPath.Combine( GetEnvironmentVariable( 'PUBLIC' ), 'Documents\Embarcadero\Studio\' + HighestVer + '\CatalogRepository' ) );
+              EnvVars.AddOrSetValue( 'PLATFORM', Platform );
+            end;
+
+            if Reg.OpenKeyReadOnly( LibKey ) then
+            begin
+              if Reg.ValueExists( 'Search Path' ) then
+              begin
+                var PathStr := Reg.ReadString( 'Search Path' );
+
+                // Resolve all $(VAR) references
+                for var EnvPair in EnvVars do
+                  PathStr := StringReplace( PathStr, '$(' + EnvPair.Key + ')', EnvPair.Value, [ rfReplaceAll, rfIgnoreCase ] );
+
+                var Parts := PathStr.Split( [ ';' ] );
+                var Paths := TList<string>.Create;
+                try
+                  for var P in Parts do
+                  begin
+                    var Trimmed := Trim( P );
+
+                    if ( Trimmed <> '' ) and ( not Trimmed.Contains( '$(' ) ) then
+                      Paths.Add( Trimmed );
+                  end;
+
+                  Result := Paths.ToArray;
+                  Log( llInfo, Format( 'Found %d Delphi IDE library paths', [ Length( Result ) ] ) );
+                finally
+                  Paths.Free;
+                end;
+              end;
+
+              Reg.CloseKey;
+            end;
+
+          finally
+            EnvVars.Free;
           end;
         end;
       finally
@@ -400,7 +435,8 @@ begin
 
   var GenericNames: TArray<string> := [
     'source', 'src', 'lib', 'code', 'extras', 'delphi', 'pascal',
-    'common', 'shared', 'include', 'units', 'packages', 'components'
+    'common', 'shared', 'include', 'units', 'packages', 'components',
+    'dev', 'bin', 'release', 'debug', 'pas'
   ];
 
   for var GN in GenericNames do
@@ -735,14 +771,24 @@ begin
 
         After := Trim( After );
 
-        // Strip trailing comment markers and punctuation
+        // Strip trailing comment markers
         After := StringReplace( After, '*)', '', [] );
-        After := StringReplace( After, ')', '', [] );
         After := StringReplace( After, '}', '', [] );
         After := Trim( After );
 
-        if After.EndsWith( '.' ) then
-          After := Copy( After, 1, After.Length - 1 );
+        // Strip surrounding parentheses
+        if After.StartsWith( '(' ) and After.EndsWith( ')' ) then
+          After := Copy( After, 2, After.Length - 2 )
+        else if After.StartsWith( '(' ) then
+          Delete( After, 1, 1 );
+
+        // Strip trailing period or closing paren
+        After := Trim( After );
+
+        while ( After.Length > 0 ) and CharInSet( After[ After.Length ], [ '.', ')' ] ) do
+          Delete( After, After.Length, 1 );
+
+        After := Trim( After );
 
         // Strip "All rights reserved" suffix
         var ArPos := Pos( '. All rights', After );
@@ -776,13 +822,22 @@ begin
 
         // Strip trailing comment markers
         After := StringReplace( After, '*)', '', [] );
-        After := StringReplace( After, ')', '', [] );
         After := StringReplace( After, '}', '', [] );
         After := Trim( After );
 
-        // Strip trailing period
-        if After.EndsWith( '.' ) then
-          After := Copy( After, 1, After.Length - 1 );
+        // Strip surrounding parentheses
+        if After.StartsWith( '(' ) and After.EndsWith( ')' ) then
+          After := Copy( After, 2, After.Length - 2 )
+        else if After.StartsWith( '(' ) then
+          Delete( After, 1, 1 );
+
+        // Strip trailing period or closing paren
+        After := Trim( After );
+
+        while ( After.Length > 0 ) and CharInSet( After[ After.Length ], [ '.', ')' ] ) do
+          Delete( After, After.Length, 1 );
+
+        After := Trim( After );
 
         // Strip "All rights reserved" suffix
         var ArPos2 := Pos( '. All rights', After );
