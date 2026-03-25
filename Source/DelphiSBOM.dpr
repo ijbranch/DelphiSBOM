@@ -9,7 +9,8 @@ uses
   uManifestLoader in 'uManifestLoader.pas',
   uUnitClassifier in 'uUnitClassifier.pas',
   uSBOMBuilder in 'uSBOMBuilder.pas',
-  uSBOMEngine in 'uSBOMEngine.pas';
+  uSBOMEngine in 'uSBOMEngine.pas',
+  uLibraryDiscovery in 'uLibraryDiscovery.pas';
 
 {$R *.res}
 

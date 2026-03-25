@@ -1,4 +1,4 @@
-(*
+﻿(*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian (GITLAK Software)
   MIT Licence — see LICENCE file
@@ -92,17 +92,33 @@ type
   end;
 
   /// <summary>
+  ///   A third-party library discovered by scanning the file system.
+  /// </summary>
+  TDiscoveredLibrary = record
+    Name            : string;          // Suggested library name (from directory name)
+    Directory       : string;          // Full path to the library directory
+    Version         : string;          // Detected version (may be empty)
+    Vendor          : string;          // Detected author/copyright holder
+    Licence         : string;          // Detected SPDX licence ID (may be empty)
+    LicenceFile     : string;          // Path to licence file found
+    SuggestedPrefix : string;          // Computed common prefix for unit matching
+    Units           : TArray<string>;  // Unit names found in this directory
+    Confirmed       : Boolean;         // User has confirmed this entry
+  end;
+
+  /// <summary>
   ///   Complete results from a pipeline run, passed from uSBOMEngine to the form.
   /// </summary>
   TSBOMResult = record
-    Success          : Boolean;
-    OutputFile       : string;         // Path to the generated .cdx.json
-    ProjectInfo      : TProjectInfo;
-    Summary          : TClassificationSummary;
-    ClassifiedUnits  : TArray<TClassifiedUnit>;
-    Manifest         : TManifest;
-    RTLScanAvailable : Boolean;        // False if RTL scanner could not find Delphi install
-    ErrorMessage     : string;         // Populated only on failure
+    Success             : Boolean;
+    OutputFile          : string;         // Path to the generated .cdx.json
+    ProjectInfo         : TProjectInfo;
+    Summary             : TClassificationSummary;
+    ClassifiedUnits     : TArray<TClassifiedUnit>;
+    Manifest            : TManifest;
+    RTLScanAvailable    : Boolean;        // False if RTL scanner could not find Delphi install
+    DiscoveredLibraries : TArray<TDiscoveredLibrary>;  // Libraries found by file system scan
+    ErrorMessage        : string;         // Populated only on failure
   end;
 
   /// <summary>
@@ -198,3 +214,4 @@ begin
 end;
 
 end.
+

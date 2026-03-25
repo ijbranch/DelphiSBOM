@@ -44,8 +44,8 @@ type
 implementation
 
 uses
-  System.IOUtils,
-  uProjectParser, uRTLScanner, uManifestLoader, uUnitClassifier, uSBOMBuilder;
+  System.IOUtils, System.Generics.Collections,
+  uProjectParser, uRTLScanner, uManifestLoader, uUnitClassifier, uSBOMBuilder, uLibraryDiscovery;
 
 { TSBOMEngine }
 
@@ -114,6 +114,34 @@ begin
 
   finally
     Scanner.Free;
+  end;
+
+  // Step 4a: Discover libraries for unclassified units
+  if Result.Summary.UnclassifiedCount > 0 then
+  begin
+    var Discovery := TLibraryDiscovery.Create( FLog );
+    try
+      // Collect unclassified unit names
+      var UnclassifiedNames := TList<string>.Create;
+      try
+        for var CU in Result.ClassifiedUnits do
+          if CU.Classification = ucUnclassified then
+            UnclassifiedNames.Add( CU.OriginalName );
+
+        Result.DiscoveredLibraries := Discovery.Discover(
+          UnclassifiedNames.ToArray,
+          Result.ProjectInfo.SearchPaths,
+          Result.ProjectInfo.ProjectDir
+        );
+      finally
+        UnclassifiedNames.Free;
+      end;
+
+      if Length( Result.DiscoveredLibraries ) > 0 then
+        Log( llInfo, Format( 'Discovered %d libraries for unclassified units', [ Length( Result.DiscoveredLibraries ) ] ) );
+    finally
+      Discovery.Free;
+    end;
   end;
 
   // Step 5: Build and save SBOM

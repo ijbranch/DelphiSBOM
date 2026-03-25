@@ -84,9 +84,10 @@ type
     FPnlResults      : TPanel;
     FPnlSummary      : TPanel;
     FSplitter        : TSplitter;
-    FPnlUnclassified : TPanel;
+    FPnlDiscovery    : TPanel;
     FMmoSummary      : TMemo;
-    FLstUnclassified : TListBox;
+    FMmoDiscovery    : TMemo;
+    FBtnSaveRegen    : TButton;
 
     // Log panel
     FMmoLog : TMemo;
@@ -95,7 +96,9 @@ type
     FDlgOpenProject  : TOpenDialog;
     FDlgOpenManifest : TOpenDialog;
 
-    FProcessing : Boolean;
+    FProcessing        : Boolean;
+    FLastResult        : TSBOMResult;
+    FDiscoveredLibraries : TArray<TDiscoveredLibrary>;
 
     procedure CreateControls;
     procedure CreateInputRow( var ATop: Integer; const ACaption: string;
@@ -110,7 +113,10 @@ type
     procedure BtnValidateClick( Sender: TObject );
 
     procedure AutoPopulateDefaults;
+    procedure CreateDefaultManifest( const APath: string );
     procedure DetectDelphiPath;
+    procedure DisplayDiscoveredLibraries;
+    procedure BtnSaveRegenClick( Sender: TObject );
   public
     procedure SetProcessing( AValue: Boolean );
     procedure LogMessage( ALevel: TLogLevel; const AMessage: string );
@@ -123,8 +129,8 @@ var
 implementation
 
 uses
-  System.IOUtils, System.Win.Registry,
-  uSBOMEngine;
+  System.IOUtils, System.Win.Registry, System.Generics.Collections,
+  uSBOMEngine, uManifestLoader;
 
 {$R *.dfm}
 
@@ -359,21 +365,33 @@ begin
   FSplitter.Align  := alLeft;
   FSplitter.Width  := 5;
 
-  FPnlUnclassified := TPanel.Create( Self );
-  FPnlUnclassified.Parent     := FPnlResults;
-  FPnlUnclassified.Align      := alClient;
-  FPnlUnclassified.BevelOuter := bvNone;
-  FPnlUnclassified.Caption    := '';
+  FPnlDiscovery := TPanel.Create( Self );
+  FPnlDiscovery.Parent     := FPnlResults;
+  FPnlDiscovery.Align      := alClient;
+  FPnlDiscovery.BevelOuter := bvNone;
+  FPnlDiscovery.Caption    := '';
 
-  var LblUnclassified := TLabel.Create( Self );
-  LblUnclassified.Parent     := FPnlUnclassified;
-  LblUnclassified.Align      := alTop;
-  LblUnclassified.Caption    := '  Unclassified Units';
-  LblUnclassified.Font.Style := [ fsBold ];
+  var LblDiscovery := TLabel.Create( Self );
+  LblDiscovery.Parent     := FPnlDiscovery;
+  LblDiscovery.Align      := alTop;
+  LblDiscovery.Caption    := '  Discovered Libraries / Unclassified Units';
+  LblDiscovery.Font.Style := [ fsBold ];
 
-  FLstUnclassified := TListBox.Create( Self );
-  FLstUnclassified.Parent := FPnlUnclassified;
-  FLstUnclassified.Align  := alClient;
+  FBtnSaveRegen := TButton.Create( Self );
+  FBtnSaveRegen.Parent  := FPnlDiscovery;
+  FBtnSaveRegen.Align   := alBottom;
+  FBtnSaveRegen.Height  := 30;
+  FBtnSaveRegen.Caption := 'Save Libraries && Regenerate SBOM';
+  FBtnSaveRegen.OnClick := BtnSaveRegenClick;
+  FBtnSaveRegen.Enabled := False;
+
+  FMmoDiscovery := TMemo.Create( Self );
+  FMmoDiscovery.Parent     := FPnlDiscovery;
+  FMmoDiscovery.Align      := alClient;
+  FMmoDiscovery.ReadOnly   := True;
+  FMmoDiscovery.ScrollBars := ssVertical;
+  FMmoDiscovery.Font.Name  := 'Consolas';
+  FMmoDiscovery.Font.Size  := 9;
 
   Inc( CurrentTop, 210 );
 
@@ -503,7 +521,8 @@ begin
   SetProcessing( True );
   FMmoLog.Clear;
   FMmoSummary.Clear;
-  FLstUnclassified.Clear;
+  FMmoDiscovery.Clear;
+  FBtnSaveRegen.Enabled := False;
 
   var Options: TSBOMOptions;
   Options.ProjectFile     := Trim( FEdtProject.Text );
@@ -576,7 +595,9 @@ procedure TMainForm.DisplayResults( const AResult: TSBOMResult );
 begin
 
   FMmoSummary.Clear;
-  FLstUnclassified.Clear;
+  FMmoDiscovery.Clear;
+  FBtnSaveRegen.Enabled := False;
+  FLastResult := AResult;
 
   if ( not AResult.Success ) then
   begin
@@ -607,13 +628,135 @@ begin
       FMmoSummary.Lines.Add( Format( '  %s %s', [ Comp.Name, Comp.Version ] ) );
   end;
 
-  // Unclassified units list
-  for var CU in AResult.ClassifiedUnits do
-    if CU.Classification = ucUnclassified then
-      FLstUnclassified.Items.Add( CU.OriginalName );
-
   if ( not AResult.RTLScanAvailable ) then
-    FLstUnclassified.Items.Insert( 0, '(RTL scanning was unavailable — some units may be RTL)' );
+  begin
+    FMmoDiscovery.Lines.Add( '⚠ RTL scanning was unavailable — some units may be RTL' );
+    FMmoDiscovery.Lines.Add( '' );
+  end;
+
+  // Store discovered libraries and display them
+  FDiscoveredLibraries := AResult.DiscoveredLibraries;
+
+  // Mark all discovered libraries as confirmed by default
+  for var I := 0 to High( FDiscoveredLibraries ) do
+    FDiscoveredLibraries[ I ].Confirmed := True;
+
+  DisplayDiscoveredLibraries;
+
+end;
+
+procedure TMainForm.DisplayDiscoveredLibraries;
+begin
+
+  FMmoDiscovery.Lines.BeginUpdate;
+  try
+    // Show discovered libraries
+    if Length( FDiscoveredLibraries ) > 0 then
+    begin
+      FMmoDiscovery.Lines.Add( 'DISCOVERED LIBRARIES' );
+      FMmoDiscovery.Lines.Add( '════════════════════' );
+      FMmoDiscovery.Lines.Add( 'The following libraries were found on disk.' );
+      FMmoDiscovery.Lines.Add( 'Click "Save Libraries & Regenerate SBOM" to add them to components.json.' );
+      FMmoDiscovery.Lines.Add( '' );
+
+      for var I := 0 to High( FDiscoveredLibraries ) do
+      begin
+        var Lib := FDiscoveredLibraries[ I ];
+
+        FMmoDiscovery.Lines.Add( Format( '── %s ──', [ Lib.Name ] ) );
+        FMmoDiscovery.Lines.Add( Format( '  Directory: %s', [ Lib.Directory ] ) );
+
+        if Lib.Version <> '' then
+          FMmoDiscovery.Lines.Add( Format( '  Version:   %s', [ Lib.Version ] ) );
+
+        if Lib.Vendor <> '' then
+          FMmoDiscovery.Lines.Add( Format( '  Vendor:    %s', [ Lib.Vendor ] ) );
+
+        if Lib.Licence <> '' then
+          FMmoDiscovery.Lines.Add( Format( '  Licence:   %s', [ Lib.Licence ] ) );
+
+        if Lib.SuggestedPrefix <> '' then
+          FMmoDiscovery.Lines.Add( Format( '  Prefix:    %s', [ Lib.SuggestedPrefix ] ) );
+
+        FMmoDiscovery.Lines.Add( Format( '  Units (%d):', [ Length( Lib.Units ) ] ) );
+
+        for var U in Lib.Units do
+          FMmoDiscovery.Lines.Add( '    ' + U );
+
+        FMmoDiscovery.Lines.Add( '' );
+      end;
+
+      FBtnSaveRegen.Enabled := True;
+    end;
+
+    // Show remaining unclassified units (not found on disk)
+    var UnfoundUnits := TList<string>.Create;
+    try
+      for var CU in FLastResult.ClassifiedUnits do
+      begin
+        if CU.Classification <> ucUnclassified then Continue;
+
+        var Found := False;
+
+        for var Lib in FDiscoveredLibraries do
+          for var U in Lib.Units do
+            if SameText( U, CU.OriginalName ) then
+            begin
+              Found := True;
+              Break;
+            end;
+
+        if ( not Found ) then
+          UnfoundUnits.Add( CU.OriginalName );
+      end;
+
+      if UnfoundUnits.Count > 0 then
+      begin
+        FMmoDiscovery.Lines.Add( 'UNRESOLVED UNITS' );
+        FMmoDiscovery.Lines.Add( '════════════════' );
+        FMmoDiscovery.Lines.Add( 'No .pas files found for these units:' );
+
+        for var U in UnfoundUnits do
+          FMmoDiscovery.Lines.Add( '  ' + U );
+      end;
+    finally
+      UnfoundUnits.Free;
+    end;
+
+  finally
+    FMmoDiscovery.Lines.EndUpdate;
+  end;
+
+end;
+
+procedure TMainForm.BtnSaveRegenClick( Sender: TObject );
+begin
+
+  if Length( FDiscoveredLibraries ) = 0 then Exit;
+
+  var ManifestPath := Trim( FEdtManifest.Text );
+
+  if ManifestPath = '' then
+  begin
+    ShowMessage( 'No manifest file specified.' );
+    Exit;
+  end;
+
+  // Save confirmed libraries to components.json
+  var Loader := TManifestLoader.Create(
+    procedure ( ALevel: TLogLevel; AMsg: string )
+    begin
+      LogMessage( ALevel, AMsg );
+    end );
+  try
+    Loader.SaveDiscoveredLibraries( ManifestPath, FDiscoveredLibraries );
+  finally
+    Loader.Free;
+  end;
+
+  // Re-run generation
+  LogMessage( llInfo, 'Regenerating SBOM with updated manifest...' );
+  BtnGenerateClick( Self );
 
 end;
 
@@ -623,17 +766,36 @@ begin
   if FEdtProject.Text = '' then Exit;
 
   var ProjectDir := ExtractFilePath( FEdtProject.Text );
+  var DefaultManifest := TPath.Combine( ProjectDir, 'components.json' );
 
-  if FEdtManifest.Text = '' then
+  if ( not FileExists( DefaultManifest ) ) then
   begin
-    var DefaultManifest := TPath.Combine( ProjectDir, 'components.json' );
-
-    if FileExists( DefaultManifest ) then
-      FEdtManifest.Text := DefaultManifest;
+    CreateDefaultManifest( DefaultManifest );
+    LogMessage( llInfo, Format( 'Created default components.json in %s', [ ProjectDir ] ) );
   end;
 
-  if FEdtOutputDir.Text = '' then
-    FEdtOutputDir.Text := ExcludeTrailingPathDelimiter( ProjectDir );
+  if FEdtManifest.Text = '' then
+    FEdtManifest.Text := DefaultManifest;
+
+  FEdtOutputDir.Text := ExcludeTrailingPathDelimiter( ProjectDir );
+
+end;
+
+procedure TMainForm.CreateDefaultManifest( const APath: string );
+begin
+
+  var Json :=
+    '{' + sLineBreak +
+    '  "schema_version": "1.0",' + sLineBreak +
+    '  "last_updated": "' + FormatDateTime( 'yyyy-mm-dd', Now ) + '",' + sLineBreak +
+    '  "supplier": {' + sLineBreak +
+    '    "name": "",' + sLineBreak +
+    '    "url": ""' + sLineBreak +
+    '  },' + sLineBreak +
+    '  "components": []' + sLineBreak +
+    '}' + sLineBreak;
+
+  TFile.WriteAllText( APath, Json, TEncoding.UTF8 );
 
 end;
 

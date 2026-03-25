@@ -38,6 +38,12 @@ type
     ///   Returns True if valid (warnings are acceptable), False if errors found.
     /// </summary>
     function Validate( const AManifestFile: string ): Boolean;
+
+    /// <summary>
+    ///   Appends discovered libraries to an existing components.json file.
+    /// </summary>
+    procedure SaveDiscoveredLibraries( const AManifestFile: string;
+      const ALibraries: TArray<TDiscoveredLibrary> );
   end;
 
 implementation
@@ -230,6 +236,93 @@ begin
     if P.Length < MinPrefixLength then
       Log( llWarning, Format( '%s: prefix "%s" is shorter than %d characters — risk of false matches. Use units_exact instead.',
         [ Prefix, P, MinPrefixLength ] ) );
+
+end;
+
+procedure TManifestLoader.SaveDiscoveredLibraries( const AManifestFile: string;
+  const ALibraries: TArray<TDiscoveredLibrary> );
+begin
+
+  // Load existing manifest JSON
+  var Content := '';
+
+  if FileExists( AManifestFile ) then
+    Content := TFile.ReadAllText( AManifestFile, TEncoding.UTF8 );
+
+  var Root: TJSONObject;
+
+  if Content <> '' then
+  begin
+    var Parsed := TJSONObject.ParseJSONValue( Content );
+
+    if ( Assigned( Parsed ) ) and ( Parsed is TJSONObject ) then
+      Root := Parsed as TJSONObject
+    else
+    begin
+      Parsed.Free;
+      Root := TJSONObject.Create;
+    end;
+  end
+  else
+    Root := TJSONObject.Create;
+
+  try
+    // Get or create the components array
+    var CompArray: TJSONArray;
+
+    if ( not Root.TryGetValue<TJSONArray>( 'components', CompArray ) ) then
+    begin
+      CompArray := TJSONArray.Create;
+      Root.AddPair( 'components', CompArray );
+    end;
+
+    // Add each confirmed library
+    for var Lib in ALibraries do
+    begin
+      if ( not Lib.Confirmed ) then Continue;
+
+      var CompObj := TJSONObject.Create;
+
+      CompObj.AddPair( 'name', Lib.Name );
+      CompObj.AddPair( 'version', Lib.Version );
+      CompObj.AddPair( 'vendor', Lib.Vendor );
+      CompObj.AddPair( 'licence', Lib.Licence );
+      CompObj.AddPair( 'type', 'library' );
+
+      // Decide between units_prefix and units_exact
+      if ( Lib.SuggestedPrefix.Length >= MinPrefixLength ) then
+      begin
+        var PrefixArr := TJSONArray.Create;
+        PrefixArr.Add( Lib.SuggestedPrefix );
+        CompObj.AddPair( 'units_prefix', PrefixArr );
+      end
+      else
+      begin
+        var ExactArr := TJSONArray.Create;
+
+        for var U in Lib.Units do
+          ExactArr.Add( U );
+
+        CompObj.AddPair( 'units_exact', ExactArr );
+      end;
+
+      CompArray.AddElement( CompObj );
+
+      Log( llInfo, Format( 'Added component "%s" to manifest', [ Lib.Name ] ) );
+    end;
+
+    // Update last_updated
+    Root.RemovePair( 'last_updated' );
+    Root.AddPair( 'last_updated', FormatDateTime( 'yyyy-mm-dd', Now ) );
+
+    // Write back pretty-printed
+    TFile.WriteAllText( AManifestFile, Root.Format, TEncoding.UTF8 );
+
+    Log( llInfo, Format( 'Manifest saved to %s', [ AManifestFile ] ) );
+
+  finally
+    Root.Free;
+  end;
 
 end;
 
