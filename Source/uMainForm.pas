@@ -384,7 +384,7 @@ begin
   FPnlSummary := TPanel.Create( Self );
   FPnlSummary.Parent     := FPnlResults;
   FPnlSummary.Align      := alLeft;
-  FPnlSummary.Width      := FPnlResults.Width div 2;
+  FPnlSummary.Width      := 420;
   FPnlSummary.BevelOuter := bvNone;
   FPnlSummary.Caption    := '';
 
