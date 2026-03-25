@@ -438,17 +438,32 @@ begin
 
   Result := '';
 
+  // Try both the original name and the scope-stripped name
   var FileName := AUnitName + '.pas';
+  var StrippedName := StripScopePrefix( AUnitName );
+  var AltFileName := '';
+
+  if StrippedName <> AUnitName then
+    AltFileName := StrippedName + '.pas';
 
   for var SearchDir in ASearchPaths do
   begin
+    // Try primary filename (e.g. Vcl.StyledTaskDialog.pas)
     var FullPath := TPath.Combine( SearchDir, FileName );
 
     if FileExists( FullPath ) then
       Exit( FullPath );
 
-    // Also search the parent directory (handles cases where IDE path
-    // points to a subdirectory like Extras/ but units are in the parent)
+    // Try alternate (scope-stripped) filename (e.g. StyledTaskDialog.pas)
+    if AltFileName <> '' then
+    begin
+      FullPath := TPath.Combine( SearchDir, AltFileName );
+
+      if FileExists( FullPath ) then
+        Exit( FullPath );
+    end;
+
+    // Also search the parent directory
     var ParentDir := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( SearchDir ) ) );
 
     if ( ParentDir <> '' ) and ( ParentDir <> SearchDir ) then
@@ -457,6 +472,14 @@ begin
 
       if FileExists( FullPath ) then
         Exit( FullPath );
+
+      if AltFileName <> '' then
+      begin
+        FullPath := TPath.Combine( ParentDir, AltFileName );
+
+        if FileExists( FullPath ) then
+          Exit( FullPath );
+      end;
     end;
 
     // Also search one level of subdirectories
@@ -471,6 +494,14 @@ begin
 
           if FileExists( FullPath ) then
             Exit( FullPath );
+
+          if AltFileName <> '' then
+          begin
+            FullPath := TPath.Combine( SubDir, AltFileName );
+
+            if FileExists( FullPath ) then
+              Exit( FullPath );
+          end;
         end;
       except
         // Access denied or other I/O error — skip this directory
