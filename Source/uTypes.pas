@@ -120,6 +120,7 @@ type
     Manifest            : TManifest;
     RTLScanAvailable    : Boolean;        // False if RTL scanner could not find Delphi install
     DiscoveredLibraries : TArray<TDiscoveredLibrary>;  // Libraries found by file system scan
+    AutoOwnCodeUnits    : TArray<string>;  // Units found in sibling/project dirs (auto own-code)
     ErrorMessage        : string;         // Populated only on failure
   end;
 

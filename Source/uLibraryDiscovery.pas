@@ -49,8 +49,9 @@ type
     function Discover( const AUnclassifiedUnits: TArray<string>;
       const ASearchPaths: TArray<string>;
       const AProjectDir: string;
-      const ADelphiPath: string = '';
-      const APlatform: string = '' ): TArray<TDiscoveredLibrary>;
+      const ADelphiPath: string;
+      const APlatform: string;
+      out AAutoOwnCodeUnits: TArray<string> ): TArray<TDiscoveredLibrary>;
   end;
 
 implementation
@@ -89,10 +90,14 @@ function TLibraryDiscovery.Discover( const AUnclassifiedUnits: TArray<string>;
   const ASearchPaths: TArray<string>;
   const AProjectDir: string;
   const ADelphiPath: string;
-  const APlatform: string ): TArray<TDiscoveredLibrary>;
+  const APlatform: string;
+  out AAutoOwnCodeUnits: TArray<string> ): TArray<TDiscoveredLibrary>;
 begin
 
   FFoundDirs.Clear;
+  AAutoOwnCodeUnits := nil;
+
+  var OwnCodeList := TList<string>.Create;
 
   // Build extended search paths: project search paths + common root dirs
   var AllPaths := TList<string>.Create;
@@ -169,11 +174,15 @@ begin
             if UnitToFile.ContainsKey( FirstUnit ) then
               ActualDir := ExcludeTrailingPathDelimiter( ExtractFilePath( UnitToFile[ FirstUnit ] ) );
 
-            // Skip if this is the project's own directory
+            // Skip if this is the project's own directory — mark units as own code
             if SameText( ExcludeTrailingPathDelimiter( ActualDir ),
                          ExcludeTrailingPathDelimiter( AProjectDir ) ) then
             begin
               Log( llInfo, Format( 'Skipping project directory: %s', [ ActualDir ] ) );
+
+              for var SkippedUnit in DirPair.Value do
+                OwnCodeList.Add( SkippedUnit );
+
               Continue;
             end;
 
@@ -183,7 +192,12 @@ begin
 
             if ( ProjectParent <> '' ) and SameText( ProjectParent, DirParent ) then
             begin
-              Log( llInfo, Format( 'Skipping sibling project directory: %s', [ ActualDir ] ) );
+              Log( llInfo, Format( 'Auto-marking %d units from sibling directory as own code: %s',
+                [ DirPair.Value.Count, ActualDir ] ) );
+
+              for var SkippedUnit in DirPair.Value do
+                OwnCodeList.Add( SkippedUnit );
+
               Continue;
             end;
 
@@ -264,6 +278,13 @@ begin
   finally
     AllPaths.Free;
   end;
+
+  AAutoOwnCodeUnits := OwnCodeList.ToArray;
+
+  if OwnCodeList.Count > 0 then
+    Log( llInfo, Format( 'Auto-detected %d own-code units from sibling directories', [ OwnCodeList.Count ] ) );
+
+  OwnCodeList.Free;
 
 end;
 

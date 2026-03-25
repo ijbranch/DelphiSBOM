@@ -14,6 +14,7 @@
 | **Generate SBOM** | Runs the full pipeline: parse, classify, discover, generate |
 | **Validate Manifest** | Checks `components.json` for schema errors without generating an SBOM |
 | **Save Libraries & Regenerate SBOM** | Saves discovered libraries to `components.json` and re-runs the pipeline |
+| **Mark Unresolved as Own Code** | Saves remaining unresolved units to `own_code_units` in `components.json` and re-runs |
 
 ### Results Panel (Left)
 
@@ -37,7 +38,11 @@ Shows libraries discovered automatically by scanning the file system:
 - **Prefix** — computed common prefix for unit matching
 - **Units** — list of units belonging to this library
 
-Unresolved units (no `.pas` file found on disk) are listed at the bottom.
+Units found in sibling project directories (same parent as the project) are
+automatically marked as own code and saved to `components.json`.
+
+Any remaining unresolved units are listed at the bottom. These can be
+manually marked as own code using the **Mark Unresolved as Own Code** button.
 
 ### Log Panel
 
@@ -117,3 +122,4 @@ Report issues at the project repository on Codeberg.
 
 ---
 *Version: 1.0 – 26 March 2026 08:30*
+*Version: 1.1 – 26 March 2026 11:00*

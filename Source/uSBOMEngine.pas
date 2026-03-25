@@ -128,19 +128,40 @@ begin
           if CU.Classification = ucUnclassified then
             UnclassifiedNames.Add( CU.OriginalName );
 
+        var AutoOwn: TArray<string>;
+
         Result.DiscoveredLibraries := Discovery.Discover(
           UnclassifiedNames.ToArray,
           Result.ProjectInfo.SearchPaths,
           Result.ProjectInfo.ProjectDir,
           AOptions.DelphiPath,
-          Result.ProjectInfo.TargetPlatform
+          Result.ProjectInfo.TargetPlatform,
+          AutoOwn
         );
+
+        Result.AutoOwnCodeUnits := AutoOwn;
       finally
         UnclassifiedNames.Free;
       end;
 
       if Length( Result.DiscoveredLibraries ) > 0 then
         Log( llInfo, Format( 'Discovered %d libraries for unclassified units', [ Length( Result.DiscoveredLibraries ) ] ) );
+
+      // Auto-save own-code units found in sibling directories
+      if Length( Result.AutoOwnCodeUnits ) > 0 then
+      begin
+        var ManifestPath := AOptions.ManifestFile;
+
+        if ManifestPath = '' then
+          ManifestPath := TPath.Combine( Result.ProjectInfo.ProjectDir, 'components.json' );
+
+        var Saver := TManifestLoader.Create( FLog );
+        try
+          Saver.SaveOwnCodeUnits( ManifestPath, Result.AutoOwnCodeUnits );
+        finally
+          Saver.Free;
+        end;
+      end;
     finally
       Discovery.Free;
     end;

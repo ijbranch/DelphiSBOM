@@ -32,7 +32,8 @@ Place `components.json` in the same directory as your `.dpr` / `.dproj` file.
       "units_exact": ["SpecificUnitName"],
       "notes": "Optional notes"
     }
-  ]
+  ],
+  "own_code_units": ["MySharedUnit", "AnotherProjectUnit"]
 }
 ```
 
@@ -45,6 +46,7 @@ Place `components.json` in the same directory as your `.dpr` / `.dproj` file.
 | `schema_version` | Yes | Must be `"1.0"` |
 | `last_updated` | Yes | ISO date (`YYYY-MM-DD`) of last manifest update |
 | `supplier` | Yes | Object with `name` (required) and `url` (optional) identifying the application's publisher |
+| `own_code_units` | No | Array of unit names that are your own project code (not third-party). These are classified as own code and excluded from the SBOM components list. Auto-populated by the app for units in sibling project directories, and via the "Mark Unresolved as Own Code" button |
 
 ### Component Fields
 

@@ -26,3 +26,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Project directories (containing .dpr/.dproj) excluded from library discovery
 - Unit prefix computed from all .pas files in directory, not just unclassified ones
 - Copyright symbol (©) and en-dash (–) handled in vendor extraction
+- Own-code detection from .dpr `in` file references
+- Auto-detection of own code from sibling project directories
+- "Mark Unresolved as Own Code" button for remaining unresolved units
+- `own_code_units` array in components.json for persistent own-code tracking
+- Delphi IDE environment variables resolved for library path discovery
+- Horizontal splitter between results and log panels
+- Busy cursor during SBOM generation
+- Vendor name parenthesis cleanup (e.g. Ethea S.r.l)
+- Generic directory names use parent for display (e.g. "EurekaLog 7 - Source")
+- Scoped and unscoped .pas filenames searched (finds Vcl.StyledTaskDialog.pas)

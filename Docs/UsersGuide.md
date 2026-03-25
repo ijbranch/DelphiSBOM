@@ -117,7 +117,11 @@ DISCOVERED LIBRARIES
     gllStringUtils
 ```
 
-Any units whose `.pas` files could not be found appear under
+Units found in sibling directories (directories sharing the same parent as
+your project, such as a shared code folder) are automatically marked as own
+code and saved to `components.json`. You don't need to do anything for these.
+
+Any remaining units whose `.pas` files could not be found appear under
 **UNRESOLVED UNITS** at the bottom of the panel.
 
 ### Step 4: Save and Regenerate
@@ -134,6 +138,13 @@ This does two things:
 
 On the second run, the previously unclassified units now match their libraries
 in `components.json` and appear as third-party components in the SBOM.
+
+### Step 4a: Mark Remaining Unresolved Units (if any)
+
+If any units remain in the **UNRESOLVED UNITS** list after saving libraries,
+these are typically your own shared project files. Click
+**Mark Unresolved as Own Code** to save them to the `own_code_units` array
+in `components.json`. The SBOM will regenerate automatically.
 
 ### Step 5: Done
 
@@ -365,3 +376,4 @@ The following capabilities are planned for future versions:
 
 ---
 *Version: 1.1 – 26 March 2026 09:45*
+*Version: 1.2 – 26 March 2026 11:00*
