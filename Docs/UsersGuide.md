@@ -29,12 +29,13 @@ DelphiSBOM is a standalone Windows application. No installer is required.
 2. Select your target platform (Win32 or Win64)
 3. Build (Ctrl+F9) or Run (F9)
 
-No third-party libraries are required.
+No mandatory third-party libraries are required for core functionality.
 
-**Optional:** For syntax-highlighted JSON viewing, add [SynEdit](https://github.com/SynEdit/SynEdit)
-to your Delphi library path and add `USE_SYNEDIT` to the project's conditional
+**Optional dependency:** For syntax-highlighted JSON viewing, add
+[SynEdit](https://github.com/SynEdit/SynEdit) (MPL-1.1 licence) to your
+Delphi library path and add `USE_SYNEDIT` to the project's conditional
 defines (Project > Options > Delphi Compiler > Conditional Defines). Without
-this, the SBOM viewer uses a plain text display.
+SynEdit, the SBOM viewer uses a plain text display.
 
 ## First Run
 

@@ -75,12 +75,14 @@ You can also edit it manually for fine-tuning. See
 
 - Windows (Win32 or Win64)
 - A Delphi installation (for RTL unit auto-detection)
-- No runtime dependencies — single standalone `.exe`
+- No mandatory runtime dependencies — single standalone `.exe`
+- Optional: [SynEdit](https://github.com/SynEdit/SynEdit) for syntax-highlighted SBOM viewing
 
 ## Building from Source
 
-Open `Source/DelphiSBOM.dproj` in Delphi and compile. No third-party
-libraries are required — the project uses only the Delphi RTL.
+Open `Source/DelphiSBOM.dproj` in Delphi and compile. The project compiles
+with only the Delphi RTL — no third-party libraries are required for the
+core functionality.
 
 **Minimum compiler version:** Delphi 10.3 Rio (uses inline variable
 declarations and other 10.3+ language features). Tested and developed
