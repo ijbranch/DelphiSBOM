@@ -13,7 +13,7 @@
 
 ## Next Action
 
-Test the library editor end-to-end: generate SBOM against a project with unclassified units, click "Edit Libraries...", modify metadata, click OK, verify discovery memo updates, then Save & Regenerate. Also: synchronise .dproj Win32/Win64 version numbers in IDE.
+Test the library editor end-to-end: generate SBOM against a project with unclassified units, click "Edit...", modify metadata, click OK, verify discovery memo updates, then Save & Regenerate. Also: synchronise .dproj Win32/Win64 version numbers in IDE. Consider Phase 2 items: report writer, cancel button, CLI mode, DUnitX tests, v1.0.0 release tag.
 
 ## Blockers / Questions for Ian
 
