@@ -258,7 +258,83 @@ begin
             Libraries.Add( Lib );
           end;
 
-          Result := Libraries.ToArray;
+          // Post-process: merge libraries whose directories are nested
+          var Merged := TList<TDiscoveredLibrary>.Create;
+          try
+            var MergedFlags := TList<Boolean>.Create;
+            try
+              for var X := 0 to Libraries.Count - 1 do
+                MergedFlags.Add( False );
+
+              for var X := 0 to Libraries.Count - 1 do
+              begin
+                if MergedFlags[ X ] then Continue;
+
+                var Current := Libraries[ X ];
+
+                // Check if any other library is a subdirectory of this one or vice versa
+                for var Y := X + 1 to Libraries.Count - 1 do
+                begin
+                  if MergedFlags[ Y ] then Continue;
+
+                  var Other := Libraries[ Y ];
+                  var CurrentDir := LowerCase( IncludeTrailingPathDelimiter( Current.Directory ) );
+                  var OtherDir   := LowerCase( IncludeTrailingPathDelimiter( Other.Directory ) );
+
+                  if OtherDir.StartsWith( CurrentDir ) or CurrentDir.StartsWith( OtherDir ) then
+                  begin
+                    // Merge Other into Current
+                    var CombinedUnits := TList<string>.Create;
+                    try
+                      for var CU in Current.Units do
+                        CombinedUnits.Add( CU );
+
+                      for var CU in Other.Units do
+                        CombinedUnits.Add( CU );
+
+                      Current.Units := CombinedUnits.ToArray;
+                    finally
+                      CombinedUnits.Free;
+                    end;
+
+                    // Use the parent directory as the library directory and name
+                    if CurrentDir.StartsWith( OtherDir ) then
+                    begin
+                      Current.Directory := Other.Directory;
+                      Current.Name      := Other.Name;
+                    end;
+
+                    // Keep the richer metadata
+                    if ( Current.Vendor = '' ) and ( Other.Vendor <> '' ) then
+                      Current.Vendor := Other.Vendor;
+
+                    if ( Current.Licence = '' ) and ( Other.Licence <> '' ) then
+                      Current.Licence := Other.Licence;
+
+                    if ( Current.Version = '' ) and ( Other.Version <> '' ) then
+                      Current.Version := Other.Version;
+
+                    // Recompute prefix
+                    Current.SuggestedPrefix := ComputePrefix( Current.Units );
+
+                    MergedFlags[ Y ] := True;
+
+                    Log( llInfo, Format( 'Merged library "%s" into "%s"', [ Other.Name, Current.Name ] ) );
+                  end;
+                end;
+
+                Merged.Add( Current );
+              end;
+
+            finally
+              MergedFlags.Free;
+            end;
+
+            Result := Merged.ToArray;
+          finally
+            Merged.Free;
+          end;
+
         finally
           Libraries.Free;
         end;
@@ -756,7 +832,14 @@ begin
     begin
       Result := ExtractVendorFromFile( PasFile );
 
-      if Result <> '' then Exit;
+      if Result <> '' then
+      begin
+        // Clean up common prefixes
+        if Result.StartsWith( 'by ', True ) then
+          Result := Trim( Copy( Result, 4, Length( Result ) ) );
+
+        Exit;
+      end;
     end;
   except
     // Access denied

@@ -102,8 +102,11 @@ begin
       Continue;
     end;
 
-    // Priority 2a: Exact manifest match
-    var CompIdx := MatchExact( StrippedName );
+    // Priority 2a: Exact manifest match (try both original and stripped names)
+    var CompIdx := MatchExact( OriginalName );
+
+    if CompIdx < 0 then
+      CompIdx := MatchExact( StrippedName );
 
     if CompIdx >= 0 then
     begin
@@ -112,8 +115,11 @@ begin
       Continue;
     end;
 
-    // Priority 2b: Prefix manifest match
-    CompIdx := MatchPrefix( StrippedName );
+    // Priority 2b: Prefix manifest match (try both names)
+    CompIdx := MatchPrefix( OriginalName );
+
+    if CompIdx < 0 then
+      CompIdx := MatchPrefix( StrippedName );
 
     if CompIdx >= 0 then
     begin

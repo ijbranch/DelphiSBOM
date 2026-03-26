@@ -214,7 +214,10 @@ begin
         end;
 
         // PURL
-        CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s@%s', [ Entry.Name, Entry.Version ] ) );
+        if Entry.Version <> '' then
+          CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s@%s', [ Entry.Name, Entry.Version ] ) )
+        else
+          CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s', [ Entry.Name ] ) );
 
         Components.AddElement( CompObj );
       end;
