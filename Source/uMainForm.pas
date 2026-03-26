@@ -498,34 +498,59 @@ begin
   LblDiscovery.Caption    := '  Discovered Libraries / Unclassified Units';
   LblDiscovery.Font.Style := [ fsBold ];
 
-  // Button panel at bottom of discovery area
-  var PnlDiscButtons := TPanel.Create( Self );
-  PnlDiscButtons.Parent     := FPnlDiscovery;
-  PnlDiscButtons.Align      := alBottom;
-  PnlDiscButtons.Height     := 30;
-  PnlDiscButtons.BevelOuter := bvNone;
-  PnlDiscButtons.Caption    := '';
+  // Button grid at bottom of discovery area — 3 equal columns, auto-sized
+  var GridButtons := TGridPanel.Create( Self );
+  GridButtons.Parent     := FPnlDiscovery;
+  GridButtons.Align      := alBottom;
+  GridButtons.Height     := 30;
+  GridButtons.BevelOuter := bvNone;
+  GridButtons.Caption    := '';
+  GridButtons.ColumnCollection.BeginUpdate;
+  try
+    GridButtons.ColumnCollection.Clear;
+
+    var Col1 := GridButtons.ColumnCollection.Add;
+    Col1.SizeStyle := ssPercent;
+    Col1.Value     := 33.33;
+
+    var Col2 := GridButtons.ColumnCollection.Add;
+    Col2.SizeStyle := ssPercent;
+    Col2.Value     := 33.34;
+
+    var Col3 := GridButtons.ColumnCollection.Add;
+    Col3.SizeStyle := ssPercent;
+    Col3.Value     := 33.33;
+  finally
+    GridButtons.ColumnCollection.EndUpdate;
+  end;
+  GridButtons.RowCollection.BeginUpdate;
+  try
+    GridButtons.RowCollection.Clear;
+
+    var Row1 := GridButtons.RowCollection.Add;
+    Row1.SizeStyle := ssPercent;
+    Row1.Value     := 100;
+  finally
+    GridButtons.RowCollection.EndUpdate;
+  end;
 
   FBtnSaveRegen := TButton.Create( Self );
-  FBtnSaveRegen.Parent  := PnlDiscButtons;
-  FBtnSaveRegen.Align   := alLeft;
-  FBtnSaveRegen.Width   := 160;
+  FBtnSaveRegen.Parent  := GridButtons;
+  FBtnSaveRegen.Align   := alClient;
   FBtnSaveRegen.Caption := 'Save && Regenerate';
   FBtnSaveRegen.OnClick := BtnSaveRegenClick;
   FBtnSaveRegen.Enabled := False;
 
   FBtnEditLibraries := TButton.Create( Self );
-  FBtnEditLibraries.Parent  := PnlDiscButtons;
-  FBtnEditLibraries.Align   := alLeft;
-  FBtnEditLibraries.Width   := 100;
+  FBtnEditLibraries.Parent  := GridButtons;
+  FBtnEditLibraries.Align   := alClient;
   FBtnEditLibraries.Caption := 'Edit...';
   FBtnEditLibraries.OnClick := BtnEditLibrariesClick;
   FBtnEditLibraries.Enabled := False;
 
   FBtnMarkOwnCode := TButton.Create( Self );
-  FBtnMarkOwnCode.Parent  := PnlDiscButtons;
-  FBtnMarkOwnCode.Align   := alLeft;
-  FBtnMarkOwnCode.Width   := 150;
+  FBtnMarkOwnCode.Parent  := GridButtons;
+  FBtnMarkOwnCode.Align   := alClient;
   FBtnMarkOwnCode.Caption := 'Mark as Own Code';
   FBtnMarkOwnCode.OnClick := BtnMarkOwnCodeClick;
   FBtnMarkOwnCode.Enabled := False;
