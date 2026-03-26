@@ -2,6 +2,21 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-03-27 - CycloneDX 1.5 Compliance Verification
+
+**Problem:** Needed to verify SBOM output remained standards-compliant after
+the audit changes (supplier.url, license.url additions).
+
+**Verification:** Full element-by-element comparison of uSBOMBuilder.pas output
+against the CycloneDX 1.5 JSON schema. All structural elements pass.
+
+**Data fix:** Indy licence in `components.sample.json` changed from
+`"Modified-BSD"` (not a valid SPDX identifier) to `"BSD-3-Clause"`.
+
+**Result:** SBOM output is fully CycloneDX 1.5 compliant.
+
+**Files Modified:** Samples/components.sample.json
+
 ## 2026-03-27 - Second Audit Pass: 5 Additional Fixes
 
 **Problem:** Follow-up audit of post-fix codebase found 3 medium and 2 low issues.
