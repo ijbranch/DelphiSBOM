@@ -1,21 +1,6 @@
 program DelphiSBOM;
 
 uses
-  {$IFDEF EurekaLog}
-  EMemLeaks,
-  EResLeaks,
-  EResourceStrings,
-  EDebugJCL,
-  EDebugExports,
-  EFixSafeCallException,
-  EMapWin32,
-  EAppVCL,
-  EDialogWinAPIMSClassic,
-  EDialogWinAPIEurekaLogDetailed,
-  EDialogWinAPIStepsToReproduce,
-  EBase,
-  ExceptionLog7,
-  {$ENDIF EurekaLog}
   Vcl.Forms,
   uMainForm in 'uMainForm.pas' {MainForm},
   uTypes in 'uTypes.pas',
@@ -39,4 +24,5 @@ begin
   Application.Run;
 
 end.
+
 
