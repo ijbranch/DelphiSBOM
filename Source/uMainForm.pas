@@ -79,6 +79,7 @@ type
     // Action buttons
     FBtnGenerate : TButton;
     FBtnValidate : TButton;
+    FBtnViewSBOM : TButton;
 
     // Results panel
     FPnlResults      : TPanel;
@@ -119,6 +120,7 @@ type
     procedure DisplayDiscoveredLibraries;
     procedure BtnSaveRegenClick( Sender: TObject );
     procedure BtnMarkOwnCodeClick( Sender: TObject );
+    procedure BtnViewSBOMClick( Sender: TObject );
     function GetUnresolvedUnits: TArray<string>;
   public
     procedure SetProcessing( AValue: Boolean );
@@ -339,6 +341,16 @@ begin
   FBtnValidate.Height  := 30;
   FBtnValidate.Caption := 'Validate Manifest';
   FBtnValidate.OnClick := BtnValidateClick;
+
+  FBtnViewSBOM := TButton.Create( Self );
+  FBtnViewSBOM.Parent  := Self;
+  FBtnViewSBOM.Left    := 410;
+  FBtnViewSBOM.Top     := CurrentTop;
+  FBtnViewSBOM.Width   := 120;
+  FBtnViewSBOM.Height  := 30;
+  FBtnViewSBOM.Caption := 'View SBOM File';
+  FBtnViewSBOM.OnClick := BtnViewSBOMClick;
+  FBtnViewSBOM.Enabled := False;
 
   Inc( CurrentTop, 42 );
 
@@ -641,6 +653,7 @@ begin
   FMmoDiscovery.Clear;
   FBtnSaveRegen.Enabled   := False;
   FBtnMarkOwnCode.Enabled := False;
+  FBtnViewSBOM.Enabled    := False;
   FLastResult := AResult;
 
   if ( not AResult.Success ) then
@@ -652,6 +665,8 @@ begin
 
     Exit;
   end;
+
+  FBtnViewSBOM.Enabled := ( AResult.OutputFile <> '' ) and FileExists( AResult.OutputFile );
 
   // Classification summary
   FMmoSummary.Lines.Add( 'Classification Summary' );
@@ -804,6 +819,45 @@ begin
   // Re-run generation
   LogMessage( llInfo, 'Regenerating SBOM with updated manifest...' );
   BtnGenerateClick( Self );
+
+end;
+
+procedure TMainForm.BtnViewSBOMClick( Sender: TObject );
+begin
+
+  if ( FLastResult.OutputFile = '' ) or ( not FileExists( FLastResult.OutputFile ) ) then
+  begin
+    ShowMessage( 'No SBOM file available.' );
+    Exit;
+  end;
+
+  var ViewForm := TForm.Create( Self );
+  try
+    ViewForm.Caption    := 'SBOM - ' + ExtractFileName( FLastResult.OutputFile );
+    ViewForm.Width      := 800;
+    ViewForm.Height     := 600;
+    ViewForm.Position   := poMainFormCenter;
+
+    var Memo := TMemo.Create( ViewForm );
+    Memo.Parent     := ViewForm;
+    Memo.Align      := alClient;
+    Memo.ReadOnly   := True;
+    Memo.ScrollBars := ssBoth;
+    Memo.Font.Name  := 'Consolas';
+    Memo.Font.Size  := 10;
+    Memo.Lines.LoadFromFile( FLastResult.OutputFile, TEncoding.UTF8 );
+
+    var BtnClose := TButton.Create( ViewForm );
+    BtnClose.Parent      := ViewForm;
+    BtnClose.Align       := alBottom;
+    BtnClose.Height      := 35;
+    BtnClose.Caption     := 'Close';
+    BtnClose.ModalResult := mrOK;
+
+    ViewForm.ShowModal;
+  finally
+    ViewForm.Free;
+  end;
 
 end;
 
