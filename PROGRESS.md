@@ -1,7 +1,7 @@
 # DelphiSBOM — Implementation Progress
 
 **Plan document:** `DelphiSBOM_Refined_Plan.md` (v0.6 — Final Draft)
-**Last updated:** 2026-03-26 (Session 3)
+**Last updated:** 2026-03-26 (Session 4)
 
 ---
 
@@ -9,11 +9,11 @@
 
 **Phase:** 1 — MVP Complete. Testing and refinement ongoing.
 **Step:** 10 of 10 — Manual testing
-**Status:** Code audit complete. Six robustness fixes applied. Tested against DelphiSBOM, DBiWorkflow, and DBiAdmin.
+**Status:** MRU feature implemented and compiling. Pending user testing.
 
 ## Next Action
 
-Build and verify after session 3 fixes (PURL encoding, IsValidUnitName tightening, JSON type guard, env var logging, dead code removal). Then consider implementing the editable TStringGrid for discovered library names/metadata. Also: synchronise .dproj Win32/Win64 version builds in IDE.
+Test MRU feature end-to-end: generate SBOM for a project, close/reopen app, verify dropdown populated and settings restored. Then consider implementing the editable TStringGrid for discovered library names/metadata. Also: synchronise .dproj Win32/Win64 version builds in IDE.
 
 ## Blockers / Questions for Ian
 
@@ -69,6 +69,7 @@ Build and verify after session 3 fixes (PURL encoding, IsValidUnitName tightenin
 | 6 | `components.sample.json` with common libraries | DONE | Created in Step 1 |
 | 7 | First tagged release on Codeberg (v1.0.0) | NOT STARTED | |
 | 8 | Editable TStringGrid for discovered library metadata | NOT STARTED | Discussed — user edits Name, Version, Vendor, Licence before saving |
+| 12 | Project MRU dropdown | DONE | TComboBox with INI persistence, per-project settings restored |
 | 9 | Optional SynEdit JSON viewer | DONE | `{$IFDEF USE_SYNEDIT}` with TMemo fallback |
 | 10 | View SBOM File button | DONE | Modal viewer, SynEdit or TMemo |
 | 11 | Help.md and UsersGuide.md | DONE | Comprehensive documentation |
@@ -82,3 +83,4 @@ Build and verify after session 3 fixes (PURL encoding, IsValidUnitName tightenin
 | 2026-03-26 | 1 | Plan created, refined through 6 iterations (v0.1 → v0.6). All 14 design decisions resolved. VCL pivot, threading model, exception handling, registry enumeration, graceful degradation. Progress tracking set up. |
 | 2026-03-26 | 2 | Full MVP implemented. Steps 1-9 complete. All core units built and compiling. Delphi compiler issues resolved (TThread descendants, TProc const mismatch). First test against itself — 3 bugs fixed (UUID, version mapping, VerInfo). Library discovery added (uLibraryDiscovery.pas). Tested against DBiWorkflow — iterative fixes: project dir exclusion, sibling dir detection, IDE env var resolution, .dpk naming, vendor cleanup, scoped unit matching, library merging, own-code auto-detection. Added: View SBOM button, optional SynEdit viewer, Mark Unresolved as Own Code, horizontal splitter, busy cursor. Tested against DBiAdmin — valid SBOM produced. All docs updated (Help.md, UsersGuide.md, SCHEMA.md, CHANGELOG.md, README.md, CLAUDE.md, CYCLONEDX-NOTES.md). Repository public on Codeberg. SynEdit added to shared libraries reference. |
 | 2026-03-26 | 3 | In-depth code audit across all units. Six fixes applied: PURL URL-encoding (uSBOMBuilder), dead FFoundDirs field removed (uLibraryDiscovery), IsValidUnitName tightened for malformed dots (uProjectParser), JSON type guard added (uManifestLoader), unresolved env var paths now logged (uLibraryDiscovery), .eof added to .gitignore. No memory leaks, thread safety issues, or CycloneDX compliance problems found. |
+| 2026-03-26 | 4 | Project MRU feature implemented. New uSettings.pas unit with TMRUManager (INI-based, %APPDATA%\DelphiSBOM\DelphiSBOM.ini). FEdtProject changed from TEdit to TComboBox (csDropDown). MRU saves on successful generation, restores manifest/output/version per project. Max 10 entries, dead entries pruned on load. Clean compile on Win64 Debug. |

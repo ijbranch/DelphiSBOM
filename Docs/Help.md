@@ -6,10 +6,10 @@
 
 | Control | Purpose |
 |---------|---------|
-| **Project File** | Path to your Delphi `.dpr` or `.dproj` file. Click Browse to select |
+| **Project File** | Path to your Delphi `.dpr` or `.dproj` file. Click Browse to select, or choose a recent project from the dropdown |
 | **Manifest** | Path to `components.json`. Auto-populated when a project is selected |
 | **Output Dir** | Directory where the SBOM `.cdx.json` file will be written. Defaults to the project directory |
-| **Delphi Path** | Path to your Delphi installation. Auto-detected from the Windows registry on startup |
+| **Delphi Path** | Path to your Delphi installation. Auto-detected from the Windows registry (`HKCU\Software\Embarcadero\BDS`) on startup |
 | **Version Override** | Optional. If set, overrides the project version read from the `.dproj` file |
 | **Generate SBOM** | Runs the full pipeline: parse, classify, discover, generate |
 | **Validate Manifest** | Checks `components.json` for schema errors without generating an SBOM |
@@ -57,7 +57,11 @@ Shows timestamped messages during processing:
 
 ### "Delphi installation not found"
 
-The app could not find a Delphi installation in the Windows registry. This means RTL units cannot be classified and will appear as unclassified.
+The app could not find a Delphi installation in the Windows registry. On
+startup, DelphiSBOM reads `HKEY_CURRENT_USER\Software\Embarcadero\BDS` to
+find installed Delphi versions and selects the highest. This is a **read-only**
+registry access — DelphiSBOM never writes to the registry. If no BDS keys
+exist, RTL units cannot be classified and will appear as unclassified.
 
 **Fix:** Click Browse next to the Delphi Path field and navigate to your Delphi installation directory (e.g. `C:\Program Files (x86)\Embarcadero\Studio\37.0` for Delphi 13). DelphiSBOM requires Delphi 10.3 Rio or later to build, but can scan RTL units from any Delphi installation.
 
@@ -94,15 +98,44 @@ The licence detection scans for `LICENSE`, `LICENCE`, or `COPYING` files in the 
 
 If your library uses a non-standard licence file name or format, the licence field will be empty. You can edit `components.json` manually to add the licence.
 
-## File Formats
+## Files Read and Written
+
+DelphiSBOM never modifies your project source files (`.dpr`, `.dproj`, `.pas`).
 
 ### Output: `<ProjectName>.cdx.json`
 
-A CycloneDX 1.5 JSON file conforming to the specification at https://cyclonedx.org/docs/1.5/json/. This is the SBOM you submit for compliance purposes.
+The generated CycloneDX 1.5 SBOM. This is the file you submit for compliance
+purposes. Written to the output directory (defaults to the project directory).
+Conforms to the specification at https://cyclonedx.org/docs/1.5/json/.
 
 ### Input/Output: `components.json`
 
-A JSON manifest describing your third-party libraries. See `Docs/SCHEMA.md` for the complete field reference.
+A JSON manifest in your project directory describing third-party libraries and
+own-code units. Created automatically on first run; updated when you click
+"Save Libraries & Regenerate SBOM" or "Mark Unresolved as Own Code". See
+`Docs/SCHEMA.md` for the complete field reference.
+
+### Application Settings: `DelphiSBOM.ini`
+
+Stored at `%APPDATA%\DelphiSBOM\DelphiSBOM.ini`. Contains:
+
+- **MRU list** — up to 10 recently used project file paths
+- **Per-project settings** — the manifest path, output directory, and version
+  override last used for each project
+
+Created on first successful SBOM generation. You can safely delete this file
+to reset the MRU list. DelphiSBOM recreates it as needed.
+
+### Windows Registry (Read-Only)
+
+DelphiSBOM reads the following registry keys to auto-detect your Delphi
+installation. It **never writes** to the registry.
+
+| Key | Purpose |
+|-----|---------|
+| `HKCU\Software\Embarcadero\BDS\*` | Enumerates installed Delphi/RAD Studio versions |
+| `HKCU\Software\Embarcadero\BDS\<ver>\RootDir` | Gets the installation path for each version |
+| `HKCU\Software\Embarcadero\BDS\<ver>\Environment Variables` | Reads IDE environment variables (e.g. `BDSLIB`) for library path resolution |
 
 ### RTL Unit Detection
 
@@ -112,6 +145,16 @@ RTL units are detected by scanning `.dcu` files in:
 ```
 
 Where `<Platform>` is read from the `.dproj` target platform (e.g. `Win32`, `Win64`).
+
+## Recent Projects (MRU)
+
+The Project File field is a dropdown that remembers your most recent projects
+(up to 10). Select a project from the dropdown to load it along with its
+associated manifest path, output directory, and version override from your
+last session.
+
+Projects that no longer exist on disk are automatically removed from the list.
+The MRU list updates each time you successfully generate an SBOM.
 
 ## Keyboard Shortcuts
 
@@ -125,3 +168,4 @@ Report issues at the project repository on Codeberg.
 *Version: 1.0 – 26 March 2026 08:30*
 *Version: 1.1 – 26 March 2026 11:00*
 *Version: 1.2 – 26 March 2026 12:00*
+*Version: 1.3 – 26 March 2026 — MRU feature*

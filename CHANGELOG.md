@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- Project MRU (Most Recently Used) dropdown — recent projects available from a combo box,
+  with per-project manifest, output dir, and version override restored automatically
+- Settings persisted to `%APPDATA%\DelphiSBOM\DelphiSBOM.ini` (INI format, max 10 entries)
+- New unit `uSettings.pas` — `TMRUManager` class for MRU persistence
 - Complete MVP: VCL application generating CycloneDX 1.5 JSON SBOMs from Delphi projects
 - Project parser: extracts unit list from `.dpr`, version/platform/search paths from `.dproj`
 - RTL scanner: auto-detects Delphi installation from registry, scans `.dcu` files

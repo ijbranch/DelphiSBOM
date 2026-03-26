@@ -12,5 +12,6 @@ object MainForm: TMainForm
   Font.Style = []
   Position = poScreenCenter
   OnCreate = FormCreate
+  OnDestroy = FormDestroy
   TextHeight = 15
 end

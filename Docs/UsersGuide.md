@@ -41,18 +41,26 @@ SynEdit, the SBOM viewer uses a plain text display.
 
 When you launch DelphiSBOM for the first time:
 
-1. The **Delphi Path** field auto-populates from the Windows registry. If you
-   have multiple Delphi versions installed, the highest version is selected.
-   You can change this by clicking Browse.
+1. The **Delphi Path** field auto-populates from the Windows registry
+   (`HKCU\Software\Embarcadero\BDS`). If you have multiple Delphi versions
+   installed, the highest version is selected. You can change this by
+   clicking Browse. This is a **read-only** registry access — DelphiSBOM
+   never writes to the registry.
 
 2. All other fields start empty, waiting for you to select a project.
+
+On subsequent launches, the **Project File** dropdown shows your recently used
+projects (up to 10). Select one to restore all settings (manifest path, output
+directory, version override) from your last session. These settings are stored
+in `%APPDATA%\DelphiSBOM\DelphiSBOM.ini`.
 
 ## Generating Your First SBOM
 
 ### Step 1: Select Your Project
 
 Click **Browse** next to the Project File field and select your application's
-`.dpr` or `.dproj` file.
+`.dpr` or `.dproj` file. Or, if you have used DelphiSBOM before, choose a
+recent project from the dropdown list.
 
 When you select a project:
 - The **Output Dir** automatically sets to the project's directory
@@ -369,6 +377,24 @@ The following capabilities are planned for future versions:
 - **Registry upload** — direct integration with Dependency-Track or other platforms
 - **SBOM diffing** — compare two SBOMs to see what changed between versions
 
+## Files and Privacy
+
+DelphiSBOM is a local-only tool. It makes no network connections and sends
+no telemetry or data externally.
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `<Project>.cdx.json` | Output directory | The generated CycloneDX 1.5 SBOM |
+| `components.json` | Project directory | Third-party library manifest (auto-created, updated on Save) |
+| `DelphiSBOM.ini` | `%APPDATA%\DelphiSBOM\` | MRU project list and per-project settings. Safe to delete |
+
+**Registry access** is read-only: `HKCU\Software\Embarcadero\BDS` is read to
+detect Delphi installations and IDE environment variables. DelphiSBOM never
+writes to the Windows Registry.
+
+**Your source files** (`.dpr`, `.dproj`, `.pas`, `.dfm`) are read but never
+modified.
+
 ## Glossary
 
 | Term | Definition |
@@ -390,3 +416,4 @@ The following capabilities are planned for future versions:
 *Version: 1.1 – 26 March 2026 09:45*
 *Version: 1.2 – 26 March 2026 11:00*
 *Version: 1.3 – 26 March 2026 12:00*
+*Version: 1.4 – 26 March 2026 — MRU feature*

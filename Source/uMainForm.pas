@@ -13,7 +13,7 @@ uses
   Winapi.Windows, Winapi.Messages,
   System.SysUtils, System.Classes,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.FileCtrl,
-  uTypes;
+  uTypes, uSettings;
 
 type
   TMainForm = class;
@@ -59,10 +59,11 @@ type
 
   TMainForm = class( TForm )
     procedure FormCreate( Sender: TObject );
+    procedure FormDestroy( Sender: TObject );
   private
     // Input controls
     FLblProject    : TLabel;
-    FEdtProject    : TEdit;
+    FEdtProject    : TComboBox;
     FBtnProject    : TButton;
     FLblManifest   : TLabel;
     FEdtManifest   : TEdit;
@@ -101,11 +102,17 @@ type
     FProcessing        : Boolean;
     FLastResult        : TSBOMResult;
     FDiscoveredLibraries : TArray<TDiscoveredLibrary>;
+    FMRUManager        : TMRUManager;
 
     procedure CreateControls;
     procedure CreateInputRow( var ATop: Integer; const ACaption: string;
       out ALabel: TLabel; out AEdit: TEdit; out AButton: TButton;
       AOnClick: TNotifyEvent );
+
+    procedure LoadMRU;
+    procedure SaveToMRU;
+    procedure RestoreProjectSettings( const AProjectFile: string );
+    procedure CboProjectSelect( Sender: TObject );
 
     procedure BtnProjectClick( Sender: TObject );
     procedure BtnManifestClick( Sender: TObject );
@@ -287,6 +294,8 @@ begin
   Caption     := 'DelphiSBOM - CycloneDX SBOM Generator';
   FProcessing := False;
 
+  FMRUManager := TMRUManager.Create;
+
   CreateControls;
 
   try
@@ -296,6 +305,15 @@ begin
       LogMessage( llWarning, 'Could not auto-detect Delphi path: ' + E.Message );
   end;
 
+  LoadMRU;
+
+end;
+
+procedure TMainForm.FormDestroy( Sender: TObject );
+begin
+
+  FMRUManager.Free;
+
 end;
 
 procedure TMainForm.CreateControls;
@@ -303,8 +321,35 @@ begin
 
   var CurrentTop := 12;
 
-  // Input rows
-  CreateInputRow( CurrentTop, 'Project File:', FLblProject, FEdtProject, FBtnProject, BtnProjectClick );
+  // Project file row — TComboBox for MRU dropdown
+  FLblProject := TLabel.Create( Self );
+  FLblProject.Parent  := Self;
+  FLblProject.Left    := 12;
+  FLblProject.Top     := CurrentTop + 4;
+  FLblProject.Width   := 100;
+  FLblProject.Caption := 'Project File:';
+
+  FEdtProject := TComboBox.Create( Self );
+  FEdtProject.Parent  := Self;
+  FEdtProject.Left    := 120;
+  FEdtProject.Top     := CurrentTop;
+  FEdtProject.Width   := ClientWidth - 120 - 90 - 24;
+  FEdtProject.Anchors := [ akLeft, akTop, akRight ];
+  FEdtProject.Style   := csDropDown;
+  FEdtProject.OnSelect := CboProjectSelect;
+
+  FBtnProject := TButton.Create( Self );
+  FBtnProject.Parent  := Self;
+  FBtnProject.Left    := ClientWidth - 90 - 12;
+  FBtnProject.Top     := CurrentTop;
+  FBtnProject.Width   := 90;
+  FBtnProject.Caption := 'Browse...';
+  FBtnProject.Anchors := [ akTop, akRight ];
+  FBtnProject.OnClick := BtnProjectClick;
+
+  Inc( CurrentTop, 30 );
+
+  // Remaining input rows
   CreateInputRow( CurrentTop, 'Manifest:', FLblManifest, FEdtManifest, FBtnManifest, BtnManifestClick );
   CreateInputRow( CurrentTop, 'Output Dir:', FLblOutputDir, FEdtOutputDir, FBtnOutputDir, BtnOutputDirClick );
   CreateInputRow( CurrentTop, 'Delphi Path:', FLblDelphiPath, FEdtDelphiPath, FBtnDelphiPath, BtnDelphiPathClick );
@@ -671,6 +716,9 @@ begin
 
   FBtnViewSBOM.Enabled := ( AResult.OutputFile <> '' ) and FileExists( AResult.OutputFile );
 
+  // Save to MRU on successful generation
+  SaveToMRU;
+
   // Classification summary
   FMmoSummary.Lines.Add( 'Classification Summary' );
   FMmoSummary.Lines.Add( '======================' );
@@ -939,6 +987,92 @@ begin
   end;
 
 end;
+
+// ---------------------------------------------------------------------------
+//  MRU management
+// ---------------------------------------------------------------------------
+
+procedure TMainForm.LoadMRU;
+begin
+
+  try
+    FMRUManager.Load;
+  except
+    on E: Exception do
+    begin
+      LogMessage( llWarning, 'Could not load MRU list: ' + E.Message );
+      Exit;
+    end;
+  end;
+
+  FEdtProject.Items.Clear;
+
+  for var Entry in FMRUManager.GetEntries do
+    FEdtProject.Items.Add( Entry.ProjectFile );
+
+end;
+
+procedure TMainForm.SaveToMRU;
+begin
+
+  var Entry: TMRUEntry;
+  Entry.ProjectFile    := Trim( FEdtProject.Text );
+  Entry.ManifestFile   := Trim( FEdtManifest.Text );
+  Entry.OutputDir      := Trim( FEdtOutputDir.Text );
+  Entry.VersionOverride := Trim( FEdtVersion.Text );
+
+  if Entry.ProjectFile = '' then Exit;
+
+  FMRUManager.AddOrPromote( Entry );
+
+  try
+    FMRUManager.Save;
+  except
+    on E: Exception do
+      LogMessage( llWarning, 'Could not save MRU list: ' + E.Message );
+  end;
+
+  // Refresh dropdown items
+  var CurrentText := FEdtProject.Text;
+  FEdtProject.Items.Clear;
+
+  for var MRUEntry in FMRUManager.GetEntries do
+    FEdtProject.Items.Add( MRUEntry.ProjectFile );
+
+  FEdtProject.Text := CurrentText;
+
+end;
+
+procedure TMainForm.RestoreProjectSettings( const AProjectFile: string );
+begin
+
+  var Entry := FMRUManager.FindEntry( AProjectFile );
+
+  if Entry.ProjectFile = '' then Exit;
+
+  if Entry.ManifestFile <> '' then
+    FEdtManifest.Text := Entry.ManifestFile;
+
+  if Entry.OutputDir <> '' then
+    FEdtOutputDir.Text := Entry.OutputDir;
+
+  FEdtVersion.Text := Entry.VersionOverride;
+
+end;
+
+procedure TMainForm.CboProjectSelect( Sender: TObject );
+begin
+
+  if FEdtProject.ItemIndex < 0 then Exit;
+
+  AutoPopulateDefaults;
+  RestoreProjectSettings( FEdtProject.Text );
+
+end;
+
+// ---------------------------------------------------------------------------
+//  Defaults and detection
+// ---------------------------------------------------------------------------
 
 procedure TMainForm.AutoPopulateDefaults;
 begin

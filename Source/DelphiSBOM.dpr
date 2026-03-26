@@ -25,7 +25,8 @@ uses
   uUnitClassifier in 'uUnitClassifier.pas',
   uSBOMBuilder in 'uSBOMBuilder.pas',
   uSBOMEngine in 'uSBOMEngine.pas',
-  uLibraryDiscovery in 'uLibraryDiscovery.pas';
+  uLibraryDiscovery in 'uLibraryDiscovery.pas',
+  uSettings in 'uSettings.pas';
 
 {$R *.res}
 

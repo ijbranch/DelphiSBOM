@@ -41,7 +41,7 @@ and describe the partial state in the Next Action line.
 
 ```
   uMainForm  →  uSBOMEngine  →  uProjectParser
-                              →  uRTLScanner
+             →  uSettings       →  uRTLScanner
                               →  uManifestLoader
                               →  uUnitClassifier
                               →  uSBOMBuilder
@@ -49,6 +49,8 @@ and describe the partial state in the Next Action line.
 
 - **`uSBOMEngine`** is the UI-independent pipeline orchestrator. It has zero
   VCL/form dependencies and accepts a `TProc<string>` logging callback.
+- **`uSettings`** manages MRU persistence to `%APPDATA%\DelphiSBOM\DelphiSBOM.ini`.
+  No VCL dependencies.
 - **`uMainForm`** handles all UI concerns. It calls `uSBOMEngine` via
   `TTask.Run` and marshals results back via `TThread.Queue`.
 - All other units are pure logic — no UI coupling.

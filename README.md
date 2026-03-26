@@ -51,7 +51,8 @@ that have no awareness of the Delphi ecosystem.
 
 ## Quick Start
 
-1. Run DelphiSBOM and browse to your `.dpr` or `.dproj` file
+1. Run DelphiSBOM and browse to your `.dpr` or `.dproj` file (or select a
+   recent project from the dropdown)
 2. Click **Generate SBOM**
 3. Review the results — discovered third-party libraries are shown with
    auto-detected names, vendors, and licences
@@ -70,6 +71,31 @@ and updated when you confirm discovered libraries.
 You can also edit it manually for fine-tuning. See
 `Samples/components.sample.json` for a fully commented example, and
 `Docs/SCHEMA.md` for the complete schema reference.
+
+## Files Read and Written
+
+DelphiSBOM is a read-only tool with respect to your project source — it never
+modifies your `.dpr`, `.dproj`, or `.pas` files. The files it does read and
+write are:
+
+### Files Read
+
+| What | Where | Purpose |
+|------|-------|---------|
+| `.dpr` / `.dproj` | Your project directory | Parses unit list, version info, search paths, target platform |
+| `.dcu` files | `<Delphi Install>\lib\<Platform>\release\` | Enumerates RTL/VCL unit names for classification |
+| `components.json` | Your project directory | Reads third-party library definitions and own-code unit lists |
+| Windows Registry | `HKCU\Software\Embarcadero\BDS\*` | **Read-only.** Detects installed Delphi versions and their installation paths. Also reads IDE environment variables for library path resolution |
+
+### Files Written
+
+| What | Where | Purpose |
+|------|-------|---------|
+| `<Project>.cdx.json` | Output directory (defaults to project dir) | The generated CycloneDX 1.5 SBOM — this is the deliverable |
+| `components.json` | Your project directory | Updated when you click "Save Libraries" or "Mark Own Code" to persist discovered libraries and own-code units |
+| `DelphiSBOM.ini` | `%APPDATA%\DelphiSBOM\` | Application settings: MRU project list (up to 10) with per-project manifest path, output directory, and version override. Created on first successful SBOM generation |
+
+DelphiSBOM does **not** write to the Windows Registry.
 
 ## Requirements
 
