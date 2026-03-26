@@ -49,7 +49,8 @@ type
 implementation
 
 uses
-  System.JSON, System.IOUtils, System.DateUtils, System.Generics.Collections;
+  System.JSON, System.IOUtils, System.DateUtils, System.Generics.Collections,
+  System.NetEncoding;
 
 { TSBOMBuilder }
 
@@ -153,7 +154,7 @@ begin
     RTLSupplier.AddPair( 'name', 'Embarcadero Technologies' );
     RTLComp.AddPair( 'supplier', RTLSupplier );
 
-    RTLComp.AddPair( 'purl', Format( 'pkg:delphi/embarcadero-rtl@%s', [ DelphiVer ] ) );
+    RTLComp.AddPair( 'purl', Format( 'pkg:delphi/embarcadero-rtl@%s', [ TNetEncoding.URL.Encode( DelphiVer ) ] ) );
     Components.AddElement( RTLComp );
 
     // Add third-party components (deduplicated by component index)
@@ -214,10 +215,12 @@ begin
         end;
 
         // PURL
+        var EncodedName := TNetEncoding.URL.Encode( Entry.Name );
+
         if Entry.Version <> '' then
-          CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s@%s', [ Entry.Name, Entry.Version ] ) )
+          CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s@%s', [ EncodedName, TNetEncoding.URL.Encode( Entry.Version ) ] ) )
         else
-          CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s', [ Entry.Name ] ) );
+          CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s', [ EncodedName ] ) );
 
         Components.AddElement( CompObj );
       end;

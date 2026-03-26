@@ -18,6 +18,7 @@
 *.stat
 *.skincfg
 *.dsk
+*.eof
 __history/
 __recovery/
 *.~*

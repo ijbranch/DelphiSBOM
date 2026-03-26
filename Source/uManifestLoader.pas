@@ -131,6 +131,7 @@ begin
       try
         for var I := 0 to CompArray.Count - 1 do
         begin
+          if not ( CompArray.Items[ I ] is TJSONObject ) then Continue;
           var CompObj := CompArray.Items[ I ] as TJSONObject;
           var Entry: TComponentEntry;
 

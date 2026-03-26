@@ -22,7 +22,6 @@ type
   TLibraryDiscovery = class
   private
     FLog: TProc<TLogLevel, string>;
-    FFoundDirs: TDictionary<string, string>;  // directory → first unit found there
 
     function FindUnitFile( const AUnitName: string; const ASearchPaths: TArray<string> ): string;
     function GetCommonRootDirs: TArray<string>;
@@ -67,14 +66,12 @@ begin
 
   inherited Create;
   FLog := ALogProc;
-  FFoundDirs := TDictionary<string, string>.Create;
 
 end;
 
 destructor TLibraryDiscovery.Destroy;
 begin
 
-  FFoundDirs.Free;
   inherited;
 
 end;
@@ -95,7 +92,6 @@ function TLibraryDiscovery.Discover( const AUnclassifiedUnits: TArray<string>;
   out AAutoOwnCodeUnits: TArray<string> ): TArray<TDiscoveredLibrary>;
 begin
 
-  FFoundDirs.Clear;
   AAutoOwnCodeUnits := nil;
 
   var OwnCodeList := TList<string>.Create;
@@ -441,8 +437,13 @@ begin
                   begin
                     var Trimmed := Trim( P );
 
-                    if ( Trimmed <> '' ) and ( not Trimmed.Contains( '$(' ) ) then
-                      Paths.Add( Trimmed );
+                    if Trimmed <> '' then
+                    begin
+                      if Trimmed.Contains( '$(' ) then
+                        Log( llWarning, Format( 'Skipping unresolved library path: %s', [ Trimmed ] ) )
+                      else
+                        Paths.Add( Trimmed );
+                    end;
                   end;
 
                   Result := Paths.ToArray;

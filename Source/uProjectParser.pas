@@ -57,7 +57,7 @@ uses
 function IsValidUnitName( const AName: string ): Boolean;
 begin
 
-  Result := AName.Length > 0;
+  Result := ( AName.Length > 0 ) and ( not AName.StartsWith( '.' ) ) and ( not AName.EndsWith( '.' ) ) and ( not AName.Contains( '..' ) );
 
   if Result then
     for var Ch in AName do

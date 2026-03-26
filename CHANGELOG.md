@@ -20,6 +20,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Delphi version mapping (MSBuild ProjectVersion → product version)
 - Repository documentation: README, CLAUDE.md, SCHEMA.md, CYCLONEDX-NOTES.md
 
+### Changed
+- PURL name and version segments now URL-encoded per RFC 3986
+- Unresolved IDE environment variable paths logged as warnings instead of silently skipped
+- `IsValidUnitName` rejects malformed scoped names (leading/trailing dots, consecutive dots)
+- Malformed `components.json` array entries skipped gracefully instead of raising cast errors
+- EurekaLog `.eof` config files added to `.gitignore`
+- Dead `FFoundDirs` field removed from `uLibraryDiscovery`
+
 ### Fixed
 - UUID braces stripped from SBOM serialNumber
 - Project version fallback to VerInfo_Keys when individual elements absent
