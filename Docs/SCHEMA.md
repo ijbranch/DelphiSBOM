@@ -33,7 +33,8 @@ Place `components.json` in the same directory as your `.dpr` / `.dproj` file.
       "notes": "Optional notes"
     }
   ],
-  "own_code_units": ["MySharedUnit", "AnotherProjectUnit"]
+  "own_code_units": ["MySharedUnit", "AnotherProjectUnit"],
+  "own_code_prefixes": ["gll", "mylib"]
 }
 ```
 
@@ -46,7 +47,8 @@ Place `components.json` in the same directory as your `.dpr` / `.dproj` file.
 | `schema_version` | Yes | Must be `"1.0"` |
 | `last_updated` | Yes | ISO date (`YYYY-MM-DD`) of last manifest update |
 | `supplier` | Yes | Object with `name` (required) and `url` (optional) identifying the application's publisher |
-| `own_code_units` | No | Array of unit names that are your own project code (not third-party). These are classified as own code and excluded from the SBOM components list. Auto-populated by the app for units in sibling project directories, and via the "Mark Unresolved as Own Code" button |
+| `own_code_units` | No | Array of unit names that are your own project code (not third-party). These are classified as own code and excluded from the SBOM components list. Auto-populated by the app for units in sibling project directories, and via the "Mark as Own Code" button |
+| `own_code_prefixes` | No | Array of unit name prefixes that classify as own code (case-insensitive). Any unit whose name starts with a listed prefix is treated as own code. Useful for internal shared libraries (e.g. `"gll"` matches `gllFunctions`, `gllDateTimeHelpers`, etc.) |
 
 ### Component Fields
 

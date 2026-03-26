@@ -55,7 +55,8 @@ type
     LastUpdated   : string;
     Supplier      : TSupplierInfo;
     Components    : TArray<TComponentEntry>;
-    OwnCodeUnits  : TArray<string>;  // Units explicitly marked as own code by the user
+    OwnCodeUnits    : TArray<string>;  // Units explicitly marked as own code by the user
+    OwnCodePrefixes : TArray<string>;  // Unit name prefixes that classify as own code (e.g. 'gll')
   end;
 
   /// <summary>

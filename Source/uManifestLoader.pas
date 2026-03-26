@@ -193,6 +193,19 @@ begin
       Log( llInfo, Format( 'Loaded %d own-code unit exclusions', [ Length( Result.OwnCodeUnits ) ] ) );
     end;
 
+    // Load own_code_prefixes array
+    var OwnPrefixArray: TJSONArray;
+
+    if Root.TryGetValue<TJSONArray>( 'own_code_prefixes', OwnPrefixArray ) then
+    begin
+      SetLength( Result.OwnCodePrefixes, OwnPrefixArray.Count );
+
+      for var I := 0 to OwnPrefixArray.Count - 1 do
+        Result.OwnCodePrefixes[ I ] := OwnPrefixArray.Items[ I ].Value;
+
+      Log( llInfo, Format( 'Loaded %d own-code prefix rules', [ Length( Result.OwnCodePrefixes ) ] ) );
+    end;
+
   finally
     JsonVal.Free;
   end;

@@ -189,6 +189,13 @@ begin
     if SameText( AUnitName, ManifestOwn ) then
       Exit( True );
 
+  // Check own-code prefix rules from components.json
+  var LowerName := LowerCase( AUnitName );
+
+  for var Pfx in FManifest.OwnCodePrefixes do
+    if LowerName.StartsWith( LowerCase( Pfx ) ) then
+      Exit( True );
+
   Result := False;
 
 end;

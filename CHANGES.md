@@ -2,6 +2,28 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-03-27 - Own-Code Prefix Matching
+
+**Problem:** Shared internal libraries (e.g. GITLAKLib with `gll*` units)
+had to have each unit listed individually in `own_code_units`. No way to
+classify an entire prefix as own code.
+
+**Changes Made:**
+1. `uTypes.pas` — added `OwnCodePrefixes: TArray<string>` to `TManifest`
+2. `uManifestLoader.pas` — loads `own_code_prefixes` array from components.json
+3. `uUnitClassifier.pas` — `IsOwnCode` now checks prefix matches after exact
+   matches (case-insensitive)
+
+**Usage:** Add to components.json:
+```json
+"own_code_prefixes": ["gll"]
+```
+All `gll*` units classify as own code automatically across all projects.
+
+**Result:** Clean compile on Win64 Debug.
+
+**Files Modified:** uTypes.pas, uManifestLoader.pas, uUnitClassifier.pas
+
 ## 2026-03-27 - DX.Comply Evidence Bridge
 
 **Problem:** DX.Comply (by Olaf Monien) generates SBOMs from MAP file analysis
