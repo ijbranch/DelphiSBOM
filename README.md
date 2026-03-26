@@ -86,6 +86,9 @@ libraries are required — the project uses only the Delphi RTL.
 declarations and other 10.3+ language features). Tested and developed
 on Delphi 13 Florence.
 
+**Optional:** Add [SynEdit](https://github.com/SynEdit/SynEdit) and define
+`USE_SYNEDIT` for syntax-highlighted JSON viewing in the SBOM viewer.
+
 ## Licence
 
 MIT — see [LICENCE](LICENCE).

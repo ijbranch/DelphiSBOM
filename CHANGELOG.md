@@ -36,3 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Vendor name parenthesis cleanup (e.g. Ethea S.r.l)
 - Generic directory names use parent for display (e.g. "EurekaLog 7 - Source")
 - Scoped and unscoped .pas filenames searched (finds Vcl.StyledTaskDialog.pas)
+- View SBOM File button — inspect generated JSON in a read-only viewer
+- Optional SynEdit integration (USE_SYNEDIT) for syntax-highlighted JSON viewing
+- Smart library naming from .dpk package files (StyledComponents, EurekaLogCore)
+- Nested library directory merging (EurekaLog Source + Extras → single entry)
+- Scoped unit names matched against manifest exact/prefix entries
+- "by " prefix stripped from vendor names
+- Empty version no longer produces trailing @ in PURL

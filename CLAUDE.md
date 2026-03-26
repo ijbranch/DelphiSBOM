@@ -25,6 +25,9 @@ and describe the partial state in the Next Action line.
 - **Delphi 10.3 Rio or later** (minimum), Win32/Win64, VCL application. Developed and tested on Delphi 13 Florence
 - **No third-party dependencies** — the project must compile with a clean
   Delphi installation and nothing else
+- **Optional:** SynEdit for syntax-highlighted SBOM viewer. Guarded by
+  `USE_SYNEDIT` conditional define. All SynEdit-dependent code must be inside
+  `{$IFDEF USE_SYNEDIT}` blocks with a `TMemo` fallback
 - Allowed RTL units: `System.JSON`, `Xml.XMLDoc`, `Xml.XMLIntf`,
   `System.Win.Registry`, `System.Threading`, and standard RTL/VCL units
 - After any code edit to `.pas`, `.dfm`, or `.dproj` files, prompt the user

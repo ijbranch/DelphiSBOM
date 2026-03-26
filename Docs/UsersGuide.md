@@ -31,6 +31,11 @@ DelphiSBOM is a standalone Windows application. No installer is required.
 
 No third-party libraries are required.
 
+**Optional:** For syntax-highlighted JSON viewing, add [SynEdit](https://github.com/SynEdit/SynEdit)
+to your Delphi library path and add `USE_SYNEDIT` to the project's conditional
+defines (Project > Options > Delphi Compiler > Conditional Defines). Without
+this, the SBOM viewer uses a plain text display.
+
 ## First Run
 
 When you launch DelphiSBOM for the first time:
@@ -146,7 +151,13 @@ these are typically your own shared project files. Click
 **Mark Unresolved as Own Code** to save them to the `own_code_units` array
 in `components.json`. The SBOM will regenerate automatically.
 
-### Step 5: Done
+### Step 5: View the SBOM
+
+Click **View SBOM File** to inspect the generated JSON in a read-only viewer.
+If the project was compiled with SynEdit support (`USE_SYNEDIT` conditional
+define), the viewer shows syntax-highlighted JSON with line numbers.
+
+### Step 6: Done
 
 Your SBOM is saved as `<ProjectName>.cdx.json` in the output directory. This
 file is ready for compliance submission, auditing, or integration into your
@@ -377,3 +388,4 @@ The following capabilities are planned for future versions:
 ---
 *Version: 1.1 – 26 March 2026 09:45*
 *Version: 1.2 – 26 March 2026 11:00*
+*Version: 1.3 – 26 March 2026 12:00*

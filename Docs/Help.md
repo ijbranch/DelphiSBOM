@@ -15,6 +15,7 @@
 | **Validate Manifest** | Checks `components.json` for schema errors without generating an SBOM |
 | **Save Libraries & Regenerate SBOM** | Saves discovered libraries to `components.json` and re-runs the pipeline |
 | **Mark Unresolved as Own Code** | Saves remaining unresolved units to `own_code_units` in `components.json` and re-runs |
+| **View SBOM File** | Opens the generated `.cdx.json` in a read-only viewer. If SynEdit is available (compile with `USE_SYNEDIT`), shows syntax-highlighted JSON with line numbers |
 
 ### Results Panel (Left)
 
@@ -123,3 +124,4 @@ Report issues at the project repository on Codeberg.
 ---
 *Version: 1.0 – 26 March 2026 08:30*
 *Version: 1.1 – 26 March 2026 11:00*
+*Version: 1.2 – 26 March 2026 12:00*
