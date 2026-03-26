@@ -33,7 +33,8 @@ type
       const AClassifiedUnits: TArray<TClassifiedUnit>;
       const AManifest: TManifest;
       ARTLScanAvailable: Boolean;
-      const AVersionOverride: string ): string;
+      const AVersionOverride: string;
+      const AEvidence: TArray<TUnitEvidence> ): string;
 
     /// <summary>
     ///   Builds and writes the SBOM to a file. Returns the output file path.
@@ -43,7 +44,8 @@ type
       const AManifest: TManifest;
       ARTLScanAvailable: Boolean;
       const AVersionOverride: string;
-      const AOutputDir: string ): string;
+      const AOutputDir: string;
+      const AEvidence: TArray<TUnitEvidence> ): string;
   end;
 
 implementation
@@ -74,7 +76,55 @@ function TSBOMBuilder.Build( const AProjectInfo: TProjectInfo;
   const AClassifiedUnits: TArray<TClassifiedUnit>;
   const AManifest: TManifest;
   ARTLScanAvailable: Boolean;
-  const AVersionOverride: string ): string;
+  const AVersionOverride: string;
+  const AEvidence: TArray<TUnitEvidence> ): string;
+
+  // Builds a JSON array of sub-component objects with hashes for units matching AClassification
+  function BuildEvidenceSubComponents( AClassification: TUnitClassification; AComponentIndex: Integer ): TJSONArray;
+  begin
+
+    Result := nil;
+
+    if Length( AEvidence ) = 0 then Exit;
+
+    var SubComps: TJSONArray := nil;
+
+    for var CU in AClassifiedUnits do
+    begin
+      if CU.Classification <> AClassification then Continue;
+      if ( AClassification = ucThirdParty ) and ( CU.ComponentIndex <> AComponentIndex ) then Continue;
+
+      // Find matching evidence by unit name (case-insensitive)
+      for var Ev in AEvidence do
+        if SameText( Ev.UnitName, CU.OriginalName ) then
+        begin
+          if not Assigned( SubComps ) then
+            SubComps := TJSONArray.Create;
+
+          var SubComp := TJSONObject.Create;
+          SubComp.AddPair( 'type', 'library' );
+          SubComp.AddPair( 'name', Ev.UnitName );
+
+          if ( Ev.Algorithm <> '' ) and ( Ev.HashValue <> '' ) then
+          begin
+            var HashObj := TJSONObject.Create;
+            HashObj.AddPair( 'alg', Ev.Algorithm );
+            HashObj.AddPair( 'content', Ev.HashValue );
+
+            var HashArr := TJSONArray.Create;
+            HashArr.AddElement( HashObj );
+            SubComp.AddPair( 'hashes', HashArr );
+          end;
+
+          SubComps.AddElement( SubComp );
+          Break;
+        end;
+    end;
+
+    Result := SubComps;
+
+  end;
+
 begin
 
   var Root := TJSONObject.Create;
@@ -163,6 +213,13 @@ begin
     RTLComp.AddPair( 'supplier', RTLSupplier );
 
     RTLComp.AddPair( 'purl', Format( 'pkg:delphi/embarcadero-rtl@%s', [ TNetEncoding.URL.Encode( DelphiVer ) ] ) );
+
+    // Attach per-unit evidence from DX.Comply if available
+    var RTLEvidence := BuildEvidenceSubComponents( ucRTL, -1 );
+
+    if Assigned( RTLEvidence ) then
+      RTLComp.AddPair( 'components', RTLEvidence );
+
     Components.AddElement( RTLComp );
 
     // Add third-party components (deduplicated by component index)
@@ -233,6 +290,12 @@ begin
         else
           CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s', [ EncodedName ] ) );
 
+        // Attach per-unit evidence from DX.Comply if available
+        var CompEvidence := BuildEvidenceSubComponents( ucThirdParty, CU.ComponentIndex );
+
+        if Assigned( CompEvidence ) then
+          CompObj.AddPair( 'components', CompEvidence );
+
         Components.AddElement( CompObj );
       end;
     finally
@@ -254,10 +317,11 @@ function TSBOMBuilder.BuildAndSave( const AProjectInfo: TProjectInfo;
   const AManifest: TManifest;
   ARTLScanAvailable: Boolean;
   const AVersionOverride: string;
-  const AOutputDir: string ): string;
+  const AOutputDir: string;
+  const AEvidence: TArray<TUnitEvidence> ): string;
 begin
 
-  var Json := Build( AProjectInfo, AClassifiedUnits, AManifest, ARTLScanAvailable, AVersionOverride );
+  var Json := Build( AProjectInfo, AClassifiedUnits, AManifest, ARTLScanAvailable, AVersionOverride, AEvidence );
 
   var EffectiveDir := AOutputDir;
 

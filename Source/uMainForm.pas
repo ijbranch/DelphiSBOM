@@ -77,6 +77,9 @@ type
     FBtnDelphiPath : TButton;
     FLblVersion    : TLabel;
     FEdtVersion    : TEdit;
+    FLblDXComply   : TLabel;
+    FEdtDXComply   : TEdit;
+    FBtnDXComply   : TButton;
 
     // Action buttons
     FBtnGenerate : TButton;
@@ -120,6 +123,7 @@ type
     procedure BtnManifestClick( Sender: TObject );
     procedure BtnOutputDirClick( Sender: TObject );
     procedure BtnDelphiPathClick( Sender: TObject );
+    procedure BtnDXComplyClick( Sender: TObject );
     procedure BtnGenerateClick( Sender: TObject );
     procedure BtnValidateClick( Sender: TObject );
 
@@ -396,7 +400,15 @@ begin
   FEdtVersion.TextHint  := 'blank = read from .dproj';
   FEdtVersion.Hint      := 'Override the version from .dproj. Leave blank to use the project version.';
 
-  Inc( CurrentTop, 34 );
+  Inc( CurrentTop, 30 );
+
+  // DX.Comply evidence file (optional)
+  CreateInputRow( CurrentTop, 'DX.Comply SBOM:', FLblDXComply, FEdtDXComply, FBtnDXComply, BtnDXComplyClick );
+  FEdtDXComply.TextHint := 'optional — merges binary evidence into SBOM';
+  FEdtDXComply.Hint     := 'Path to a DX.Comply bom.json file. If provided, SHA-256 hashes are merged into the SBOM output.';
+  FBtnDXComply.Hint     := 'Browse for a DX.Comply bom.json file';
+
+  Inc( CurrentTop, 4 );
 
   // Action buttons
   FBtnGenerate := TButton.Create( Self );
@@ -667,6 +679,22 @@ begin
 
 end;
 
+procedure TMainForm.BtnDXComplyClick( Sender: TObject );
+begin
+
+  var Dlg := TOpenDialog.Create( nil );
+  try
+    Dlg.Filter := 'JSON Files (*.json)|*.json|All Files (*.*)|*.*';
+    Dlg.Title  := 'Select DX.Comply SBOM File';
+
+    if Dlg.Execute then
+      FEdtDXComply.Text := Dlg.FileName;
+  finally
+    Dlg.Free;
+  end;
+
+end;
+
 // ---------------------------------------------------------------------------
 //  Action button handlers
 // ---------------------------------------------------------------------------
@@ -696,6 +724,7 @@ begin
   Options.OutputDir       := Trim( FEdtOutputDir.Text );
   Options.DelphiPath      := Trim( FEdtDelphiPath.Text );
   Options.VersionOverride := Trim( FEdtVersion.Text );
+  Options.DXComplyFile    := Trim( FEdtDXComply.Text );
 
   TSBOMGenerateThread.Create( Self, Options ).Start;
 
@@ -752,6 +781,8 @@ begin
   FEdtOutputDir.Enabled  := not AValue;
   FEdtDelphiPath.Enabled := not AValue;
   FEdtVersion.Enabled    := not AValue;
+  FEdtDXComply.Enabled   := not AValue;
+  FBtnDXComply.Enabled   := not AValue;
 
 end;
 

@@ -12,7 +12,8 @@ uses
   uSBOMEngine in 'uSBOMEngine.pas',
   uLibraryDiscovery in 'uLibraryDiscovery.pas',
   uSettings in 'uSettings.pas',
-  uLibraryEditor in 'uLibraryEditor.pas';
+  uLibraryEditor in 'uLibraryEditor.pas',
+  uEvidenceMerger in 'uEvidenceMerger.pas';
 
 {$R *.res}
 

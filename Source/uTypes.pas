@@ -109,6 +109,17 @@ type
   end;
 
   /// <summary>
+  ///   Binary evidence for a single unit, imported from DX.Comply SBOM output.
+  ///   Contains the SHA-256 hash and origin classification from MAP file analysis.
+  /// </summary>
+  TUnitEvidence = record
+    UnitName  : string;   // Unit name without .dcu extension (e.g. 'System.SysUtils')
+    Algorithm : string;   // Hash algorithm (e.g. 'SHA-256')
+    HashValue : string;   // Hash content
+    Origin    : string;   // DX.Comply origin classification (e.g. 'Embarcadero RTL', 'Third party')
+  end;
+
+  /// <summary>
   ///   Complete results from a pipeline run, passed from uSBOMEngine to the form.
   /// </summary>
   TSBOMResult = record
@@ -121,6 +132,7 @@ type
     RTLScanAvailable    : Boolean;        // False if RTL scanner could not find Delphi install
     DiscoveredLibraries : TArray<TDiscoveredLibrary>;  // Libraries found by file system scan
     AutoOwnCodeUnits    : TArray<string>;  // Units found in sibling/project dirs (auto own-code)
+    Evidence            : TArray<TUnitEvidence>;  // Binary evidence from DX.Comply (optional)
     ErrorMessage        : string;         // Populated only on failure
   end;
 
@@ -133,6 +145,7 @@ type
     OutputDir       : string;   // Output directory (empty = project directory)
     DelphiPath      : string;   // Delphi install path (empty = auto-detect from registry)
     VersionOverride : string;   // Version string override (empty = read from .dproj)
+    DXComplyFile    : string;   // Path to DX.Comply bom.json (empty = no evidence merge)
   end;
 
 const

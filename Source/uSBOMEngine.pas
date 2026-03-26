@@ -45,7 +45,7 @@ implementation
 
 uses
   System.IOUtils, System.Generics.Collections,
-  uProjectParser, uRTLScanner, uManifestLoader, uUnitClassifier, uSBOMBuilder, uLibraryDiscovery;
+  uProjectParser, uRTLScanner, uManifestLoader, uUnitClassifier, uSBOMBuilder, uLibraryDiscovery, uEvidenceMerger;
 
 { TSBOMEngine }
 
@@ -181,6 +181,17 @@ begin
     end;
   end;
 
+  // Step 4c: Load binary evidence from DX.Comply if provided
+  if AOptions.DXComplyFile <> '' then
+  begin
+    var Merger := TEvidenceMerger.Create( FLog );
+    try
+      Result.Evidence := Merger.LoadEvidence( AOptions.DXComplyFile );
+    finally
+      Merger.Free;
+    end;
+  end;
+
   // Step 5: Build and save SBOM
   var Builder := TSBOMBuilder.Create( FLog );
   try
@@ -190,7 +201,8 @@ begin
       Result.Manifest,
       Result.RTLScanAvailable,
       AOptions.VersionOverride,
-      AOptions.OutputDir
+      AOptions.OutputDir,
+      Result.Evidence
     );
   finally
     Builder.Free;

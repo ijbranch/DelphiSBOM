@@ -2,6 +2,38 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-03-27 - DX.Comply Evidence Bridge
+
+**Problem:** DX.Comply (by Olaf Monien) generates SBOMs from MAP file analysis
+with SHA-256 hashes per unit but sparse metadata. DelphiSBOM generates SBOMs
+with rich metadata (vendor, licence, PURL) but no binary evidence. Neither
+tool alone produces a complete SBOM.
+
+**Changes Made:**
+1. New `uEvidenceMerger.pas` — parses DX.Comply `bom.json` CycloneDX output,
+   extracts per-unit SHA-256 hashes and origin classifications, strips `.dcu`
+   extension for unit name matching
+2. `uTypes.pas` — added `TUnitEvidence` record (UnitName, Algorithm, HashValue,
+   Origin), `DXComplyFile` field on `TSBOMOptions`, `Evidence` field on
+   `TSBOMResult`
+3. `uSBOMEngine.pas` — calls `TEvidenceMerger.LoadEvidence` between
+   classification and building if DXComplyFile is provided
+4. `uSBOMBuilder.pas` — `Build` and `BuildAndSave` accept `AEvidence` parameter;
+   nested `BuildEvidenceSubComponents` function emits CycloneDX sub-components
+   with hashes under RTL and third-party component entries
+5. `uMainForm.pas` — added "DX.Comply SBOM:" input row with Browse button,
+   wired into `TSBOMOptions.DXComplyFile`
+6. `DelphiSBOM.dpr` — added `uEvidenceMerger` to uses clause
+
+**Result:** When a DX.Comply `bom.json` is provided, the generated SBOM
+contains both DelphiSBOM's rich metadata AND DX.Comply's per-unit SHA-256
+hashes as nested sub-components. When no DX.Comply file is provided,
+output is unchanged. Clean compile on Win64 Debug. Cannot test end-to-end
+until DX.Comply's Delphi 13 bug is resolved (their issue #19).
+
+**Files Modified:** uEvidenceMerger.pas (new), uTypes.pas, uSBOMEngine.pas,
+uSBOMBuilder.pas, uMainForm.pas, DelphiSBOM.dpr
+
 ## 2026-03-27 - UI Polish: Button Layout, Tooltips
 
 **Problem:** Discovery panel buttons were clipped when panel was narrow.
