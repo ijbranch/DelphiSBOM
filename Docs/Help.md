@@ -13,9 +13,12 @@
 | **Version Override** | Optional. If set, overrides the project version read from the `.dproj` file |
 | **Generate SBOM** | Runs the full pipeline: parse, classify, discover, generate |
 | **Validate Manifest** | Checks `components.json` for schema errors without generating an SBOM |
-| **Save Libraries & Regenerate SBOM** | Saves discovered libraries to `components.json` and re-runs the pipeline |
-| **Mark Unresolved as Own Code** | Saves remaining unresolved units to `own_code_units` in `components.json` and re-runs |
+| **Save & Regenerate** | Saves discovered libraries to `components.json` and re-runs the pipeline |
+| **Edit...** | Opens a modal grid editor to review and modify discovered library metadata (Name, Version, Vendor, Licence, Prefix) before saving |
+| **Mark as Own Code** | Saves remaining unresolved units to `own_code_units` in `components.json` and re-runs |
 | **View SBOM File** | Opens the generated `.cdx.json` in a read-only viewer. If SynEdit is available (compile with `USE_SYNEDIT`), shows syntax-highlighted JSON with line numbers |
+
+> **Tip:** Hover over any control for a tooltip describing its purpose.
 
 ### Results Panel (Left)
 
@@ -39,11 +42,16 @@ Shows libraries discovered automatically by scanning the file system:
 - **Prefix** — computed common prefix for unit matching
 - **Units** — list of units belonging to this library
 
+Click **Edit...** to open the library editor — a grid where you can review and
+correct auto-detected metadata (Name, Version, Vendor, Licence, Prefix) before
+saving. Click the Include column to toggle individual libraries on or off. The
+bottom of the editor shows the full unit list for the selected library.
+
 Units found in sibling project directories (same parent as the project) are
 automatically marked as own code and saved to `components.json`.
 
 Any remaining unresolved units are listed at the bottom. These can be
-manually marked as own code using the **Mark Unresolved as Own Code** button.
+manually marked as own code using the **Mark as Own Code** button.
 
 ### Log Panel
 
@@ -176,3 +184,4 @@ Report issues at the project repository on Codeberg.
 *Version: 1.3 – 26 March 2026 — MRU feature*
 *Version: 1.4 – 26 March 2026 — Stateless regeneration documentation*
 *Version: 1.5 – 27 March 2026 — Code audit fixes*
+*Version: 1.6 – 27 March 2026 — Library editor, tooltips*

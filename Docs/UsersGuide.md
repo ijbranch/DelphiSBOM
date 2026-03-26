@@ -144,7 +144,10 @@ If the discovery panel shows libraries you want to include in your SBOM:
 
 1. Review the discovered libraries — the name, vendor, and licence are
    pre-populated where possible
-2. Click **Save Libraries & Regenerate SBOM**
+2. *(Optional)* Click **Edit...** to open the library editor and correct any
+   auto-detected metadata (Name, Version, Vendor, Licence, Prefix) before
+   saving. Click the Include column to exclude individual libraries.
+3. Click **Save & Regenerate**
 
 This does two things:
 - Saves the discovered libraries to your `components.json` file
@@ -190,7 +193,7 @@ carried forward from an earlier run.
 When you add a new third-party library to your project, its units appear in
 the uses clause. On the next run they will be unclassified (unless already
 in `components.json`), and the discovery process will find them automatically.
-Click **Save Libraries & Regenerate SBOM** to persist and include them.
+Click **Save & Regenerate** to persist and include them.
 
 ### Removing a Dependency
 
@@ -462,3 +465,4 @@ modified.
 *Version: 1.4 – 26 March 2026 — MRU feature*
 *Version: 1.5 – 26 March 2026 — Stateless regeneration documentation*
 *Version: 1.6 – 27 March 2026 — Code audit fixes*
+*Version: 1.7 – 27 March 2026 — Library editor, tooltips*

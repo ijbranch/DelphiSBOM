@@ -2,6 +2,26 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-03-27 - UI Polish: Button Layout, Tooltips
+
+**Problem:** Discovery panel buttons were clipped when panel was narrow.
+No tooltips on any controls — new users had no guidance on what each
+field or button does.
+
+**Changes Made:**
+1. Replaced discovery button TPanel with TGridPanel — three equal-width
+   columns (33.33% each) that resize with the panel
+2. Added tooltips (`Hint` property) to all 14 interactive controls:
+   project combo, all Browse buttons, manifest/output/Delphi path fields,
+   version override, Generate/Validate/View SBOM buttons, and all three
+   discovery panel buttons
+3. `ShowHint := True` set on main form in `FormCreate`
+
+**Result:** Buttons always fit regardless of panel width. Hover tooltips
+provide contextual guidance on every control.
+
+**Files Modified:** uMainForm.pas
+
 ## 2026-03-27 - Library Editor Modal Dialog
 
 **Problem:** Users could not edit auto-detected library metadata (Name, Version,
