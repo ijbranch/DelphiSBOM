@@ -1,6 +1,6 @@
 (*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
-  Copyright (c) 2026 Ian (GITLAK Software)
+  Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
   uMainForm.pas — Main application form
@@ -60,6 +60,7 @@ type
   TMainForm = class( TForm )
     procedure FormCreate( Sender: TObject );
     procedure FormDestroy( Sender: TObject );
+    procedure FormCloseQuery( Sender: TObject; var CanClose: Boolean );
   private
     // Input controls
     FLblProject    : TLabel;
@@ -291,8 +292,9 @@ end;
 procedure TMainForm.FormCreate( Sender: TObject );
 begin
 
-  Caption     := 'DelphiSBOM - CycloneDX SBOM Generator';
-  FProcessing := False;
+  Caption      := 'DelphiSBOM - CycloneDX SBOM Generator';
+  FProcessing  := False;
+  OnCloseQuery := FormCloseQuery;
 
   FMRUManager := TMRUManager.Create;
 
@@ -306,6 +308,17 @@ begin
   end;
 
   LoadMRU;
+
+end;
+
+procedure TMainForm.FormCloseQuery( Sender: TObject; var CanClose: Boolean );
+begin
+
+  if FProcessing then
+  begin
+    CanClose := False;
+    ShowMessage( 'Please wait for the current operation to complete before closing.' );
+  end;
 
 end;
 

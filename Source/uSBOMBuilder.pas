@@ -1,6 +1,6 @@
 (*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
-  Copyright (c) 2026 Ian (GITLAK Software)
+  Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
   uSBOMBuilder.pas — Assembles and emits CycloneDX 1.5 JSON SBOM
@@ -253,9 +253,17 @@ begin
   if EffectiveDir = '' then
     EffectiveDir := AProjectInfo.ProjectDir;
 
+  if not TDirectory.Exists( EffectiveDir ) then
+    raise Exception.CreateFmt( 'Output directory does not exist: %s', [ EffectiveDir ] );
+
   Result := TPath.Combine( EffectiveDir, AProjectInfo.ProjectName + '.cdx.json' );
 
-  TFile.WriteAllText( Result, Json, TEncoding.UTF8 );
+  try
+    TFile.WriteAllText( Result, Json, TEncoding.UTF8 );
+  except
+    on E: Exception do
+      raise Exception.CreateFmt( 'Failed to write SBOM to %s: %s', [ Result, E.Message ] );
+  end;
 
   Log( llInfo, Format( 'SBOM written to %s', [ Result ] ) );
 

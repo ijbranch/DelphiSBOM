@@ -1,23 +1,23 @@
 # DelphiSBOM — Implementation Progress
 
 **Plan document:** `DelphiSBOM_Refined_Plan.md` (v0.6 — Final Draft)
-**Last updated:** 2026-03-26 (Session 5)
+**Last updated:** 2026-03-27 (Session 6)
 
 ---
 
 ## Current State
 
-**Phase:** 1 — MVP Complete. Testing and refinement ongoing.
+**Phase:** 1 — MVP Complete. Code audit fixes applied.
 **Step:** 10 of 10 — Manual testing
-**Status:** Dormant manifest entry logging added. Documentation updated across all docs.
+**Status:** In-depth code audit completed. 18 issues identified (2 critical, 4 high, 5 medium, 7 low). All fixable issues addressed in code. .dproj version sync must be done in IDE.
 
 ## Next Action
 
-Build and test dormant entry logging: remove a library from a test project, regenerate SBOM, verify the [INFO] message appears in the log. Then consider implementing the editable TStringGrid for discovered library names/metadata. Also: synchronise .dproj Win32/Win64 version builds in IDE.
+Build and test all audit fixes: verify FormCloseQuery blocks closing during processing, test .dproj Base PropertyGroup version extraction, test uses clause parsing with comments in .dpr files. Then: synchronise .dproj Win32/Win64 version numbers in IDE (issue #6). Consider implementing the editable TStringGrid for discovered library names/metadata.
 
 ## Blockers / Questions for Ian
 
-- None currently
+- .dproj version numbers must be synchronised across Win32/Win64/Debug/Release configurations in the IDE (cannot be done by Claude Code)
 
 ## Implementation Decisions Made During Development
 
@@ -49,7 +49,7 @@ Build and test dormant entry logging: remove a library from a test project, rege
 | 7 | `uSBOMBuilder.pas` — CycloneDX 1.5 JSON | DONE | PURL URL-encoded, no trailing @, commercial licence handling |
 | 8 | `uSBOMEngine.pas` — Pipeline orchestrator | DONE | Auto-saves own-code from sibling dirs, discovery integration |
 | 9 | `uMainForm.pas` / `.dfm` — VCL form | DONE | Full UI with splitters, discovery panel, View SBOM, Mark Own Code, busy cursor |
-| 10 | Manual testing | DONE | Tested against DelphiSBOM, DBiWorkflow, DBiAdmin — all producing valid SBOMs |
+| 10 | Manual testing | DONE | Tested against DelphiSBOM and two internal projects — all producing valid SBOMs |
 
 ### Additional units implemented beyond original plan:
 
@@ -81,7 +81,8 @@ Build and test dormant entry logging: remove a library from a test project, rege
 | Date | Session | Summary |
 |------|---------|---------|
 | 2026-03-26 | 1 | Plan created, refined through 6 iterations (v0.1 → v0.6). All 14 design decisions resolved. VCL pivot, threading model, exception handling, registry enumeration, graceful degradation. Progress tracking set up. |
-| 2026-03-26 | 2 | Full MVP implemented. Steps 1-9 complete. All core units built and compiling. Delphi compiler issues resolved (TThread descendants, TProc const mismatch). First test against itself — 3 bugs fixed (UUID, version mapping, VerInfo). Library discovery added (uLibraryDiscovery.pas). Tested against DBiWorkflow — iterative fixes: project dir exclusion, sibling dir detection, IDE env var resolution, .dpk naming, vendor cleanup, scoped unit matching, library merging, own-code auto-detection. Added: View SBOM button, optional SynEdit viewer, Mark Unresolved as Own Code, horizontal splitter, busy cursor. Tested against DBiAdmin — valid SBOM produced. All docs updated (Help.md, UsersGuide.md, SCHEMA.md, CHANGELOG.md, README.md, CLAUDE.md, CYCLONEDX-NOTES.md). Repository public on Codeberg. SynEdit added to shared libraries reference. |
+| 2026-03-26 | 2 | Full MVP implemented. Steps 1-9 complete. All core units built and compiling. Delphi compiler issues resolved (TThread descendants, TProc const mismatch). First test against itself — 3 bugs fixed (UUID, version mapping, VerInfo). Library discovery added (uLibraryDiscovery.pas). Tested against a large internal project — iterative fixes: project dir exclusion, sibling dir detection, IDE env var resolution, .dpk naming, vendor cleanup, scoped unit matching, library merging, own-code auto-detection. Added: View SBOM button, optional SynEdit viewer, Mark Unresolved as Own Code, horizontal splitter, busy cursor. Tested against a second internal project — valid SBOM produced. All docs updated (Help.md, UsersGuide.md, SCHEMA.md, CHANGELOG.md, README.md, CLAUDE.md, CYCLONEDX-NOTES.md). Repository public on Codeberg. SynEdit added to shared libraries reference. |
 | 2026-03-26 | 3 | In-depth code audit across all units. Six fixes applied: PURL URL-encoding (uSBOMBuilder), dead FFoundDirs field removed (uLibraryDiscovery), IsValidUnitName tightened for malformed dots (uProjectParser), JSON type guard added (uManifestLoader), unresolved env var paths now logged (uLibraryDiscovery), .eof added to .gitignore. No memory leaks, thread safety issues, or CycloneDX compliance problems found. |
 | 2026-03-26 | 4 | Project MRU feature implemented. New uSettings.pas unit with TMRUManager (INI-based, %APPDATA%\DelphiSBOM\DelphiSBOM.ini). FEdtProject changed from TEdit to TComboBox (csDropDown). MRU saves on successful generation, restores manifest/output/version per project. Max 10 entries, dead entries pruned on load. Clean compile on Win64 Debug. |
 | 2026-03-26 | 5 | Documented stateless SBOM regeneration model (adding/removing/updating dependencies). Added dormant manifest entry logging to uSBOMEngine — logs [INFO] for each components.json entry not referenced by any project unit. Updated UsersGuide.md (Subsequent Runs expanded, Keeping SBOM Current note), Help.md (log panel), SCHEMA.md (dormant entries section), CHANGELOG.md. |
+| 2026-03-27 | 6 | Comprehensive code audit: 18 issues found (2 critical, 4 high, 5 medium, 7 low), 6 false positives identified and dismissed. Fixes applied: (1) FormCloseQuery guard prevents form closure during processing (AV fix). (2) FindNodeText replaced with FindBasePropertyValue — reads Base PropertyGroup first, avoiding config-specific version overrides. (3) ExtractUsesBlock now strips comments before searching for `uses` keyword, checks word boundaries, handles semicolons inside string literals. (4) Internal references (GITLAK Software, DBiWorkflow, DBiAdmin) removed from all source files and documentation. (5) SaveDiscoveredLibraries deduplicates by component name. (6) BuildAndSave validates output directory before writing. (7) ManifestPath computed once in uSBOMEngine. (8) Stale MRU INI sections cleaned on save. (9) Doc versions synchronised. (10) Sample file Indy entry corrected (units_exact not prefix). CHANGELOG moved to [1.0.0] versioned heading. |

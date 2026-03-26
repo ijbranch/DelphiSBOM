@@ -1,6 +1,6 @@
 (*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
-  Copyright (c) 2026 Ian (GITLAK Software)
+  Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
   uSettings.pas — MRU (Most Recently Used) project list with per-project settings
@@ -46,7 +46,7 @@ type
 implementation
 
 uses
-  System.IOUtils, System.IniFiles;
+  System.Classes, System.IOUtils, System.IniFiles;
 
 { TMRUManager }
 
@@ -117,9 +117,19 @@ begin
 
   var Ini := TIniFile.Create( FSettingsFile );
   try
-    // Clear old MRU entries — erase entire section and per-project sections
-    Ini.EraseSection( 'MRU' );
+    // Erase all existing MRU:* sections (including orphans from removed entries)
+    var AllSections := TStringList.Create;
+    try
+      Ini.ReadSections( AllSections );
 
+      for var S := 0 to AllSections.Count - 1 do
+        if AllSections[ S ].StartsWith( 'MRU:', True ) then
+          Ini.EraseSection( AllSections[ S ] );
+    finally
+      AllSections.Free;
+    end;
+
+    Ini.EraseSection( 'MRU' );
     Ini.WriteInteger( 'MRU', 'Count', FEntries.Count );
 
     for var I := 0 to FEntries.Count - 1 do
@@ -128,7 +138,6 @@ begin
       Ini.WriteString( 'MRU', Format( 'Item%d', [ I ] ), Entry.ProjectFile );
 
       var Section := 'MRU:' + Entry.ProjectFile;
-      Ini.EraseSection( Section );
       Ini.WriteString( Section, 'ManifestFile', Entry.ManifestFile );
       Ini.WriteString( Section, 'OutputDir', Entry.OutputDir );
       Ini.WriteString( Section, 'VersionOverride', Entry.VersionOverride );

@@ -174,3 +174,5 @@ Report issues at the project repository on Codeberg.
 *Version: 1.1 – 26 March 2026 11:00*
 *Version: 1.2 – 26 March 2026 12:00*
 *Version: 1.3 – 26 March 2026 — MRU feature*
+*Version: 1.4 – 26 March 2026 — Stateless regeneration documentation*
+*Version: 1.5 – 27 March 2026 — Code audit fixes*

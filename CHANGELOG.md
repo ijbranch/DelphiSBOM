@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+- Form close crash: added `FormCloseQuery` guard to prevent closing during background processing
+- `.dproj` metadata parser now reads from Base (unconditioned) PropertyGroup, avoiding
+  config-specific version number overrides (Win32 Debug vs Win64 Debug)
+- Uses clause parser strips comments before searching for `uses` keyword, preventing
+  matches inside line comments or block comments
+- Uses clause parser handles semicolons inside string literals (file path references)
+- `SaveDiscoveredLibraries` now checks for existing components by name before adding,
+  preventing duplicates on repeated Save+Regenerate
+- Output directory validated before writing SBOM file, with clear error message on failure
+- ManifestPath resolution logic deduplicated in `uSBOMEngine` (was computed twice)
+- Stale per-project INI sections cleaned up when MRU list is saved
+- Documentation version footers synchronised between Help.md and UsersGuide.md
+
+### Changed
+- Removed internal company/project references from all source files and documentation
+- `.gitignore` comment corrected: `.eof` files identified as EurekaLog config (not IDE files)
+- Sample `components.sample.json`: Indy units moved from `units_prefix` to `units_exact`
+  (prefix "Id" is only 2 characters, below the MinPrefixLength=3 threshold)
+
+## [1.0.0] - 2026-03-26
+
 ### Documentation
 - User's Guide: expanded "Subsequent Runs" section to explain stateless regeneration model,
   covering adding, removing, and updating dependencies, and dormant `components.json` entries

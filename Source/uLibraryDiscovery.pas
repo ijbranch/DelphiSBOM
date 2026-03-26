@@ -1,6 +1,6 @@
 (*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
-  Copyright (c) 2026 Ian (GITLAK Software)
+  Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
   uLibraryDiscovery.pas — Scans the file system to discover third-party libraries

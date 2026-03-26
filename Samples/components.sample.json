@@ -26,8 +26,9 @@
       "licence": "Modified-BSD",
       "licence_url": "https://www.indyproject.org/license/",
       "type": "library",
-      "units_prefix": ["IdHTTP", "IdSMTP", "IdTCP", "IdSSL", "IdMessage", "IdFTP"],
-      "units_exact": ["IdComponent", "IdGlobal", "IdStack", "IdThread", "IdURI"],
+      "units_prefix": [],
+      "units_exact": ["IdHTTP", "IdSMTP", "IdTCP", "IdSSL", "IdMessage", "IdFTP",
+                      "IdComponent", "IdGlobal", "IdStack", "IdThread", "IdURI"],
       "notes": "Internet protocols library — ships with Delphi but is independently versioned"
     },
     {

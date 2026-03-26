@@ -2,7 +2,7 @@
 
 **A CycloneDX SBOM Generator for Delphi Applications**
 Version 0.6 — Final Draft (VCL Application)
-Prepared by: Claude (Anthropic) in collaboration with Ian (GITLAK Software)
+Prepared by: Claude (Anthropic) in collaboration with Ian
 
 ---
 
@@ -500,7 +500,7 @@ The repository needs its own standalone `CLAUDE.md` — the master `E:\_Standard
   - `System.JSON` for all JSON work, `Xml.XMLDoc`/`Xml.XMLIntf` for XML
   - `TTask.Run` from `System.Threading` for background processing
 - **Architecture summary** — pipeline stages, unit responsibilities, `uSBOMEngine` is UI-independent
-- **No GITLAK references** — this is a public repository (Section 8.2 rule)
+- **No internal references** — this is a public repository (Section 8.2 rule)
 - **Commit conventions** — `feat:`, `fix:`, `docs:`, `test:`, `refactor:` prefixes
 
 Ian to review the draft `CLAUDE.md` before it is committed.

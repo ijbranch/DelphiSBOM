@@ -18,6 +18,8 @@
 *.stat
 *.skincfg
 *.dsk
+
+# EurekaLog config files
 *.eof
 __history/
 __recovery/

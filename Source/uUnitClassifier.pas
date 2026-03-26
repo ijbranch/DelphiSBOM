@@ -1,6 +1,6 @@
 (*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
-  Copyright (c) 2026 Ian (GITLAK Software)
+  Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
   uUnitClassifier.pas — Classifies units as RTL, third-party, own code, or unclassified

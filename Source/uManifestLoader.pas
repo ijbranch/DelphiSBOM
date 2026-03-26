@@ -1,6 +1,6 @@
 (*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
-  Copyright (c) 2026 Ian (GITLAK Software)
+  Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
   uManifestLoader.pas — Loads and validates the components.json manifest
@@ -296,10 +296,27 @@ begin
       Root.AddPair( 'components', CompArray );
     end;
 
-    // Add each confirmed library
+    // Add each confirmed library (skip duplicates by name)
     for var Lib in ALibraries do
     begin
       if ( not Lib.Confirmed ) then Continue;
+
+      // Check if a component with the same name already exists
+      var AlreadyExists := False;
+
+      for var K := 0 to CompArray.Count - 1 do
+        if ( CompArray.Items[ K ] is TJSONObject ) then
+          if SameText( ( CompArray.Items[ K ] as TJSONObject ).GetValue<string>( 'name', '' ), Lib.Name ) then
+          begin
+            AlreadyExists := True;
+            Break;
+          end;
+
+      if AlreadyExists then
+      begin
+        Log( llInfo, Format( 'Component "%s" already exists in manifest — skipping', [ Lib.Name ] ) );
+        Continue;
+      end;
 
       var CompObj := TJSONObject.Create;
 

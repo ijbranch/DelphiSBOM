@@ -121,14 +121,14 @@ app groups them by library and shows:
 ```
 DISCOVERED LIBRARIES
 ════════════════════
-── GITLAKLib ──
-  Directory: D:\GITLAKLib
-  Vendor:    Ian Branch (GITLAK Software)
-  Prefix:    gll
+── MyComponentLib ──
+  Directory: D:\MyComponentLib
+  Vendor:    Example Author
+  Prefix:    mcl
   Units (3):
-    gllFunctions
-    gllDateTimeHelpers
-    gllStringUtils
+    mclFunctions
+    mclDateTimeHelpers
+    mclStringUtils
 ```
 
 Units found in sibling directories (directories sharing the same parent as
@@ -461,3 +461,4 @@ modified.
 *Version: 1.3 – 26 March 2026 12:00*
 *Version: 1.4 – 26 March 2026 — MRU feature*
 *Version: 1.5 – 26 March 2026 — Stateless regeneration documentation*
+*Version: 1.6 – 27 March 2026 — Code audit fixes*

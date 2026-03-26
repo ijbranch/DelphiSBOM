@@ -1,6 +1,6 @@
 (*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
-  Copyright (c) 2026 Ian (GITLAK Software)
+  Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
   uSBOMEngine.pas — UI-independent pipeline orchestrator
@@ -80,16 +80,18 @@ begin
     Parser.Free;
   end;
 
+  // Resolve manifest path once for the entire pipeline
+  var ManifestPath := AOptions.ManifestFile;
+
+  if ManifestPath = '' then
+    ManifestPath := TPath.Combine( Result.ProjectInfo.ProjectDir, 'components.json' );
+
   // Step 2: Scan RTL units
   var Scanner := TRTLScanner.Create( FLog );
   try
     Result.RTLScanAvailable := Scanner.Scan( AOptions.DelphiPath, Result.ProjectInfo.TargetPlatform );
 
     // Step 3: Load manifest
-    var ManifestPath := AOptions.ManifestFile;
-
-    if ManifestPath = '' then
-      ManifestPath := TPath.Combine( Result.ProjectInfo.ProjectDir, 'components.json' );
 
     if FileExists( ManifestPath ) then
     begin
@@ -167,11 +169,6 @@ begin
       // Auto-save own-code units found in sibling directories
       if Length( Result.AutoOwnCodeUnits ) > 0 then
       begin
-        var ManifestPath := AOptions.ManifestFile;
-
-        if ManifestPath = '' then
-          ManifestPath := TPath.Combine( Result.ProjectInfo.ProjectDir, 'components.json' );
-
         var Saver := TManifestLoader.Create( FLog );
         try
           Saver.SaveOwnCodeUnits( ManifestPath, Result.AutoOwnCodeUnits );

@@ -1,7 +1,7 @@
 # DelphiSBOM — Project Plan
 **A CycloneDX SBOM Generator for Delphi Applications**
 Version 0.1 — Draft
-Prepared by: Claude (Anthropic) in collaboration with Ian (GITLAK Software)
+Prepared by: Claude (Anthropic) in collaboration with Ian
 
 ---
 
@@ -38,7 +38,7 @@ SBOM tools that have no awareness of the Delphi ecosystem.
 - Generate a valid **CycloneDX 1.5 JSON** SBOM file
 - Produce a human-readable **summary report** alongside the SBOM
 - Operate as a **console application** suitable for scripting and CI/CD integration
-- Be genuinely useful to the broader Delphi community — not GITLAK-specific
+- Be genuinely useful to the broader Delphi community — not specific to any one organisation
 
 ### Non-Goals (v1.0)
 - Binary / DCU deep inspection (post-v1.0 consideration)
@@ -108,7 +108,7 @@ once; it changes only when dependencies are added, updated, or removed.
   "schema_version": "1.0",
   "last_updated": "2026-03-26",
   "supplier": {
-    "name": "GITLAK Software",
+    "name": "Example Company",
     "url": "https://example.com"
   },
   "components": [
@@ -123,7 +123,7 @@ once; it changes only when dependencies are added, updated, or removed.
       "units_prefix": ["OtlCommon", "OtlCollections", "OtlTask",
                        "OtlTaskControl", "OtlSync", "OtlParallel",
                        "OtlEventMonitor", "OtlThreadPool"],
-      "notes": "Mandated threading library per GITLAK coding standards"
+      "notes": "Mandated threading library per project coding standards"
     },
     {
       "name": "ElevateDB",
@@ -191,7 +191,7 @@ The generated SBOM will conform to CycloneDX specification 1.5. Key sections:
   "version": 1,
   "metadata": {
     "timestamp": "<ISO-8601>",
-    "tools": [ { "vendor": "GITLAK / Ian", "name": "DelphiSBOM", "version": "1.0.0" } ],
+    "tools": [ { "vendor": "DelphiSBOM Contributors", "name": "DelphiSBOM", "version": "1.0.0" } ],
     "component": {
       "type": "application",
       "name": "<ProjectName>",
@@ -302,7 +302,7 @@ DelphiSBOM/
 - [ ] `uUnitClassifier.pas` — classify all units against RTL registry + manifest
 - [ ] `uSBOMBuilder.pas` — assemble and emit CycloneDX 1.5 JSON
 - [ ] `uMain.pas` — CLI argument parsing and pipeline orchestration
-- [ ] Manual testing against a real DBiWorkflow project file (Ian)
+- [ ] Manual testing against a real Delphi project file (Ian)
 - [ ] README — installation, quick-start, components.json authoring guide
 
 ### Phase 2 — Polish and Reliability
@@ -328,7 +328,7 @@ DelphiSBOM/
 > **CC should read this section carefully before beginning any implementation work.**
 
 ### 8.1 General Standards
-- Follow all GITLAK coding standards as defined in the master `CLAUDE.md` at
+- Follow all coding standards as defined in the master `CLAUDE.md` at
   `E:\_Standards\claude.md`. This project uses those standards even though it is a
   public repository — they represent good Delphi practice generally.
 - Target: **Delphi 12+, Win64, console application**.
@@ -339,11 +339,11 @@ DelphiSBOM/
 - Use `inline var` declarations throughout.
 - XML parsing of `.dproj` files: use `Xml.XMLDoc` and `Xml.XMLIntf` (built-in).
 
-### 8.2 No GITLAK-Internal References
-This is a **public repository**. Do not reference GITLAK Software, DBiWorkflow,
-GITLAKLib, or any internal system names in code, comments, or documentation. The
+### 8.2 No Internal References
+This is a **public repository**. Do not reference internal company names, internal
+projects, or any internal system names in code, comments, or documentation. The
 `components.sample.json` should use generic, publicly recognisable Delphi libraries
-as examples. The only GITLAK reference is in the tool's `supplier` metadata field,
+as examples. The only supplier reference is in the tool's `supplier` metadata field,
 which is supplied at runtime via `components.json` — not hardcoded.
 
 ### 8.3 JSON Handling

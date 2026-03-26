@@ -1,6 +1,6 @@
 (*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
-  Copyright (c) 2026 Ian (GITLAK Software)
+  Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
   uProjectParser.pas — Parses .dpr uses clause and .dproj XML metadata
@@ -33,6 +33,7 @@ type
     procedure ParseDprojMetadata( const ADprojFile: string; var AInfo: TProjectInfo );
     function FindDprojFile( const ADprFile: string ): string;
     function FindNodeText( const ANode: IXMLNode; const AName: string ): string;
+    function FindBasePropertyValue( const ARoot: IXMLNode; const AName: string ): string;
 
     procedure Log( ALevel: TLogLevel; const AMessage: string );
   public
@@ -53,6 +54,88 @@ uses
   Xml.XMLDoc;
 
 { Standalone helpers }
+
+/// <summary>
+///   Removes all Pascal comments from source text, preserving string literals.
+///   Handles // line comments, { } block comments, and (* *) block comments.
+/// </summary>
+function StripComments( const ASource: string ): string;
+begin
+
+  var Len := Length( ASource );
+  var Builder := TStringBuilder.Create( Len );
+  try
+    var I := 1;
+
+    while I <= Len do
+    begin
+      // String literal — copy through unchanged
+      if ASource[ I ] = '''' then
+      begin
+        Builder.Append( ASource[ I ] );
+        Inc( I );
+
+        while I <= Len do
+        begin
+          Builder.Append( ASource[ I ] );
+
+          if ASource[ I ] = '''' then
+          begin
+            Inc( I );
+            Break;
+          end;
+
+          Inc( I );
+        end;
+
+        Continue;
+      end;
+
+      // Line comment //
+      if ( I < Len ) and ( ASource[ I ] = '/' ) and ( ASource[ I + 1 ] = '/' ) then
+      begin
+        while ( I <= Len ) and ( ASource[ I ] <> #10 ) do
+          Inc( I );
+
+        Continue;
+      end;
+
+      // Block comment { }
+      if ASource[ I ] = '{' then
+      begin
+        Inc( I );
+
+        while ( I <= Len ) and ( ASource[ I ] <> '}' ) do
+          Inc( I );
+
+        if I <= Len then Inc( I );  // Skip closing }
+        Builder.Append( ' ' );
+        Continue;
+      end;
+
+      // Block comment (* *)
+      if ( I < Len ) and ( ASource[ I ] = '(' ) and ( ASource[ I + 1 ] = '*' ) then
+      begin
+        Inc( I, 2 );
+
+        while ( I < Len ) and not ( ( ASource[ I ] = '*' ) and ( ASource[ I + 1 ] = ')' ) ) do
+          Inc( I );
+
+        if I < Len then Inc( I, 2 );  // Skip closing *)
+        Builder.Append( ' ' );
+        Continue;
+      end;
+
+      Builder.Append( ASource[ I ] );
+      Inc( I );
+    end;
+
+    Result := Builder.ToString;
+  finally
+    Builder.Free;
+  end;
+
+end;
 
 function IsValidUnitName( const AName: string ): Boolean;
 begin
@@ -176,17 +259,47 @@ begin
 
   Result := '';
 
-  var LowerContent := LowerCase( AContent );
-  var Pos1 := Pos( 'uses', LowerContent );
+  // Strip comments first so 'uses' in comments is not matched
+  var Cleaned := StripComments( AContent );
+  var LowerContent := LowerCase( Cleaned );
+  var SearchPos := 1;
 
-  if Pos1 = 0 then Exit;
+  // Find the 'uses' keyword as a whole word (not part of an identifier)
+  while SearchPos > 0 do
+  begin
+    var Pos1 := PosEx( 'uses', LowerContent, SearchPos );
 
-  var StartPos := Pos1 + 4;
-  var SemiPos  := PosEx( ';', AContent, StartPos );
+    if Pos1 = 0 then Exit;
 
-  if SemiPos = 0 then Exit;
+    // Check word boundary: character before must not be alphanumeric/underscore
+    var BeforeOk := ( Pos1 = 1 ) or not CharInSet( LowerContent[ Pos1 - 1 ], [ 'a'..'z', '0'..'9', '_' ] );
+    var AfterPos := Pos1 + 4;
+    var AfterOk  := ( AfterPos > Length( LowerContent ) ) or not CharInSet( LowerContent[ AfterPos ], [ 'a'..'z', '0'..'9', '_' ] );
 
-  Result := Copy( AContent, StartPos, SemiPos - StartPos );
+    if BeforeOk and AfterOk then
+    begin
+      // Find the terminating semicolon, skipping semicolons inside string literals
+      var I := AfterPos;
+      var InString := False;
+
+      while I <= Length( Cleaned ) do
+      begin
+        if Cleaned[ I ] = '''' then
+          InString := not InString
+        else if ( Cleaned[ I ] = ';' ) and ( not InString ) then
+        begin
+          Result := Copy( Cleaned, AfterPos, I - AfterPos );
+          Exit;
+        end;
+
+        Inc( I );
+      end;
+
+      Exit;
+    end;
+
+    SearchPos := Pos1 + 4;
+  end;
 
 end;
 
@@ -286,7 +399,7 @@ begin
     Exit;
   end;
 
-  // Extract ProjectVersion and map to Delphi product version
+  // Extract ProjectVersion (lives outside PropertyGroup, use DFS)
   var ProjectVersion := FindNodeText( Root, 'ProjectVersion' );
 
   if ProjectVersion <> '' then
@@ -295,19 +408,19 @@ begin
     Log( llInfo, Format( 'Delphi version: %s (ProjectVersion %s)', [ AInfo.DelphiVersion, ProjectVersion ] ) );
   end;
 
-  // Extract target platform
-  var Platform := FindNodeText( Root, 'Platform' );
+  // Extract target platform (Base PropertyGroup preferred)
+  var Platform := FindBasePropertyValue( Root, 'Platform' );
 
   if Platform = '' then
     Platform := 'Win64';
 
   AInfo.TargetPlatform := Platform;
 
-  // Extract version info — try individual elements first, fall back to VerInfo_Keys
-  var Major   := FindNodeText( Root, 'VerInfo_MajorVer' );
-  var Minor   := FindNodeText( Root, 'VerInfo_MinorVer' );
-  var VerRelease := FindNodeText( Root, 'VerInfo_Release' );
-  var Build   := FindNodeText( Root, 'VerInfo_Build' );
+  // Extract version info from Base PropertyGroup — avoids config-specific overrides
+  var Major      := FindBasePropertyValue( Root, 'VerInfo_MajorVer' );
+  var Minor      := FindBasePropertyValue( Root, 'VerInfo_MinorVer' );
+  var VerRelease := FindBasePropertyValue( Root, 'VerInfo_Release' );
+  var Build      := FindBasePropertyValue( Root, 'VerInfo_Build' );
 
   if ( Major <> '' ) or ( Minor <> '' ) then
   begin
@@ -322,7 +435,7 @@ begin
   else
   begin
     // Fallback: parse FileVersion from VerInfo_Keys string
-    var VerInfoKeys := FindNodeText( Root, 'VerInfo_Keys' );
+    var VerInfoKeys := FindBasePropertyValue( Root, 'VerInfo_Keys' );
 
     if VerInfoKeys <> '' then
     begin
@@ -340,8 +453,8 @@ begin
     end;
   end;
 
-  // Extract search paths
-  var SearchPath := FindNodeText( Root, 'DCC_UnitSearchPath' );
+  // Extract search paths (Base PropertyGroup preferred)
+  var SearchPath := FindBasePropertyValue( Root, 'DCC_UnitSearchPath' );
 
   if SearchPath <> '' then
   begin
@@ -352,6 +465,46 @@ begin
 
     Log( llInfo, Format( 'Found %d search paths', [ Length( AInfo.SearchPaths ) ] ) );
   end;
+
+end;
+
+function TProjectParser.FindBasePropertyValue( const ARoot: IXMLNode; const AName: string ): string;
+begin
+
+  // Search PropertyGroup elements that have no Condition attribute (Base config) first,
+  // then fall back to any PropertyGroup containing the element.
+  Result := '';
+  var Fallback := '';
+
+  for var I := 0 to ARoot.ChildNodes.Count - 1 do
+  begin
+    var PG := ARoot.ChildNodes[ I ];
+
+    if not SameText( PG.NodeName, 'PropertyGroup' ) then Continue;
+
+    // Look for the target element within this PropertyGroup
+    for var J := 0 to PG.ChildNodes.Count - 1 do
+    begin
+      var Child := PG.ChildNodes[ J ];
+
+      if SameText( Child.NodeName, AName ) and ( not VarIsNull( Child.NodeValue ) ) then
+      begin
+        var Value := VarToStr( Child.NodeValue );
+
+        if Value = '' then Continue;
+
+        // Unconditioned PropertyGroup (Base) — return immediately
+        if not PG.HasAttribute( 'Condition' ) then
+          Exit( Value );
+
+        // Conditioned PropertyGroup — save as fallback
+        if Fallback = '' then
+          Fallback := Value;
+      end;
+    end;
+  end;
+
+  Result := Fallback;
 
 end;
 
