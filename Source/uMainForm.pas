@@ -295,6 +295,7 @@ procedure TMainForm.FormCreate( Sender: TObject );
 begin
 
   Caption      := 'DelphiSBOM - CycloneDX SBOM Generator';
+  ShowHint     := True;
   FProcessing  := False;
   OnCloseQuery := FormCloseQuery;
 
@@ -345,12 +346,13 @@ begin
   FLblProject.Caption := 'Project File:';
 
   FEdtProject := TComboBox.Create( Self );
-  FEdtProject.Parent  := Self;
-  FEdtProject.Left    := 120;
-  FEdtProject.Top     := CurrentTop;
-  FEdtProject.Width   := ClientWidth - 120 - 90 - 24;
-  FEdtProject.Anchors := [ akLeft, akTop, akRight ];
-  FEdtProject.Style   := csDropDown;
+  FEdtProject.Parent   := Self;
+  FEdtProject.Left     := 120;
+  FEdtProject.Top      := CurrentTop;
+  FEdtProject.Width    := ClientWidth - 120 - 90 - 24;
+  FEdtProject.Anchors  := [ akLeft, akTop, akRight ];
+  FEdtProject.Style    := csDropDown;
+  FEdtProject.Hint     := 'Path to .dpr or .dproj file. Recent projects available in dropdown.';
   FEdtProject.OnSelect := CboProjectSelect;
 
   FBtnProject := TButton.Create( Self );
@@ -359,6 +361,7 @@ begin
   FBtnProject.Top     := CurrentTop;
   FBtnProject.Width   := 90;
   FBtnProject.Caption := 'Browse...';
+  FBtnProject.Hint    := 'Browse for a Delphi project file';
   FBtnProject.Anchors := [ akTop, akRight ];
   FBtnProject.OnClick := BtnProjectClick;
 
@@ -366,8 +369,16 @@ begin
 
   // Remaining input rows
   CreateInputRow( CurrentTop, 'Manifest:', FLblManifest, FEdtManifest, FBtnManifest, BtnManifestClick );
+  FEdtManifest.Hint := 'Path to components.json manifest. Auto-created if missing.';
+  FBtnManifest.Hint := 'Browse for a components.json manifest file';
+
   CreateInputRow( CurrentTop, 'Output Dir:', FLblOutputDir, FEdtOutputDir, FBtnOutputDir, BtnOutputDirClick );
+  FEdtOutputDir.Hint := 'Directory for the generated .cdx.json file. Defaults to the project directory.';
+  FBtnOutputDir.Hint := 'Browse for an output directory';
+
   CreateInputRow( CurrentTop, 'Delphi Path:', FLblDelphiPath, FEdtDelphiPath, FBtnDelphiPath, BtnDelphiPathClick );
+  FEdtDelphiPath.Hint := 'Delphi installation root directory. Auto-detected from the registry.';
+  FBtnDelphiPath.Hint := 'Browse for the Delphi installation directory';
 
   // Version override
   FLblVersion := TLabel.Create( Self );
@@ -383,6 +394,7 @@ begin
   FEdtVersion.Top       := CurrentTop;
   FEdtVersion.Width     := 200;
   FEdtVersion.TextHint  := 'blank = read from .dproj';
+  FEdtVersion.Hint      := 'Override the version from .dproj. Leave blank to use the project version.';
 
   Inc( CurrentTop, 34 );
 
@@ -394,6 +406,7 @@ begin
   FBtnGenerate.Width   := 130;
   FBtnGenerate.Height  := 30;
   FBtnGenerate.Caption := 'Generate SBOM';
+  FBtnGenerate.Hint    := 'Parse the project, classify units, and generate a CycloneDX 1.5 JSON SBOM';
   FBtnGenerate.OnClick := BtnGenerateClick;
 
   FBtnValidate := TButton.Create( Self );
@@ -403,6 +416,7 @@ begin
   FBtnValidate.Width   := 140;
   FBtnValidate.Height  := 30;
   FBtnValidate.Caption := 'Validate Manifest';
+  FBtnValidate.Hint    := 'Check components.json for schema errors without generating an SBOM';
   FBtnValidate.OnClick := BtnValidateClick;
 
   FBtnViewSBOM := TButton.Create( Self );
@@ -412,6 +426,7 @@ begin
   FBtnViewSBOM.Width   := 120;
   FBtnViewSBOM.Height  := 30;
   FBtnViewSBOM.Caption := 'View SBOM File';
+  FBtnViewSBOM.Hint    := 'View the last generated SBOM JSON file';
   FBtnViewSBOM.OnClick := BtnViewSBOMClick;
   FBtnViewSBOM.Enabled := False;
 
@@ -538,6 +553,7 @@ begin
   FBtnSaveRegen.Parent  := GridButtons;
   FBtnSaveRegen.Align   := alClient;
   FBtnSaveRegen.Caption := 'Save && Regenerate';
+  FBtnSaveRegen.Hint    := 'Save discovered libraries to components.json and regenerate the SBOM';
   FBtnSaveRegen.OnClick := BtnSaveRegenClick;
   FBtnSaveRegen.Enabled := False;
 
@@ -545,6 +561,7 @@ begin
   FBtnEditLibraries.Parent  := GridButtons;
   FBtnEditLibraries.Align   := alClient;
   FBtnEditLibraries.Caption := 'Edit...';
+  FBtnEditLibraries.Hint    := 'Edit discovered library names, versions, vendors, and licences before saving';
   FBtnEditLibraries.OnClick := BtnEditLibrariesClick;
   FBtnEditLibraries.Enabled := False;
 
@@ -552,6 +569,7 @@ begin
   FBtnMarkOwnCode.Parent  := GridButtons;
   FBtnMarkOwnCode.Align   := alClient;
   FBtnMarkOwnCode.Caption := 'Mark as Own Code';
+  FBtnMarkOwnCode.Hint    := 'Mark unresolved units as your own code in components.json';
   FBtnMarkOwnCode.OnClick := BtnMarkOwnCodeClick;
   FBtnMarkOwnCode.Enabled := False;
 
