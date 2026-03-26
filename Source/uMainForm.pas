@@ -509,22 +509,23 @@ begin
   FBtnSaveRegen := TButton.Create( Self );
   FBtnSaveRegen.Parent  := PnlDiscButtons;
   FBtnSaveRegen.Align   := alLeft;
-  FBtnSaveRegen.Width   := 260;
-  FBtnSaveRegen.Caption := 'Save Libraries && Regenerate SBOM';
+  FBtnSaveRegen.Width   := 230;
+  FBtnSaveRegen.Caption := 'Save Libraries && Regenerate';
   FBtnSaveRegen.OnClick := BtnSaveRegenClick;
   FBtnSaveRegen.Enabled := False;
 
   FBtnEditLibraries := TButton.Create( Self );
   FBtnEditLibraries.Parent  := PnlDiscButtons;
   FBtnEditLibraries.Align   := alLeft;
-  FBtnEditLibraries.Width   := 120;
+  FBtnEditLibraries.Width   := 110;
   FBtnEditLibraries.Caption := 'Edit Libraries...';
   FBtnEditLibraries.OnClick := BtnEditLibrariesClick;
   FBtnEditLibraries.Enabled := False;
 
   FBtnMarkOwnCode := TButton.Create( Self );
   FBtnMarkOwnCode.Parent  := PnlDiscButtons;
-  FBtnMarkOwnCode.Align   := alClient;
+  FBtnMarkOwnCode.Align   := alLeft;
+  FBtnMarkOwnCode.Width   := 190;
   FBtnMarkOwnCode.Caption := 'Mark Unresolved as Own Code';
   FBtnMarkOwnCode.OnClick := BtnMarkOwnCodeClick;
   FBtnMarkOwnCode.Enabled := False;
