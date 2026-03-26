@@ -29,7 +29,9 @@ and describe the partial state in the Next Action line.
   (MPL-1.1 licence) for syntax-highlighted SBOM viewer. Guarded by
   `USE_SYNEDIT` conditional define. All SynEdit-dependent code must be inside
   `{$IFDEF USE_SYNEDIT}` blocks with a `TMemo` fallback. The project must
-  always compile cleanly without SynEdit installed
+  always compile cleanly without SynEdit installed. `USE_SYNEDIT` is NOT
+  enabled in the committed `.dproj` — developers add it locally if they
+  have SynEdit on their library path
 - Allowed RTL units: `System.JSON`, `Xml.XMLDoc`, `Xml.XMLIntf`,
   `System.Win.Registry`, `System.Threading`, and standard RTL/VCL units
 - After any code edit to `.pas`, `.dfm`, or `.dproj` files, prompt the user
