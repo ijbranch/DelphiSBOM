@@ -32,6 +32,7 @@ type
     function GetAllPasUnitNames( const ADirectory: string ): TArray<string>;
     function DetectLicence( const ADirectory: string; out ALicenceFile: string ): string;
     function DetectVendor( const ADirectory: string ): string;
+    function DetectLibraryName( const ADirectory: string ): string;
     function DetectVersion( const ADirectory: string ): string;
     function ComputePrefix( const AUnitNames: TArray<string> ): string;
     function MapLicenceText( const AText: string ): string;
@@ -209,31 +210,7 @@ begin
             end;
 
             Lib.Directory := ActualDir;
-
-            // Use parent directory name if current name is generic
-            var DirName := ExtractFileName( ActualDir );
-
-            if IsGenericDirectoryName( DirName ) then
-            begin
-              var ParentPath := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( ActualDir ) ) );
-              var ParentName := ExtractFileName( ParentPath );
-
-              if ( ParentName <> '' ) and ( not IsGenericDirectoryName( ParentName ) ) then
-                Lib.Name := ParentName + ' - ' + DirName
-              else
-              begin
-                // Go up one more level
-                var GrandParentPath := ExcludeTrailingPathDelimiter( ExtractFilePath( ParentPath ) );
-                var GrandParentName := ExtractFileName( GrandParentPath );
-
-                if GrandParentName <> '' then
-                  Lib.Name := GrandParentName + ' - ' + DirName
-                else
-                  Lib.Name := DirName;
-              end;
-            end
-            else
-              Lib.Name := DirName;
+            Lib.Name      := DetectLibraryName( ActualDir );
             Lib.Units     := DirPair.Value.ToArray;
             Lib.Confirmed := False;
 
@@ -297,12 +274,14 @@ begin
                       CombinedUnits.Free;
                     end;
 
-                    // Use the parent directory as the library directory and name
+                    // Use the parent (outer) directory
                     if CurrentDir.StartsWith( OtherDir ) then
                     begin
                       Current.Directory := Other.Directory;
-                      Current.Name      := Other.Name;
-                    end;
+                      Current.Name      := DetectLibraryName( Other.Directory );
+                    end
+                    else
+                      Current.Name := DetectLibraryName( Current.Directory );
 
                     // Keep the richer metadata
                     if ( Current.Vendor = '' ) and ( Other.Vendor <> '' ) then
@@ -687,6 +666,171 @@ begin
   finally
     Dirs.Free;
   end;
+
+end;
+
+// ---------------------------------------------------------------------------
+//  Library name detection from .dpk files
+// ---------------------------------------------------------------------------
+
+function TLibraryDiscovery.DetectLibraryName( const ADirectory: string ): string;
+begin
+
+  // Strategy 1: Find a .dpk file in this directory or nearby and use its name
+  var SearchDirs: TArray<string> := [ ADirectory ];
+
+  // Also check parent and sibling directories for .dpk files
+  var ParentDir := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( ADirectory ) ) );
+
+  if ParentDir <> '' then
+  begin
+    SearchDirs := SearchDirs + [ ParentDir ];
+
+    // Check sibling Packages directory (common pattern)
+    var PackagesDir := TPath.Combine( ParentDir, 'Packages' );
+
+    if TDirectory.Exists( PackagesDir ) then
+      SearchDirs := SearchDirs + [ PackagesDir ];
+  end;
+
+  for var SearchDir in SearchDirs do
+  begin
+    try
+      // Search this dir and one level of subdirs for .dpk files
+      var DpkFiles := TDirectory.GetFiles( SearchDir, '*.dpk', TSearchOption.soTopDirectoryOnly );
+
+      for var DpkFile in DpkFiles do
+      begin
+        var DpkName := TPath.GetFileNameWithoutExtension( DpkFile );
+
+        // Skip design-time packages (dcl prefix)
+        if DpkName.StartsWith( 'dcl', True ) then Continue;
+
+        // Strip version/Delphi suffixes (e.g. StyledComponentsD13 → StyledComponents)
+        // Strip trailing digits, D+digits patterns
+        var CleanName := DpkName;
+
+        // Strip trailing Delphi version suffix like D13, D12, D10_4
+        var DPos := 0;
+
+        for var C := CleanName.Length downto 1 do
+        begin
+          if ( CleanName[ C ] = 'D' ) or ( CleanName[ C ] = 'd' ) then
+          begin
+            var Suffix := Copy( CleanName, C + 1, Length( CleanName ) );
+            var IsVersionSuffix := ( Suffix.Length > 0 );
+
+            for var SC in Suffix do
+              if ( not CharInSet( SC, [ '0'..'9', '_' ] ) ) then
+              begin
+                IsVersionSuffix := False;
+                Break;
+              end;
+
+            if IsVersionSuffix then
+            begin
+              DPos := C;
+              Break;
+            end;
+          end;
+        end;
+
+        if DPos > 1 then
+          CleanName := Copy( CleanName, 1, DPos - 1 );
+
+        // Strip trailing version numbers (e.g. EurekaLogCore50 → EurekaLogCore)
+        while ( CleanName.Length > 0 ) and CharInSet( CleanName[ CleanName.Length ], [ '0'..'9' ] ) do
+          Delete( CleanName, CleanName.Length, 1 );
+
+        // Strip trailing underscore
+        if CleanName.EndsWith( '_' ) then
+          Delete( CleanName, CleanName.Length, 1 );
+
+        if CleanName.Length >= 3 then
+          Exit( CleanName );
+      end;
+
+      // Also search subdirectories
+      var SubDirs := TDirectory.GetDirectories( SearchDir );
+
+      for var SubDir in SubDirs do
+      begin
+        DpkFiles := TDirectory.GetFiles( SubDir, '*.dpk', TSearchOption.soTopDirectoryOnly );
+
+        for var DpkFile in DpkFiles do
+        begin
+          var DpkName := TPath.GetFileNameWithoutExtension( DpkFile );
+
+          if DpkName.StartsWith( 'dcl', True ) then Continue;
+
+          var CleanName := DpkName;
+
+          var DPos := 0;
+
+          for var C := CleanName.Length downto 1 do
+            if ( CleanName[ C ] = 'D' ) or ( CleanName[ C ] = 'd' ) then
+            begin
+              var Suffix := Copy( CleanName, C + 1, Length( CleanName ) );
+              var IsVersionSuffix := ( Suffix.Length > 0 );
+
+              for var SC in Suffix do
+                if ( not CharInSet( SC, [ '0'..'9', '_' ] ) ) then
+                begin
+                  IsVersionSuffix := False;
+                  Break;
+                end;
+
+              if IsVersionSuffix then
+              begin
+                DPos := C;
+                Break;
+              end;
+            end;
+
+          if DPos > 1 then
+            CleanName := Copy( CleanName, 1, DPos - 1 );
+
+          while ( CleanName.Length > 0 ) and CharInSet( CleanName[ CleanName.Length ], [ '0'..'9' ] ) do
+            Delete( CleanName, CleanName.Length, 1 );
+
+          if CleanName.EndsWith( '_' ) then
+            Delete( CleanName, CleanName.Length, 1 );
+
+          if CleanName.Length >= 3 then
+            Exit( CleanName );
+        end;
+      end;
+
+    except
+      // Access denied — skip
+    end;
+  end;
+
+  // Strategy 2: Use the nearest non-generic ancestor directory name
+  var DirName := ExtractFileName( ADirectory );
+
+  if ( not IsGenericDirectoryName( DirName ) ) then
+    Exit( DirName );
+
+  // Walk up to find a non-generic name
+  var Current := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( ADirectory ) ) );
+
+  while Current <> '' do
+  begin
+    var Name := ExtractFileName( Current );
+
+    if ( Name <> '' ) and ( not IsGenericDirectoryName( Name ) ) then
+      Exit( Name );
+
+    var Next := ExcludeTrailingPathDelimiter( ExtractFilePath( Current ) );
+
+    if Next = Current then Break;
+
+    Current := Next;
+  end;
+
+  // Fallback
+  Result := DirName;
 
 end;
 
