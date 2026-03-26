@@ -542,22 +542,10 @@ Thumbs.db
 .DS_Store
 ```
 
-### `CHANGELOG.md` Format
+### `CHANGES.md` Format
 
-Use **CHANGELOG.md** (not CHANGES.md) following the [Keep a Changelog](https://keepachangelog.com) convention:
-
-```markdown
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/).
-
-## [Unreleased]
-
-### Added
-- Initial project setup
-```
+Use **CHANGES.md** — reverse chronological, date-based entries with
+Problem/Changes/Result/Files Modified structure.
 
 ### `Docs/` Directory
 
@@ -581,7 +569,7 @@ These are essential for onboarding — newcomers need a worked example to unders
 
 ## Implementation Order (Phase 1 — MVP)
 
-1. **Repository setup** — `.dpr`, `.dproj`, `CLAUDE.md` (Ian to review draft), `README.md`, `LICENCE`, `CHANGELOG.md`, `.gitignore`, `Samples/`
+1. **Repository setup** — `.dpr`, `.dproj`, `CLAUDE.md` (Ian to review draft), `README.md`, `LICENCE`, `CHANGES.md`, `.gitignore`, `Samples/`
 2. **`uTypes.pas`** — Shared record types
 3. **`uProjectParser.pas`** — Parse `.dpr` uses clause + `.dproj` XML
 4. **`uRTLScanner.pas`** — Registry lookup + `.dcu` directory scan

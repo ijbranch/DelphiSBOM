@@ -1,7 +1,6 @@
 # DelphiSBOM — Change Log
 
 All project changes are documented here in reverse chronological order.
-For release notes in Keep-a-Changelog format, see `CHANGELOG.md`.
 
 ## 2026-03-27 - Code Audit: 18 Issues Identified and Fixed
 
@@ -40,10 +39,9 @@ as false positives and dismissed.
    orphaned `MRU:*` sections before writing current entries. Added
    `System.Classes` to implementation uses for `TStringList`.
 
-8. **All source files** (11 files) — Removed `(GITLAK Software)` from copyright
-   headers. Internal project names (DBiWorkflow, DBiAdmin) redacted from
-   `PROGRESS.md`. Internal references cleaned from plan documents and
-   `Docs/UsersGuide.md`.
+8. **All source files** (11 files) — Removed internal company name from copyright
+   headers. Internal project names redacted from `PROGRESS.md`. Internal
+   references cleaned from plan documents and `Docs/UsersGuide.md`.
 
 9. **Docs/Help.md, Docs/UsersGuide.md** — Version footers synchronised.
 
@@ -52,9 +50,6 @@ as false positives and dismissed.
 
 11. **.gitignore** — Corrected comment: `.eof` files are EurekaLog config, not IDE files.
 
-12. **CHANGELOG.md** — Prior content moved under `[1.0.0] - 2026-03-26` heading;
-    audit fixes added to `[Unreleased]`.
-
 **Result:** Clean compile on Win64 Debug. All code fixes verified by build.
 One remaining issue (#6 — .dproj version number inconsistency across configs)
 requires manual synchronisation in the Delphi IDE.
@@ -62,12 +57,26 @@ requires manual synchronisation in the Delphi IDE.
 **Files Modified:** uMainForm.pas, uProjectParser.pas, uSBOMBuilder.pas,
 uSBOMEngine.pas, uManifestLoader.pas, uSettings.pas, uTypes.pas,
 uUnitClassifier.pas, uRTLScanner.pas, uLibraryDiscovery.pas, DelphiSBOM.dpr
-(copyright only), PROGRESS.md, CHANGELOG.md, Help.md, UsersGuide.md,
+(copyright only), PROGRESS.md, Help.md, UsersGuide.md,
 components.sample.json, .gitignore, DelphiSBOM_Refined_Plan.md,
 Delphi_SBOM_PLAN.md
 
-**Documentation Updated:** CHANGES.md (created), CHANGELOG.md, PROGRESS.md,
-Help.md, UsersGuide.md
+## 2026-03-26 - Dormant Manifest Entry Logging
+
+**Problem:** Users had no visibility into `components.json` entries that were
+no longer referenced by any project unit (e.g. after removing a library).
+
+**Changes Made:**
+1. `uSBOMEngine.pas` — Engine now logs an `[INFO]` message for each
+   `components.json` entry not referenced by any project unit
+2. User's Guide expanded "Subsequent Runs" section: stateless regeneration
+   model for adding, removing, and updating dependencies
+3. User's Guide added "Keeping the SBOM Current" note reinforcing safe,
+   idempotent regeneration
+
+**Result:** Dormant entries visible in log without needing to remove them.
+
+**Files Modified:** uSBOMEngine.pas, UsersGuide.md, Help.md, SCHEMA.md
 
 ## 2026-03-26 - Project MRU Feature
 
@@ -77,11 +86,33 @@ Help.md, UsersGuide.md
 1. New `uSettings.pas` unit with `TMRUManager` class (INI persistence)
 2. `FEdtProject` changed from `TEdit` to `TComboBox` (csDropDown)
 3. Per-project settings (manifest, output dir, version) restored on selection
+4. Settings persisted to `%APPDATA%\DelphiSBOM\DelphiSBOM.ini` (max 10 entries)
 
 **Result:** Recent projects available from dropdown, settings auto-restored.
 
 **Files Modified:** uSettings.pas (new), uMainForm.pas, uMainForm.dfm,
 DelphiSBOM.dpr, DelphiSBOM.dproj
+
+## 2026-03-26 - Code Audit (Session 3)
+
+**Problem:** First code quality review after MVP completion.
+
+**Changes Made:**
+1. PURL name and version segments now URL-encoded per RFC 3986
+2. Dead `FFoundDirs` field removed from `uLibraryDiscovery`
+3. `IsValidUnitName` rejects malformed scoped names (leading/trailing dots,
+   consecutive dots)
+4. Malformed `components.json` array entries skipped gracefully instead of
+   raising cast errors
+5. Unresolved IDE environment variable paths logged as warnings instead of
+   silently skipped
+6. EurekaLog `.eof` config files added to `.gitignore`
+
+**Result:** Six fixes applied. No memory leaks, thread safety issues, or
+CycloneDX compliance problems found.
+
+**Files Modified:** uSBOMBuilder.pas, uLibraryDiscovery.pas,
+uProjectParser.pas, uManifestLoader.pas, .gitignore
 
 ## 2026-03-26 - MVP Complete
 
@@ -95,6 +126,13 @@ CycloneDX SBOMs to meet EU CRA and other regulatory requirements.
 3. Automatic library discovery with vendor/licence extraction from source
 4. Background threading for UI responsiveness
 5. Optional SynEdit integration for syntax-highlighted JSON viewing
+6. UUID braces stripped from SBOM serialNumber
+7. Project version fallback to VerInfo_Keys when individual elements absent
+8. Own-code detection from `.dpr` `in` file references and sibling directories
+9. Smart library naming from `.dpk` package files
+10. Nested library directory merging
+11. Scoped unit names matched against manifest exact/prefix entries
+12. Repository documentation: README, CLAUDE.md, SCHEMA.md, CYCLONEDX-NOTES.md
 
 **Result:** Working application generating valid CycloneDX 1.5 SBOMs from
 Delphi projects. Tested against three projects.

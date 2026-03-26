@@ -280,7 +280,7 @@ DelphiSBOM/
 │
 ├── README.md
 ├── LICENCE                          MIT
-├── CHANGELOG.md
+├── CHANGES.md
 └── CLAUDE.md                        Instructions for Claude Code (see Section 8)
 ```
 
@@ -311,7 +311,7 @@ DelphiSBOM/
 - [ ] `--validate` mode for `components.json`
 - [ ] DUnitX test project covering parser and classifier logic
 - [ ] `components.sample.json` with all common Delphi third-party libraries documented
-- [ ] CHANGELOG.md
+- [ ] CHANGES.md
 - [ ] First tagged release on Codeberg (v1.0.0)
 
 ### Phase 3 — Community and Ecosystem (Post-v1.0)

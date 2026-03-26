@@ -107,7 +107,7 @@ This repository will become public. The following rules apply now:
 |------|---------|
 | `PROGRESS.md` | Implementation progress tracker — read first, update last |
 | `DelphiSBOM_Refined_Plan.md` | Full implementation specification (v0.6) |
-| `CHANGELOG.md` | Change log (Keep a Changelog format) |
+| `CHANGES.md` | Project change log (reverse chronological) |
 | `Docs/SCHEMA.md` | `components.json` schema reference |
 | `Docs/CYCLONEDX-NOTES.md` | CycloneDX 1.5 compliance notes and known limitations |
 | `Samples/components.sample.json` | Example manifest for onboarding |
