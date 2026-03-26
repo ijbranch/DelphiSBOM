@@ -11,7 +11,8 @@ uses
   uSBOMBuilder in 'uSBOMBuilder.pas',
   uSBOMEngine in 'uSBOMEngine.pas',
   uLibraryDiscovery in 'uLibraryDiscovery.pas',
-  uSettings in 'uSettings.pas';
+  uSettings in 'uSettings.pas',
+  uLibraryEditor in 'uLibraryEditor.pas';
 
 {$R *.res}
 

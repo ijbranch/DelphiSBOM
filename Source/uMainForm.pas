@@ -90,8 +90,9 @@ type
     FPnlDiscovery    : TPanel;
     FMmoSummary      : TMemo;
     FMmoDiscovery    : TMemo;
-    FBtnSaveRegen    : TButton;
-    FBtnMarkOwnCode  : TButton;
+    FBtnSaveRegen      : TButton;
+    FBtnEditLibraries  : TButton;
+    FBtnMarkOwnCode    : TButton;
 
     // Log panel
     FMmoLog : TMemo;
@@ -127,6 +128,7 @@ type
     procedure DetectDelphiPath;
     procedure DisplayDiscoveredLibraries;
     procedure BtnSaveRegenClick( Sender: TObject );
+    procedure BtnEditLibrariesClick( Sender: TObject );
     procedure BtnMarkOwnCodeClick( Sender: TObject );
     procedure BtnViewSBOMClick( Sender: TObject );
     function GetUnresolvedUnits: TArray<string>;
@@ -146,7 +148,7 @@ uses
   {$IFDEF USE_SYNEDIT}
   SynEdit, SynHighlighterJSON,
   {$ENDIF}
-  uSBOMEngine, uManifestLoader;
+  uSBOMEngine, uManifestLoader, uLibraryEditor;
 
 {$R *.dfm}
 
@@ -512,6 +514,14 @@ begin
   FBtnSaveRegen.OnClick := BtnSaveRegenClick;
   FBtnSaveRegen.Enabled := False;
 
+  FBtnEditLibraries := TButton.Create( Self );
+  FBtnEditLibraries.Parent  := PnlDiscButtons;
+  FBtnEditLibraries.Align   := alLeft;
+  FBtnEditLibraries.Width   := 120;
+  FBtnEditLibraries.Caption := 'Edit Libraries...';
+  FBtnEditLibraries.OnClick := BtnEditLibrariesClick;
+  FBtnEditLibraries.Enabled := False;
+
   FBtnMarkOwnCode := TButton.Create( Self );
   FBtnMarkOwnCode.Parent  := PnlDiscButtons;
   FBtnMarkOwnCode.Align   := alClient;
@@ -632,8 +642,9 @@ begin
   FMmoLog.Clear;
   FMmoSummary.Clear;
   FMmoDiscovery.Clear;
-  FBtnSaveRegen.Enabled   := False;
-  FBtnMarkOwnCode.Enabled := False;
+  FBtnSaveRegen.Enabled     := False;
+  FBtnEditLibraries.Enabled := False;
+  FBtnMarkOwnCode.Enabled   := False;
 
   var Options: TSBOMOptions;
   Options.ProjectFile     := Trim( FEdtProject.Text );
@@ -712,9 +723,10 @@ begin
 
   FMmoSummary.Clear;
   FMmoDiscovery.Clear;
-  FBtnSaveRegen.Enabled   := False;
-  FBtnMarkOwnCode.Enabled := False;
-  FBtnViewSBOM.Enabled    := False;
+  FBtnSaveRegen.Enabled     := False;
+  FBtnEditLibraries.Enabled := False;
+  FBtnMarkOwnCode.Enabled   := False;
+  FBtnViewSBOM.Enabled      := False;
   FLastResult := AResult;
 
   if ( not AResult.Success ) then
@@ -809,7 +821,8 @@ begin
         FMmoDiscovery.Lines.Add( '' );
       end;
 
-      FBtnSaveRegen.Enabled := True;
+      FBtnSaveRegen.Enabled     := True;
+      FBtnEditLibraries.Enabled := True;
     end;
 
     // Show remaining unclassified units (not found on disk)
@@ -887,6 +900,21 @@ begin
   // Re-run generation
   LogMessage( llInfo, 'Regenerating SBOM with updated manifest...' );
   BtnGenerateClick( Self );
+
+end;
+
+procedure TMainForm.BtnEditLibrariesClick( Sender: TObject );
+begin
+
+  if Length( FDiscoveredLibraries ) = 0 then Exit;
+
+  if TLibraryEditorForm.Execute( FDiscoveredLibraries ) then
+  begin
+    // Refresh the discovery memo with edited values
+    FMmoDiscovery.Clear;
+    DisplayDiscoveredLibraries;
+    LogMessage( llInfo, 'Library metadata updated from editor' );
+  end;
 
 end;
 

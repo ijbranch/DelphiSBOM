@@ -2,6 +2,28 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-03-27 - Library Editor Modal Dialog
+
+**Problem:** Users could not edit auto-detected library metadata (Name, Version,
+Vendor, Licence, Prefix) before saving to components.json. The discovery panel
+showed read-only text that had to be accepted as-is.
+
+**Changes Made:**
+1. New `uLibraryEditor.pas` — modal TStringGrid editor with columns: Include
+   (toggle), Name, Version, Vendor, Licence, Prefix (editable), Units count
+   and Directory (read-only). Units detail panel at the bottom shows the full
+   unit list for the selected row.
+2. `uMainForm.pas` — added "Edit Libraries..." button in the discovery button
+   panel, wired to `TLibraryEditorForm.Execute`. On OK, `FDiscoveredLibraries`
+   is updated and the discovery memo refreshed.
+3. `DelphiSBOM.dpr` — added `uLibraryEditor` to uses clause.
+
+**Result:** Users can now review and correct auto-detected metadata in a
+structured grid before saving. Click Include column to toggle libraries
+on/off. Clean compile on Win64 Debug.
+
+**Files Modified:** uLibraryEditor.pas (new), uMainForm.pas, DelphiSBOM.dpr
+
 ## 2026-03-27 - CycloneDX 1.5 Compliance Verification
 
 **Problem:** Needed to verify SBOM output remained standards-compliant after

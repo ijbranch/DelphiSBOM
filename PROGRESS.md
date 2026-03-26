@@ -7,13 +7,13 @@
 
 ## Current State
 
-**Phase:** 1 — MVP Complete. Code audit fixes applied.
-**Step:** 10 of 10 — Manual testing
-**Status:** In-depth code audit completed. 18 issues identified (2 critical, 4 high, 5 medium, 7 low). All fixable issues addressed in code. .dproj version sync must be done in IDE.
+**Phase:** 2 — Polish and Reliability. Library editor implemented.
+**Step:** Phase 2, item 8 complete
+**Status:** Modal library editor (uLibraryEditor.pas) implemented with TStringGrid. Two code audits completed (23 issues total, all fixed). CycloneDX 1.5 compliance verified.
 
 ## Next Action
 
-Build and test all audit fixes: verify FormCloseQuery blocks closing during processing, test .dproj Base PropertyGroup version extraction, test uses clause parsing with comments in .dpr files. Then: synchronise .dproj Win32/Win64 version numbers in IDE (issue #6). Consider implementing the editable TStringGrid for discovered library names/metadata.
+Test the library editor end-to-end: generate SBOM against a project with unclassified units, click "Edit Libraries...", modify metadata, click OK, verify discovery memo updates, then Save & Regenerate. Also: synchronise .dproj Win32/Win64 version numbers in IDE.
 
 ## Blockers / Questions for Ian
 
@@ -68,7 +68,7 @@ Build and test all audit fixes: verify FormCloseQuery blocks closing during proc
 | 5 | DUnitX test project | NOT STARTED | |
 | 6 | `components.sample.json` with common libraries | DONE | Created in Step 1 |
 | 7 | First tagged release on Codeberg (v1.0.0) | NOT STARTED | |
-| 8 | Editable TStringGrid for discovered library metadata | NOT STARTED | Discussed — user edits Name, Version, Vendor, Licence before saving |
+| 8 | Editable TStringGrid for discovered library metadata | DONE | Modal dialog (uLibraryEditor.pas) with grid: Include, Name, Version, Vendor, Licence, Prefix editable; Units detail panel |
 | 12 | Project MRU dropdown | DONE | TComboBox with INI persistence, per-project settings restored |
 | 9 | Optional SynEdit JSON viewer | DONE | `{$IFDEF USE_SYNEDIT}` with TMemo fallback |
 | 10 | View SBOM File button | DONE | Modal viewer, SynEdit or TMemo |
@@ -85,4 +85,4 @@ Build and test all audit fixes: verify FormCloseQuery blocks closing during proc
 | 2026-03-26 | 3 | In-depth code audit across all units. Six fixes applied: PURL URL-encoding (uSBOMBuilder), dead FFoundDirs field removed (uLibraryDiscovery), IsValidUnitName tightened for malformed dots (uProjectParser), JSON type guard added (uManifestLoader), unresolved env var paths now logged (uLibraryDiscovery), .eof added to .gitignore. No memory leaks, thread safety issues, or CycloneDX compliance problems found. |
 | 2026-03-26 | 4 | Project MRU feature implemented. New uSettings.pas unit with TMRUManager (INI-based, %APPDATA%\DelphiSBOM\DelphiSBOM.ini). FEdtProject changed from TEdit to TComboBox (csDropDown). MRU saves on successful generation, restores manifest/output/version per project. Max 10 entries, dead entries pruned on load. Clean compile on Win64 Debug. |
 | 2026-03-26 | 5 | Documented stateless SBOM regeneration model (adding/removing/updating dependencies). Added dormant manifest entry logging to uSBOMEngine — logs [INFO] for each components.json entry not referenced by any project unit. Updated UsersGuide.md (Subsequent Runs expanded, Keeping SBOM Current note), Help.md (log panel), SCHEMA.md (dormant entries section), CHANGES.md. |
-| 2026-03-27 | 6 | Comprehensive code audit: 18 issues found (2 critical, 4 high, 5 medium, 7 low), 6 false positives identified and dismissed. Fixes applied: (1) FormCloseQuery guard prevents form closure during processing (AV fix). (2) FindNodeText replaced with FindBasePropertyValue — reads Base PropertyGroup first, avoiding config-specific version overrides. (3) ExtractUsesBlock now strips comments before searching for `uses` keyword, checks word boundaries, handles semicolons inside string literals. (4) Internal references (GITLAK Software, DBiWorkflow, DBiAdmin) removed from all source files and documentation. (5) SaveDiscoveredLibraries deduplicates by component name. (6) BuildAndSave validates output directory before writing. (7) ManifestPath computed once in uSBOMEngine. (8) Stale MRU INI sections cleaned on save. (9) Doc versions synchronised. (10) Sample file Indy entry corrected (units_exact not prefix). CHANGELOG moved to [1.0.0] versioned heading. |
+| 2026-03-27 | 6 | Comprehensive code audit: 18 issues found (2 critical, 4 high, 5 medium, 7 low), 6 false positives identified and dismissed. Fixes applied: (1) FormCloseQuery guard prevents form closure during processing (AV fix). (2) FindNodeText replaced with FindBasePropertyValue — reads Base PropertyGroup first, avoiding config-specific version overrides. (3) ExtractUsesBlock now strips comments before searching for `uses` keyword, checks word boundaries, handles semicolons inside string literals. (4) Internal references removed from all source files and documentation. (5) SaveDiscoveredLibraries deduplicates by component name. (6) BuildAndSave validates output directory before writing. (7) ManifestPath computed once in uSBOMEngine. (8) Stale MRU INI sections cleaned on save. (9) Doc versions synchronised. (10) Sample file Indy entry corrected (units_exact not prefix). CHANGELOG consolidated into CHANGES.md. Second audit pass: 5 additional fixes (supplier.url, licence.url emission, AutoPopulateDefaults guard, dead code removal, loop optimisation). CycloneDX 1.5 compliance verified. Indy SPDX ID corrected (Modified-BSD → BSD-3-Clause). Library editor implemented (uLibraryEditor.pas): modal TStringGrid dialog for editing discovered library metadata before saving to manifest. Phase 2 item #8 complete. |
