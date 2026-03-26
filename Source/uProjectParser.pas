@@ -324,18 +324,6 @@ begin
       if IsOwnCode then
         Trimmed := Trim( Copy( Trimmed, 1, InPos - 1 ) );
 
-      // Remove any compiler directives {$...}
-      while Pos( '{$', Trimmed ) > 0 do
-      begin
-        var BraceStart := Pos( '{$', Trimmed );
-        var BraceEnd   := PosEx( '}', Trimmed, BraceStart );
-
-        if BraceEnd > 0 then
-          Delete( Trimmed, BraceStart, BraceEnd - BraceStart + 1 )
-        else
-          Break;
-      end;
-
       // Clean up whitespace and line breaks
       Trimmed := StringReplace( Trimmed, #13#10, ' ', [ rfReplaceAll ] );
       Trimmed := StringReplace( Trimmed, #10, ' ', [ rfReplaceAll ] );

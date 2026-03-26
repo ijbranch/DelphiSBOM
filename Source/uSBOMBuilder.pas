@@ -129,6 +129,14 @@ begin
     begin
       var SupplierObj := TJSONObject.Create;
       SupplierObj.AddPair( 'name', AManifest.Supplier.Name );
+
+      if AManifest.Supplier.URL <> '' then
+      begin
+        var UrlArray := TJSONArray.Create;
+        UrlArray.Add( AManifest.Supplier.URL );
+        SupplierObj.AddPair( 'url', UrlArray );
+      end;
+
       MainComp.AddPair( 'supplier', SupplierObj );
     end;
 
@@ -191,6 +199,9 @@ begin
             LicObj.AddPair( 'name', 'Commercial' )
           else
             LicObj.AddPair( 'id', Entry.Licence );
+
+          if Entry.LicenceURL <> '' then
+            LicObj.AddPair( 'url', Entry.LicenceURL );
 
           var LicWrapper := TJSONObject.Create;
           LicWrapper.AddPair( 'license', LicObj );

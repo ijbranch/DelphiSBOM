@@ -822,12 +822,16 @@ begin
         var Found := False;
 
         for var Lib in FDiscoveredLibraries do
+        begin
           for var U in Lib.Units do
             if SameText( U, CU.OriginalName ) then
             begin
               Found := True;
               Break;
             end;
+
+          if Found then Break;
+        end;
 
         if ( not Found ) then
           UnfoundUnits.Add( CU.OriginalName );
@@ -983,12 +987,16 @@ begin
       var Found := False;
 
       for var Lib in FDiscoveredLibraries do
+      begin
         for var U in Lib.Units do
           if SameText( U, CU.OriginalName ) then
           begin
             Found := True;
             Break;
           end;
+
+        if Found then Break;
+      end;
 
       if ( not Found ) then
         Unfound.Add( CU.OriginalName );
@@ -1093,12 +1101,20 @@ begin
   if FEdtProject.Text = '' then Exit;
 
   var ProjectDir := ExtractFilePath( FEdtProject.Text );
+
+  if ( ProjectDir = '' ) or ( not TDirectory.Exists( ProjectDir ) ) then Exit;
+
   var DefaultManifest := TPath.Combine( ProjectDir, 'components.json' );
 
   if ( not FileExists( DefaultManifest ) ) then
   begin
-    CreateDefaultManifest( DefaultManifest );
-    LogMessage( llInfo, Format( 'Created default components.json in %s', [ ProjectDir ] ) );
+    try
+      CreateDefaultManifest( DefaultManifest );
+      LogMessage( llInfo, Format( 'Created default components.json in %s', [ ProjectDir ] ) );
+    except
+      on E: Exception do
+        LogMessage( llWarning, 'Could not create default manifest: ' + E.Message );
+    end;
   end;
 
   if FEdtManifest.Text = '' then

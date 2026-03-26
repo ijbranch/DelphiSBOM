@@ -2,6 +2,27 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-03-27 - Second Audit Pass: 5 Additional Fixes
+
+**Problem:** Follow-up audit of post-fix codebase found 3 medium and 2 low issues.
+
+**Changes Made:**
+1. **uSBOMBuilder.pas** — `supplier.url` array now emitted in metadata when
+   `supplier.url` is present in components.json (CycloneDX data was being dropped)
+2. **uSBOMBuilder.pas** — `licence_url` now emitted as `license.url` field in
+   each component's licence object (CycloneDX data was being dropped)
+3. **uMainForm.pas** — `AutoPopulateDefaults` now checks directory exists before
+   attempting to create default manifest; wrapped in try/except for robustness
+4. **uProjectParser.pas** — Removed dead compiler directive stripping loop from
+   `SplitUnitNames` (now handled by `StripComments` upstream)
+5. **uMainForm.pas** — Added outer loop `Break` in `DisplayDiscoveredLibraries`
+   and `GetUnresolvedUnits` for early exit once a unit is found
+
+**Result:** Clean compile on Win64 Debug. CycloneDX output now includes all
+user-provided licence and supplier URLs.
+
+**Files Modified:** uSBOMBuilder.pas, uMainForm.pas, uProjectParser.pas
+
 ## 2026-03-27 - Code Audit: 18 Issues Identified and Fixed
 
 **Problem:** Comprehensive code audit of all 10 source units revealed 2 critical,
