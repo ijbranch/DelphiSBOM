@@ -2,6 +2,12 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-03-27 - Build Config: Map File and EXE Output to Project Subdirectory
+
+**Changes Made:** Added `DCC_ExeOutput=.\$(Platform)\$(Config)` to DelphiSBOM.dproj (already had `DCC_MapFile=3`).
+
+**Files Modified:** `Source/DelphiSBOM.dproj`
+
 ## 2026-03-27 - Own-Code Prefix Matching
 
 **Problem:** Shared internal libraries (e.g. GITLAKLib with `gll*` units)

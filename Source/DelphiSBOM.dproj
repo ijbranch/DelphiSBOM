@@ -71,6 +71,7 @@
         <VerInfo_Keys>CompanyName=;FileDescription=;FileVersion=1.0.0.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProductName=;ProductVersion=1.0.0.0;Comments=;CFBundleName=</VerInfo_Keys>
         <DCC_DcuOutput>.\$(Platform)\$(Config) </DCC_DcuOutput>
         <DCC_Define>USE_SYNEDIT;$(DCC_Define)</DCC_Define>
+        <DCC_ExeOutput>.\$(Platform)\$(Config)</DCC_ExeOutput>
         <DCC_MapFile>3</DCC_MapFile>
         <DCC_GenerateStackFrames>true</DCC_GenerateStackFrames>
     </PropertyGroup>
@@ -132,8 +133,8 @@
     <PropertyGroup Condition="'$(Cfg_2_Win64)'!=''">
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_Locale>1033</VerInfo_Locale>
-        <VerInfo_Keys>CompanyName=;FileDescription=DelphiSBOM;FileVersion=1.0.0.54;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.DelphiSBOM;ProductName=DelphiSBOM;ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
-        <VerInfo_Build>54</VerInfo_Build>
+        <VerInfo_Keys>CompanyName=;FileDescription=DelphiSBOM;FileVersion=1.0.0.58;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.DelphiSBOM;ProductName=DelphiSBOM;ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
+        <VerInfo_Build>58</VerInfo_Build>
         <VerInfo_AutoIncVersion>true</VerInfo_AutoIncVersion>
     </PropertyGroup>
     <ItemGroup>
@@ -153,6 +154,7 @@
         <DCCReference Include="uLibraryDiscovery.pas"/>
         <DCCReference Include="uSettings.pas"/>
         <DCCReference Include="uLibraryEditor.pas"/>
+        <DCCReference Include="uEvidenceMerger.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
