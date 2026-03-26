@@ -23,7 +23,7 @@
       "version": "10.6.3",
       "vendor": "Indy Project",
       "vendor_url": "https://www.indyproject.org",
-      "licence": "Modified-BSD",
+      "licence": "BSD-3-Clause",
       "licence_url": "https://www.indyproject.org/license/",
       "type": "library",
       "units_prefix": [],
