@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Documentation
+- User's Guide: expanded "Subsequent Runs" section to explain stateless regeneration model,
+  covering adding, removing, and updating dependencies, and dormant `components.json` entries
+- User's Guide: added note to "Keeping the SBOM Current" reinforcing safe, idempotent regeneration
+
+### Changed
+- Engine now logs an `[INFO]` message for each `components.json` entry not referenced by any
+  project unit, making dormant entries visible without removing them
+
 ### Added
 - Project MRU (Most Recently Used) dropdown — recent projects available from a combo box,
   with per-project manifest, output dir, and version override restored automatically

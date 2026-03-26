@@ -53,6 +53,11 @@ Shows timestamped messages during processing:
 - `[WARNING]` — non-fatal issues (e.g. missing manifest, RTL scan unavailable)
 - `[ERROR]` — fatal errors that prevented completion
 
+After classification, an `[INFO]` message is logged for each `components.json`
+entry that is not referenced by any unit in the project. These are dormant
+entries — they have no effect on the SBOM but indicate a library that was
+once used and may no longer be needed in the manifest.
+
 ## Troubleshooting
 
 ### "Delphi installation not found"

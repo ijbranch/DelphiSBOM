@@ -116,7 +116,24 @@ begin
     Scanner.Free;
   end;
 
-  // Step 4a: Discover libraries for unclassified units
+  // Step 4a: Report dormant manifest entries (components not referenced by any project unit)
+  if Length( Result.Manifest.Components ) > 0 then
+  begin
+    var ReferencedIndices := TDictionary<Integer, Boolean>.Create;
+    try
+      for var CU in Result.ClassifiedUnits do
+        if ( CU.Classification = ucThirdParty ) and ( CU.ComponentIndex >= 0 ) then
+          ReferencedIndices.TryAdd( CU.ComponentIndex, True );
+
+      for var I := 0 to High( Result.Manifest.Components ) do
+        if not ReferencedIndices.ContainsKey( I ) then
+          Log( llInfo, Format( 'components.json: ''%s'' not referenced by any project unit', [ Result.Manifest.Components[ I ].Name ] ) );
+    finally
+      ReferencedIndices.Free;
+    end;
+  end;
+
+  // Step 4b: Discover libraries for unclassified units
   if Result.Summary.UnclassifiedCount > 0 then
   begin
     var Discovery := TLibraryDiscovery.Create( FLog );

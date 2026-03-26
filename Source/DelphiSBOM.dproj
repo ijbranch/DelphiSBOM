@@ -132,8 +132,8 @@
     <PropertyGroup Condition="'$(Cfg_2_Win64)'!=''">
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_Locale>1033</VerInfo_Locale>
-        <VerInfo_Keys>CompanyName=;FileDescription=DelphiSBOM;FileVersion=1.0.0.39;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.DelphiSBOM;ProductName=DelphiSBOM;ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
-        <VerInfo_Build>39</VerInfo_Build>
+        <VerInfo_Keys>CompanyName=;FileDescription=DelphiSBOM;FileVersion=1.0.0.40;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.DelphiSBOM;ProductName=DelphiSBOM;ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
+        <VerInfo_Build>40</VerInfo_Build>
         <VerInfo_AutoIncVersion>true</VerInfo_AutoIncVersion>
     </PropertyGroup>
     <ItemGroup>

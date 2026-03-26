@@ -174,13 +174,53 @@ build pipeline.
 
 ## Subsequent Runs
 
-Once your `components.json` is populated (either from discovery or manual
-editing), subsequent runs against the same project classify everything
-immediately — no discovery step needed. Just click Generate SBOM and the
-output is ready.
+### Stateless Regeneration
 
-If you add new third-party libraries to your project, new unclassified units
-will appear and the discovery process will find them automatically.
+DelphiSBOM builds every SBOM from scratch. Each run re-reads the `.dpr` uses
+clause, re-scans the Delphi RTL, re-loads `components.json`, and re-classifies
+every unit. There is no incremental update and no memory of previous runs —
+the generated SBOM always reflects the current state of the project at the
+moment you click Generate.
+
+This means regeneration is always safe: you cannot end up with stale data
+carried forward from an earlier run.
+
+### Adding a Dependency
+
+When you add a new third-party library to your project, its units appear in
+the uses clause. On the next run they will be unclassified (unless already
+in `components.json`), and the discovery process will find them automatically.
+Click **Save Libraries & Regenerate SBOM** to persist and include them.
+
+### Removing a Dependency
+
+When you remove a library from your project (i.e. delete its units from the
+`.dpr` uses clause), the next SBOM generation simply will not include it.
+The removed units are no longer in the uses clause, so they are never parsed,
+never classified, and never appear in the output. The component disappears
+from the SBOM entirely.
+
+**Note on `components.json`:** Removing a library from your project does
+*not* automatically remove its entry from `components.json`. The entry
+remains but becomes dormant — no unit in the project references it, so it
+has no effect on the generated SBOM. You can tidy up dormant entries manually
+if you wish, but leaving them is harmless.
+
+DelphiSBOM logs an informational message for each dormant entry so you can
+see what is no longer referenced:
+
+```
+[INFO] components.json: 'OmniThreadLibrary' not referenced by any project unit
+```
+
+### Updating a Dependency Version
+
+To update a library's version in your SBOM:
+
+1. Edit the `version` field in `components.json`
+2. Click **Generate SBOM**
+
+The new version flows into the SBOM immediately. No other steps are needed.
 
 ## Understanding the Output
 
@@ -280,7 +320,10 @@ Regenerate your SBOM whenever you:
 - Change your project's version number
 - Prepare a release
 
-The process takes seconds — just click Generate SBOM.
+The process takes seconds — just click Generate SBOM. Because each run is a
+fresh, stateless scan (see [Subsequent Runs](#subsequent-runs)), you never
+need to worry about stale data from a previous generation. Running it again
+always produces an accurate, up-to-date SBOM.
 
 ## What To Do With Your SBOM
 
@@ -417,3 +460,4 @@ modified.
 *Version: 1.2 – 26 March 2026 11:00*
 *Version: 1.3 – 26 March 2026 12:00*
 *Version: 1.4 – 26 March 2026 — MRU feature*
+*Version: 1.5 – 26 March 2026 — Stateless regeneration documentation*

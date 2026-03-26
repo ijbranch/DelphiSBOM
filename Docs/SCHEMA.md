@@ -66,6 +66,17 @@ Place `components.json` in the same directory as your `.dpr` / `.dproj` file.
 At least one of `units_prefix` or `units_exact` must be present for the
 component to participate in unit classification.
 
+### Dormant Entries
+
+If a component entry in `components.json` is not matched by any unit in the
+project, it is considered dormant. Dormant entries are harmless — they are
+ignored during SBOM generation and do not appear in the output. DelphiSBOM
+logs an `[INFO]` message for each dormant entry so you can identify them.
+
+This commonly occurs when a library is removed from a project but its entry
+remains in `components.json`. You can remove dormant entries manually if you
+wish, but there is no requirement to do so.
+
 ## Unit Matching
 
 DelphiSBOM matches each unit found in a project's `uses` clauses against the

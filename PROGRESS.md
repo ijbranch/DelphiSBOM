@@ -1,7 +1,7 @@
 # DelphiSBOM — Implementation Progress
 
 **Plan document:** `DelphiSBOM_Refined_Plan.md` (v0.6 — Final Draft)
-**Last updated:** 2026-03-26 (Session 4)
+**Last updated:** 2026-03-26 (Session 5)
 
 ---
 
@@ -9,11 +9,11 @@
 
 **Phase:** 1 — MVP Complete. Testing and refinement ongoing.
 **Step:** 10 of 10 — Manual testing
-**Status:** MRU feature implemented and compiling. Pending user testing.
+**Status:** Dormant manifest entry logging added. Documentation updated across all docs.
 
 ## Next Action
 
-Test MRU feature end-to-end: generate SBOM for a project, close/reopen app, verify dropdown populated and settings restored. Then consider implementing the editable TStringGrid for discovered library names/metadata. Also: synchronise .dproj Win32/Win64 version builds in IDE.
+Build and test dormant entry logging: remove a library from a test project, regenerate SBOM, verify the [INFO] message appears in the log. Then consider implementing the editable TStringGrid for discovered library names/metadata. Also: synchronise .dproj Win32/Win64 version builds in IDE.
 
 ## Blockers / Questions for Ian
 
@@ -84,3 +84,4 @@ Test MRU feature end-to-end: generate SBOM for a project, close/reopen app, veri
 | 2026-03-26 | 2 | Full MVP implemented. Steps 1-9 complete. All core units built and compiling. Delphi compiler issues resolved (TThread descendants, TProc const mismatch). First test against itself — 3 bugs fixed (UUID, version mapping, VerInfo). Library discovery added (uLibraryDiscovery.pas). Tested against DBiWorkflow — iterative fixes: project dir exclusion, sibling dir detection, IDE env var resolution, .dpk naming, vendor cleanup, scoped unit matching, library merging, own-code auto-detection. Added: View SBOM button, optional SynEdit viewer, Mark Unresolved as Own Code, horizontal splitter, busy cursor. Tested against DBiAdmin — valid SBOM produced. All docs updated (Help.md, UsersGuide.md, SCHEMA.md, CHANGELOG.md, README.md, CLAUDE.md, CYCLONEDX-NOTES.md). Repository public on Codeberg. SynEdit added to shared libraries reference. |
 | 2026-03-26 | 3 | In-depth code audit across all units. Six fixes applied: PURL URL-encoding (uSBOMBuilder), dead FFoundDirs field removed (uLibraryDiscovery), IsValidUnitName tightened for malformed dots (uProjectParser), JSON type guard added (uManifestLoader), unresolved env var paths now logged (uLibraryDiscovery), .eof added to .gitignore. No memory leaks, thread safety issues, or CycloneDX compliance problems found. |
 | 2026-03-26 | 4 | Project MRU feature implemented. New uSettings.pas unit with TMRUManager (INI-based, %APPDATA%\DelphiSBOM\DelphiSBOM.ini). FEdtProject changed from TEdit to TComboBox (csDropDown). MRU saves on successful generation, restores manifest/output/version per project. Max 10 entries, dead entries pruned on load. Clean compile on Win64 Debug. |
+| 2026-03-26 | 5 | Documented stateless SBOM regeneration model (adding/removing/updating dependencies). Added dormant manifest entry logging to uSBOMEngine — logs [INFO] for each components.json entry not referenced by any project unit. Updated UsersGuide.md (Subsequent Runs expanded, Keeping SBOM Current note), Help.md (log panel), SCHEMA.md (dormant entries section), CHANGELOG.md. |
