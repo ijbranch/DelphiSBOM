@@ -135,6 +135,9 @@ implementation
 
 uses
   System.IOUtils, System.Win.Registry, System.Generics.Collections,
+  {$IFDEF USE_SYNEDIT}
+  SynEdit, SynHighlighterJSON,
+  {$ENDIF}
   uSBOMEngine, uManifestLoader;
 
 {$R *.dfm}
@@ -838,6 +841,20 @@ begin
     ViewForm.Height     := 600;
     ViewForm.Position   := poMainFormCenter;
 
+    {$IFDEF USE_SYNEDIT}
+    var Editor := TSynEdit.Create( ViewForm );
+    Editor.Parent     := ViewForm;
+    Editor.Align      := alClient;
+    Editor.ReadOnly   := True;
+    Editor.Font.Name  := 'Consolas';
+    Editor.Font.Size  := 10;
+    Editor.Gutter.ShowLineNumbers := True;
+
+    var Highlighter := TSynJSONSyn.Create( ViewForm );
+    Editor.Highlighter := Highlighter;
+
+    Editor.Lines.LoadFromFile( FLastResult.OutputFile, TEncoding.UTF8 );
+    {$ELSE}
     var Memo := TMemo.Create( ViewForm );
     Memo.Parent     := ViewForm;
     Memo.Align      := alClient;
@@ -846,6 +863,7 @@ begin
     Memo.Font.Name  := 'Consolas';
     Memo.Font.Size  := 10;
     Memo.Lines.LoadFromFile( FLastResult.OutputFile, TEncoding.UTF8 );
+    {$ENDIF}
 
     var BtnClose := TButton.Create( ViewForm );
     BtnClose.Parent      := ViewForm;
