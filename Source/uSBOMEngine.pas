@@ -192,6 +192,23 @@ begin
     end;
   end;
 
+  // Step 4d: Log evidence match summary
+  if Length( Result.Evidence ) > 0 then
+  begin
+    var MatchCount := 0;
+
+    for var Ev in Result.Evidence do
+      for var CU in Result.ClassifiedUnits do
+        if SameText( Ev.UnitName, CU.OriginalName ) then
+        begin
+          Inc( MatchCount );
+          Break;
+        end;
+
+    Log( llInfo, Format( 'DX.Comply evidence: %d of %d entries matched classified units (%d unmatched - transitive dependencies not in .dpr uses clause)',
+      [ MatchCount, Length( Result.Evidence ), Length( Result.Evidence ) - MatchCount ] ) );
+  end;
+
   // Step 5: Build and save SBOM
   var Builder := TSBOMBuilder.Create( FLog );
   try

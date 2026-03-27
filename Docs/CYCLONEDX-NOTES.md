@@ -85,6 +85,37 @@ The `metadata.tools` field uses the CycloneDX 1.5 format:
 Note: CycloneDX 1.5 changed `tools` from an array of objects to an object with
 a `components` array. Earlier formats are not used.
 
+### Binary Evidence via DX.Comply
+
+When a DX.Comply `bom.json` is provided, DelphiSBOM merges per-unit SHA-256
+hashes into the SBOM as **nested sub-components**. The CycloneDX 1.5
+specification allows `components` arrays within components:
+
+```json
+{
+  "type": "framework",
+  "name": "Embarcadero Delphi RTL",
+  "version": "37.0",
+  "components": [
+    {
+      "type": "library",
+      "name": "System.SysUtils",
+      "hashes": [{ "alg": "SHA-256", "content": "88de45b3a6f2..." }]
+    }
+  ]
+}
+```
+
+This nesting provides unit-level binary evidence while preserving the
+aggregate component model. Third-party library components receive the same
+treatment — each gains a nested `components` array listing its constituent
+units with hashes.
+
+DX.Comply classifies units by origin (Embarcadero RTL, Embarcadero VCL,
+Third party, Local project). DelphiSBOM matches evidence to its own
+classified units by unit name (case-insensitive). Only RTL and third-party
+units receive evidence in the output — own-code units are excluded by design.
+
 ## Known Limitations
 
 ### Multi-Version Delphi Installations

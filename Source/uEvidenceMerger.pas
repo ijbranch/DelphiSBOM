@@ -160,6 +160,8 @@ begin
         var UnitName := CompName;
 
         if UnitName.EndsWith( '.dcu', True ) then
+          UnitName := UnitName.Substring( 0, UnitName.Length - 4 )
+        else if UnitName.EndsWith( '.pas', True ) then
           UnitName := UnitName.Substring( 0, UnitName.Length - 4 );
 
         var Evidence: TUnitEvidence;

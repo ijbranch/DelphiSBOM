@@ -7,13 +7,13 @@
 
 ## Current State
 
-**Phase:** 2 — Polish and Reliability. Library editor implemented.
-**Step:** Phase 2, item 8 complete
-**Status:** Modal library editor (uLibraryEditor.pas) implemented with TStringGrid. Two code audits completed (23 issues total, all fixed). CycloneDX 1.5 compliance verified.
+**Phase:** 2 — Polish and Reliability. DX.Comply evidence bridge verified end-to-end.
+**Step:** Phase 2, DX.Comply bridge E2E complete
+**Status:** Evidence bridge tested against real DX.Comply output (DBiWhoIsOn, 729 library components). Three fixes applied: .pas extension stripping, unmatched evidence logging, MRU persistence for DX.Comply path. All 26 expected sub-components emitted with SHA-256 hashes in valid CycloneDX 1.5 output.
 
 ## Next Action
 
-Test the library editor end-to-end: generate SBOM against a project with unclassified units, click "Edit...", modify metadata, click OK, verify discovery memo updates, then Save & Regenerate. Also: synchronise .dproj Win32/Win64 version numbers in IDE. Consider Phase 2 items: report writer, cancel button, CLI mode, DUnitX tests, v1.0.0 release tag.
+Rebuild to pick up em-dash encoding fix in uSBOMEngine.pas. Consider Phase 2 items: report writer, cancel button, CLI mode, DUnitX tests, v1.0.0 release tag. Future enhancement: capture DX.Comply confidence/evidence-type properties in TUnitEvidence.
 
 ## Blockers / Questions for Ian
 
@@ -85,4 +85,5 @@ Test the library editor end-to-end: generate SBOM against a project with unclass
 | 2026-03-26 | 3 | In-depth code audit across all units. Six fixes applied: PURL URL-encoding (uSBOMBuilder), dead FFoundDirs field removed (uLibraryDiscovery), IsValidUnitName tightened for malformed dots (uProjectParser), JSON type guard added (uManifestLoader), unresolved env var paths now logged (uLibraryDiscovery), .eof added to .gitignore. No memory leaks, thread safety issues, or CycloneDX compliance problems found. |
 | 2026-03-26 | 4 | Project MRU feature implemented. New uSettings.pas unit with TMRUManager (INI-based, %APPDATA%\DelphiSBOM\DelphiSBOM.ini). FEdtProject changed from TEdit to TComboBox (csDropDown). MRU saves on successful generation, restores manifest/output/version per project. Max 10 entries, dead entries pruned on load. Clean compile on Win64 Debug. |
 | 2026-03-26 | 5 | Documented stateless SBOM regeneration model (adding/removing/updating dependencies). Added dormant manifest entry logging to uSBOMEngine — logs [INFO] for each components.json entry not referenced by any project unit. Updated UsersGuide.md (Subsequent Runs expanded, Keeping SBOM Current note), Help.md (log panel), SCHEMA.md (dormant entries section), CHANGES.md. |
+| 2026-03-27 | 7 | DX.Comply evidence bridge end-to-end test. Tested against real DX.Comply output (DBiWhoIsOn project, 729 library components). Three fixes: (1) uEvidenceMerger strips .pas extensions in addition to .dcu. (2) uSBOMEngine logs evidence match summary (33 of 729 matched). (3) uSettings + uMainForm persist DX.Comply file path in MRU. Fixed em-dash encoding issue in log message. All 26 expected sub-components (11 RTL + 12 EurekaLog + 1 FastMM5 + 1 StyledTaskDialog + 1 gllFunctions) emitted with SHA-256 hashes. Valid CycloneDX 1.5 output confirmed. |
 | 2026-03-27 | 6 | Comprehensive code audit: 18 issues found (2 critical, 4 high, 5 medium, 7 low), 6 false positives identified and dismissed. Fixes applied: (1) FormCloseQuery guard prevents form closure during processing (AV fix). (2) FindNodeText replaced with FindBasePropertyValue — reads Base PropertyGroup first, avoiding config-specific version overrides. (3) ExtractUsesBlock now strips comments before searching for `uses` keyword, checks word boundaries, handles semicolons inside string literals. (4) Internal references removed from all source files and documentation. (5) SaveDiscoveredLibraries deduplicates by component name. (6) BuildAndSave validates output directory before writing. (7) ManifestPath computed once in uSBOMEngine. (8) Stale MRU INI sections cleaned on save. (9) Doc versions synchronised. (10) Sample file Indy entry corrected (units_exact not prefix). CHANGELOG consolidated into CHANGES.md. Second audit pass: 5 additional fixes (supplier.url, licence.url emission, AutoPopulateDefaults guard, dead code removal, loop optimisation). CycloneDX 1.5 compliance verified. Indy SPDX ID corrected (Modified-BSD → BSD-3-Clause). Library editor implemented (uLibraryEditor.pas): modal TStringGrid dialog for editing discovered library metadata before saving to manifest. Phase 2 item #8 complete. |

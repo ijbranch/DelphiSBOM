@@ -2,6 +2,23 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-03-27 — DX.Comply Evidence Bridge Fixes [Fixed]
+
+First end-to-end test against real DX.Comply output (DBiWhoIsOn project,
+729 library components). Three fixes applied:
+
+1. `uEvidenceMerger.pas`: Strip `.pas` extension from component names in
+   addition to `.dcu`. DX.Comply emits source-resolved units with `.pas`
+   suffix — these would fail to match classified units.
+2. `uSBOMEngine.pas`: Added evidence match summary logging after merge.
+   Reports how many evidence entries matched classified units vs unmatched
+   transitive dependencies (expected low match rate — .dpr uses clause vs
+   MAP file transitive closure).
+3. `uSettings.pas` + `uMainForm.pas`: Persist DX.Comply file path in MRU
+   settings so users don't need to re-browse each session.
+
+**Files:** `uEvidenceMerger.pas`, `uSBOMEngine.pas`, `uSettings.pas`, `uMainForm.pas`
+
 ## 2026-03-27 - Build Config: Map File and EXE Output to Project Subdirectory
 
 **Changes Made:** Added `DCC_ExeOutput=.\$(Platform)\$(Config)` to DelphiSBOM.dproj (already had `DCC_MapFile=3`).

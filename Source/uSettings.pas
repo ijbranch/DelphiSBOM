@@ -18,6 +18,7 @@ type
     ManifestFile: string;
     OutputDir: string;
     VersionOverride: string;
+    DXComplyFile: string;
   end;
 
   /// <summary>
@@ -98,6 +99,7 @@ begin
       Entry.ManifestFile   := Ini.ReadString( Section, 'ManifestFile', '' );
       Entry.OutputDir      := Ini.ReadString( Section, 'OutputDir', '' );
       Entry.VersionOverride := Ini.ReadString( Section, 'VersionOverride', '' );
+      Entry.DXComplyFile   := Ini.ReadString( Section, 'DXComplyFile', '' );
 
       FEntries.Add( Entry );
     end;
@@ -141,6 +143,7 @@ begin
       Ini.WriteString( Section, 'ManifestFile', Entry.ManifestFile );
       Ini.WriteString( Section, 'OutputDir', Entry.OutputDir );
       Ini.WriteString( Section, 'VersionOverride', Entry.VersionOverride );
+      Ini.WriteString( Section, 'DXComplyFile', Entry.DXComplyFile );
     end;
   finally
     Ini.Free;

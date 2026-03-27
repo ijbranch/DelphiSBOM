@@ -51,7 +51,7 @@ When you launch DelphiSBOM for the first time:
 
 On subsequent launches, the **Project File** dropdown shows your recently used
 projects (up to 10). Select one to restore all settings (manifest path, output
-directory, version override) from your last session. These settings are stored
+directory, version override, DX.Comply file) from your last session. These settings are stored
 in `%APPDATA%\DelphiSBOM\DelphiSBOM.ini`.
 
 ## Generating Your First SBOM
@@ -225,6 +225,50 @@ To update a library's version in your SBOM:
 
 The new version flows into the SBOM immediately. No other steps are needed.
 
+## DX.Comply Evidence Bridge (Optional)
+
+[DX.Comply](https://github.com/omonien/dx.comply) by Olaf Monien generates
+SBOMs from Delphi MAP file analysis. It produces per-unit SHA-256 hashes with
+strong binary evidence, but sparse metadata (no vendor, licence, or PURL).
+
+DelphiSBOM produces the opposite: rich metadata but no binary evidence.
+Together, they produce a complete SBOM.
+
+### How It Works
+
+1. Build your project with MAP file generation enabled (Project > Options >
+   Linking > Map File = Detailed)
+2. Run DX.Comply against your project to generate a `bom.json`
+3. In DelphiSBOM, set the **DX.Comply SBOM** field to the path of that
+   `bom.json` file
+4. Click **Generate SBOM**
+
+DelphiSBOM merges the SHA-256 hashes from DX.Comply into its own output.
+Each RTL and third-party component gains a nested `components` array listing
+the individual units with their binary hashes. This provides cryptographic
+evidence that specific compiled units are present in your binary.
+
+### Match Rate
+
+DelphiSBOM classifies units from the `.dpr` uses clause (explicit
+dependencies). DX.Comply analyses the MAP file and finds all transitively
+linked units. DX.Comply typically reports many more units than appear in the
+`.dpr` file — this is expected. The log shows how many evidence entries
+matched, e.g.:
+
+```
+[INFO] DX.Comply evidence: 33 of 729 entries matched classified units
+       (696 unmatched - transitive dependencies not in .dpr uses clause)
+```
+
+The unmatched entries are transitive dependencies that your project uses
+indirectly. They are not lost — they remain in DX.Comply's own `bom.json`.
+
+### Without DX.Comply
+
+The DX.Comply field is entirely optional. If left blank, DelphiSBOM produces
+a standard SBOM with no binary hashes — fully valid and compliant.
+
 ## Understanding the Output
 
 ### The SBOM File
@@ -241,6 +285,8 @@ The generated `.cdx.json` contains:
   - External references (vendor website)
 - **Embarcadero Delphi RTL**: listed as a single framework component with
   the Delphi version number
+- **Binary evidence** (when DX.Comply is used): nested sub-components under
+  RTL and third-party entries, each with SHA-256 hashes from MAP file analysis
 
 ### What is NOT in the SBOM
 
@@ -462,6 +508,7 @@ modified.
 *Version: 1.1 – 26 March 2026 09:45*
 *Version: 1.2 – 26 March 2026 11:00*
 *Version: 1.3 – 26 March 2026 12:00*
+*Version: 1.4 – 27 March 2026 — DX.Comply evidence bridge documentation*
 *Version: 1.4 – 26 March 2026 — MRU feature*
 *Version: 1.5 – 26 March 2026 — Stateless regeneration documentation*
 *Version: 1.6 – 27 March 2026 — Code audit fixes*

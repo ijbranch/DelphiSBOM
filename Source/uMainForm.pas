@@ -1144,6 +1144,7 @@ begin
   Entry.ManifestFile   := Trim( FEdtManifest.Text );
   Entry.OutputDir      := Trim( FEdtOutputDir.Text );
   Entry.VersionOverride := Trim( FEdtVersion.Text );
+  Entry.DXComplyFile   := Trim( FEdtDXComply.Text );
 
   if Entry.ProjectFile = '' then Exit;
 
@@ -1181,6 +1182,9 @@ begin
     FEdtOutputDir.Text := Entry.OutputDir;
 
   FEdtVersion.Text := Entry.VersionOverride;
+
+  if Entry.DXComplyFile <> '' then
+    FEdtDXComply.Text := Entry.DXComplyFile;
 
 end;
 

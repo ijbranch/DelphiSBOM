@@ -11,6 +11,7 @@
 | **Output Dir** | Directory where the SBOM `.cdx.json` file will be written. Defaults to the project directory |
 | **Delphi Path** | Path to your Delphi installation. Auto-detected from the Windows registry (`HKCU\Software\Embarcadero\BDS`) on startup |
 | **Version Override** | Optional. If set, overrides the project version read from the `.dproj` file |
+| **DX.Comply SBOM** | Optional. Path to a DX.Comply `bom.json` file. If provided, SHA-256 hashes from DX.Comply's MAP file analysis are merged into the SBOM output as nested sub-components |
 | **Generate SBOM** | Runs the full pipeline: parse, classify, discover, generate |
 | **Validate Manifest** | Checks `components.json` for schema errors without generating an SBOM |
 | **Save & Regenerate** | Saves discovered libraries to `components.json` and re-runs the pipeline |
@@ -133,8 +134,8 @@ own-code units. Created automatically on first run; updated when you click
 Stored at `%APPDATA%\DelphiSBOM\DelphiSBOM.ini`. Contains:
 
 - **MRU list** — up to 10 recently used project file paths
-- **Per-project settings** — the manifest path, output directory, and version
-  override last used for each project
+- **Per-project settings** — the manifest path, output directory, version
+  override, and DX.Comply file path last used for each project
 
 Created on first successful SBOM generation. You can safely delete this file
 to reset the MRU list. DelphiSBOM recreates it as needed.
@@ -185,3 +186,4 @@ Report issues at the project repository on Codeberg.
 *Version: 1.4 – 26 March 2026 — Stateless regeneration documentation*
 *Version: 1.5 – 27 March 2026 — Code audit fixes*
 *Version: 1.6 – 27 March 2026 — Library editor, tooltips*
+*Version: 1.7 – 27 March 2026 — DX.Comply evidence bridge documentation*
