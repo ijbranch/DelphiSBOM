@@ -36,3 +36,7 @@ Thumbs.db
 # Generated SBOM output (do not version control)
 *.cdx.json
 *.sbom-report.txt
+
+# Backup files
+*.bak
+*.bak1
