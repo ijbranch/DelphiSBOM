@@ -53,6 +53,7 @@ type
     [TestCase( 'unmatched closer', '2024 Jane Doe)|Jane Doe', '|' )]
     [TestCase( 'years and full stop', '(c) 2020-2026 Acme Ltd.|Acme Ltd', '|' )]
     [TestCase( 'whole name bracketed', '(Acme Widgets)|Acme Widgets', '|' )]
+    [TestCase( 'trailing dash', '2015 Jane Doe -|Jane Doe', '|' )]
     procedure HolderNameKeepsItsBrackets( const AInput, AExpected: string );
 
     /// <summary>
@@ -70,6 +71,8 @@ type
     [TestCase( 'short compiler folder', 'C:\Acme\Lib\D13\Win64|C:\Acme', '|' )]
     [TestCase( 'studio folder', 'C:\Acme 7\Lib\Win64\Release\Studio37|C:\Acme 7', '|' )]
     [TestCase( 'dcu folder', 'E:\Work\Acme\dcu\Win64|E:\Work\Acme', '|' )]
+    [TestCase( 'packages and named release', 'D:\Acme\packages\Delphi 13 Florence\Win64\Release|D:\Acme', '|' )]
+    [TestCase( 'library folder', 'D:\Acme4D\Library\Delphi13\Win64\Release|D:\Acme4D', '|' )]
     [TestCase( 'already a root', 'E:\Work\Acme|E:\Work\Acme', '|' )]
     [TestCase( 'only build names to the drive', 'E:\Lib\Win64\Release|E:\Lib\Win64\Release', '|' )]
     procedure DcuFolderMapsToLibraryRoot( const ADcuDirectory, AExpected: string );
@@ -122,6 +125,84 @@ type
     /// </summary>
     [Test]
     procedure DcuBuildProjectDoesNotHideTheLibrary;
+  end;
+
+  /// <summary>
+  ///   Discovery cases found by running DelphiSBOM over a suite of real projects, on one scratch layout:
+  ///   a stray copy of a library unit in a junk folder of the scanned drive, a library installed inside
+  ///   the Delphi folder, the Delphi folder's own lib, an identifier that contains "Copyright", a
+  ///   design-only package beside the runtime one, and a library whose source sits in a "windows" folder.
+  /// </summary>
+  [TestFixture]
+  TDiscoveryCaseTests = class
+  private
+    FScratch: TScratchDir;
+    FTag: string;
+    FLibraries: TArray<TDiscoveredLibrary>;
+
+    function LibraryOf( const AUnitName: string ): TDiscoveredLibrary;
+  public
+    [SetupFixture]
+    procedure SetupFixture;
+    [TearDownFixture]
+    procedure TearDownFixture;
+
+    /// <summary>
+    ///   Proves a .pas found only by scanning the drive gives way to the unit's DCU on the library path:
+    ///   ReportBuilder's daSQL was attributed to a stray copy in D:\USB Temp (named "USB Temp", vendor "BBBBB").
+    /// </summary>
+    [Test]
+    procedure DriveScanCopyGivesWayToTheLibraryPath;
+
+    /// <summary>
+    ///   Proves a library installed inside the Delphi folder is found through its DCUs: ReportBuilder lives in
+    ///   $(BDS)\RBuilder\Lib\Win64, and excluding the whole Delphi folder left its 408 units unresolved.
+    /// </summary>
+    [Test]
+    procedure LibraryInsideTheDelphiFolderIsFound;
+
+    /// <summary>
+    ///   Proves the Delphi folder's own lib folder is still left out: its units are the RTL's, classified
+    ///   by the RTL scan, never a library.
+    /// </summary>
+    [Test]
+    procedure DelphiLibFolderIsNotALibrary;
+
+    /// <summary>
+    ///   Proves "Copyright" inside an identifier is not a copyright line: Indy's "FlblCopyRight : TLabel;"
+    ///   gave the vendor "TLabel".
+    /// </summary>
+    [Test]
+    procedure CopyrightInsideAnIdentifierIsNotAVendor;
+
+    /// <summary>
+    ///   Proves a design-only package does not name the library when a runtime package sits beside it:
+    ///   a database library was named after its design package.
+    /// </summary>
+    [Test]
+    procedure DesignOnlyPackageDoesNotNameTheLibrary;
+
+    /// <summary>
+    ///   Proves a platform-named source folder ("windows") is passed over for the library's own folder
+    ///   name: a grid library was named "windows".
+    /// </summary>
+    [Test]
+    procedure PlatformFolderDoesNotNameTheLibrary;
+
+    /// <summary>
+    ///   Proves an ASCII-art header's letters are not taken for the copyright holder: ReportBuilder's
+    ///   "Copyright (c) 1996-2011        BBBBB" gave the vendor "BBBBB".
+    /// </summary>
+    [Test]
+    procedure AsciiArtIsNotAVendor;
+
+    /// <summary>
+    ///   Proves the holder is read from the line after a bare "Copyright:", and a revision-history
+    ///   sentence that mentions copyright is passed over: Indy gave the vendor "to say 2003" from
+    ///   "Updated copyright to say 2003." instead of its "Copyright:" block.
+    /// </summary>
+    [Test]
+    procedure CopyrightBlockBeatsHistoryProse;
   end;
 
 implementation
@@ -256,6 +337,156 @@ begin
   var Lib: TDiscoveredLibrary;
   Assert.IsFalse( FindLibraryWith( FTag + 'Missing', Lib ), 'A unit with no file was attached to ' + Lib.Name );
   Assert.AreEqual<Integer>( 4, Length( FLibraries ), 'Exactly the four scratch libraries' );
+
+end;
+
+{ TDiscoveryCaseTests }
+
+procedure TDiscoveryCaseTests.SetupFixture;
+begin
+
+  FScratch := TScratchDir.Create;
+  FTag := 'Dsbg' + Copy( StringReplace( TGUID.NewGuid.ToString, '-', '', [ rfReplaceAll ] ), 2, 8 );
+
+  var Unit_ :=
+    function( const AName, AHeader: string ): string
+    begin
+      Result := AHeader + 'unit ' + FTag + AName + '; interface implementation end.';
+    end;
+
+  // A stray copy in a junk folder of the scanned "drive"; the real library is on the library path as DCUs
+  WriteUtf8File( FScratch.PathOf( 'Drive\USB Temp\' + FTag + 'Stray.pas' ), Unit_( 'Stray', '// Copyright BBBBB' + sLineBreak ) );
+  var StrayDcuDir := FScratch.PathOf( 'Libs\RealLib\Lib\Win64\Release' );
+  WriteUtf8File( TPath.Combine( StrayDcuDir, FTag + 'Stray.dcu' ), 'not a real dcu' );
+  WriteUtf8File( FScratch.PathOf( 'Libs\RealLib\Source\' + FTag + 'Stray.pas' ), Unit_( 'Stray', '// Copyright (c) 2024 Real Ltd' + sLineBreak ) );
+
+  // A library installed inside the Delphi folder, and the Delphi folder's own lib
+  var RbDcuDir  := FScratch.PathOf( 'Studio\RBuilder\Lib\Win64' );
+  WriteUtf8File( TPath.Combine( RbDcuDir, FTag + 'Rb.dcu' ), 'not a real dcu' );
+  WriteUtf8File( FScratch.PathOf( 'Studio\RBuilder\Source\' + FTag + 'Rb.pas' ), Unit_( 'Rb', '' ) );
+  var RtlDcuDir := FScratch.PathOf( 'Studio\lib\Win64\release' );
+  WriteUtf8File( TPath.Combine( RtlDcuDir, FTag + 'Rtl.dcu' ), 'not a real dcu' );
+
+  // An identifier that contains "Copyright"
+  WriteUtf8File( FScratch.PathOf( 'Libs\IdLib\' + FTag + 'Id.pas' ),
+    Unit_( 'Id', 'type' + sLineBreak + '  TAbout = class' + sLineBreak + '    FlblCopyRight : TLabel;' + sLineBreak + '  end;' + sLineBreak ) );
+
+  // A design-only package that sorts before the runtime one
+  WriteUtf8File( FScratch.PathOf( 'Libs\PkgLib\' + FTag + 'Pkg.pas' ), Unit_( 'Pkg', '' ) );
+  WriteUtf8File( FScratch.PathOf( 'Libs\PkgLib\AcmeDesign.dpk' ), 'package AcmeDesign;' + sLineBreak + '{$DESIGNONLY}' + sLineBreak + 'end.' );
+  WriteUtf8File( FScratch.PathOf( 'Libs\PkgLib\AcmeRun.dpk' ), 'package AcmeRun;' + sLineBreak + '{$RUNONLY}' + sLineBreak + 'end.' );
+
+  // Source in a platform-named folder
+  WriteUtf8File( FScratch.PathOf( 'Libs\InfoThing\source\windows\' + FTag + 'Info.pas' ), Unit_( 'Info', '' ) );
+
+  // An ASCII-art header
+  WriteUtf8File( FScratch.PathOf( 'Libs\ArtLib\' + FTag + 'Art.pas' ), Unit_( 'Art',
+    '{ RRRRRR                  Acme Report Library                  BBBBB' + sLineBreak +
+    '  RR   RR                   Copyright (c) 1996-2011                    BBBBB   }' + sLineBreak ) );
+
+  // History prose in the first file, a "Copyright:" block with the holder on the next line in the second
+  WriteUtf8File( FScratch.PathOf( 'Libs\BlockLib\' + FTag + 'Block1.pas' ), Unit_( 'Block1',
+    '{ Rev 1.3  6/16/2003' + sLineBreak + '  Updated copyright to say 2003. }' + sLineBreak ) );
+  WriteUtf8File( FScratch.PathOf( 'Libs\BlockLib\' + FTag + 'Block2.pas' ), Unit_( 'Block2',
+    '{ Copyright:' + sLineBreak + '   (c) 1993-2005, Jane Doe and the Acme Crew. All rights reserved. }' + sLineBreak ) );
+
+  var Discovery := TLibraryDiscovery.Create( NoLog() );
+  try
+    Discovery.ScanRoots := [ FScratch.PathOf( 'Drive' ) ];
+
+    var AutoOwn: TArray<string>;
+    FLibraries := Discovery.Discover(
+      [ FTag + 'Stray', FTag + 'Rb', FTag + 'Rtl', FTag + 'Id', FTag + 'Pkg', FTag + 'Info', FTag + 'Art', FTag + 'Block1',
+        FTag + 'Block2' ],
+      [ StrayDcuDir, RbDcuDir, RtlDcuDir, FScratch.PathOf( 'Libs\IdLib' ), FScratch.PathOf( 'Libs\PkgLib' ),
+        FScratch.PathOf( 'Libs\InfoThing\source\windows' ), FScratch.PathOf( 'Libs\ArtLib' ), FScratch.PathOf( 'Libs\BlockLib' ) ],
+      FScratch.PathOf( 'Work\App' ), FScratch.PathOf( 'Studio' ), '', 'Win64', AutoOwn );
+  finally
+    Discovery.Free;
+  end;
+
+end;
+
+procedure TDiscoveryCaseTests.TearDownFixture;
+begin
+
+  FScratch.Free;
+
+end;
+
+function TDiscoveryCaseTests.LibraryOf( const AUnitName: string ): TDiscoveredLibrary;
+begin
+
+  for var Lib in FLibraries do
+    for var U in Lib.Units do
+      if SameText( U, FTag + AUnitName ) then
+        Exit( Lib );
+
+  Result := Default( TDiscoveredLibrary );
+
+end;
+
+procedure TDiscoveryCaseTests.DriveScanCopyGivesWayToTheLibraryPath;
+begin
+
+  var Lib := LibraryOf( 'Stray' );
+  Assert.AreEqual( FScratch.PathOf( 'Libs\RealLib\Source' ), Lib.Directory );
+  Assert.AreEqual( 'Real Ltd', Lib.Vendor );
+
+end;
+
+procedure TDiscoveryCaseTests.LibraryInsideTheDelphiFolderIsFound;
+begin
+
+  var Lib := LibraryOf( 'Rb' );
+  Assert.AreEqual( FScratch.PathOf( 'Studio\RBuilder\Source' ), Lib.Directory );
+  Assert.AreEqual( 'RBuilder', Lib.Name );
+
+end;
+
+procedure TDiscoveryCaseTests.DelphiLibFolderIsNotALibrary;
+begin
+
+  Assert.AreEqual( '', LibraryOf( 'Rtl' ).Directory, 'A unit of the Delphi lib folder was attached to a library' );
+
+end;
+
+procedure TDiscoveryCaseTests.CopyrightInsideAnIdentifierIsNotAVendor;
+begin
+
+  var Lib := LibraryOf( 'Id' );
+  Assert.AreEqual( FScratch.PathOf( 'Libs\IdLib' ), Lib.Directory, 'Library not discovered' );
+  Assert.AreEqual( '', Lib.Vendor );
+
+end;
+
+procedure TDiscoveryCaseTests.DesignOnlyPackageDoesNotNameTheLibrary;
+begin
+
+  Assert.AreEqual( 'AcmeRun', LibraryOf( 'Pkg' ).Name );
+
+end;
+
+procedure TDiscoveryCaseTests.PlatformFolderDoesNotNameTheLibrary;
+begin
+
+  Assert.AreEqual( 'InfoThing', LibraryOf( 'Info' ).Name );
+
+end;
+
+procedure TDiscoveryCaseTests.AsciiArtIsNotAVendor;
+begin
+
+  var Lib := LibraryOf( 'Art' );
+  Assert.AreEqual( FScratch.PathOf( 'Libs\ArtLib' ), Lib.Directory, 'Library not discovered' );
+  Assert.AreEqual( '', Lib.Vendor );
+
+end;
+
+procedure TDiscoveryCaseTests.CopyrightBlockBeatsHistoryProse;
+begin
+
+  Assert.AreEqual( 'Jane Doe and the Acme Crew', LibraryOf( 'Block2' ).Vendor );
 
 end;
 

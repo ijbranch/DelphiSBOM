@@ -75,6 +75,13 @@ type
     /// </summary>
     [Test]
     procedure ValidateReportsInvalidJson;
+
+    /// <summary>
+    ///   Proves a syntax error names the file and where in it the error is: a hand-edited manifest
+    ///   with a trailing comma failed with only "Invalid JSON in manifest file".
+    /// </summary>
+    [Test]
+    procedure SyntaxErrorNamesFileAndPosition;
   end;
 
 implementation
@@ -232,6 +239,27 @@ begin
   WriteUtf8File( FileName, '{ "schema_version": "1.0", "components": [] }' );
 
   Assert.IsTrue( FLoader.Validate( FileName ) );
+
+end;
+
+procedure TManifestLoaderTests.SyntaxErrorNamesFileAndPosition;
+begin
+
+  var FileName := FScratch.PathOf( 'components.json' );
+  WriteUtf8File( FileName, '{' + sLineBreak + '  "components": [' + sLineBreak + '    { "name": "Acme" },' + sLineBreak + '  ]' +
+    sLineBreak + '}' );
+
+  var Message := '';
+
+  try
+    FLoader.Load( FileName );
+  except
+    on E: EManifestError do
+      Message := E.Message;
+  end;
+
+  Assert.Contains( Message, 'components.json' );
+  Assert.Contains( Message, 'line 4', True );
 
 end;
 
