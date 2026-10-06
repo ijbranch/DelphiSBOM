@@ -1,7 +1,7 @@
 # DelphiSBOM — Implementation Progress
 
 **Plan document:** `DelphiSBOM_Refined_Plan.md` (v0.6 — Final Draft)
-**Last updated:** 2026-10-07 (Session 15)
+**Last updated:** 2026-10-07 (Session 16)
 
 ---
 
@@ -9,7 +9,7 @@
 
 **Phase:** 2 — Polish and Reliability. DCU-only discovery, MAP input, dependency graph, post-write check, reports and CLI landed 2026-10-07.
 **Step:** Phase 2 — remaining: cancellation (audit M21), v1.0.0 release tag
-**Status:** Clean (no hints/warnings, built WITHOUT `USE_SYNEDIT`) builds 2026-10-07: GUI Win64 Debug + Release, CLI Win64 Release, tests Win64 Debug + Release. DUnitX suite 157/157 (session 15). `Tests/GuiChecks.ps1` 40/40 against the Release exe. Real-data runs: the CLI over DelphiSBOM itself with its Release MAP (166 linked units, check passed, both reports written) and over a large internal project (FastMM5 now discovered at its library folder; check passed). CLI pipeline examples in `Docs/CI-INTEGRATION.md` are untested on GitHub/GitLab.
+**Status:** Clean (no hints/warnings, built WITHOUT `USE_SYNEDIT`) builds 2026-10-07: GUI Win64 Debug + Release, CLI Win64 Release, tests Win64 Debug + Release. DUnitX suite 172/172, GUI checks 45/45 (session 16). `Tests/GuiChecks.ps1` 40/40 against the Release exe. Real-data runs: the CLI over DelphiSBOM itself with its Release MAP (166 linked units, check passed, both reports written) and over a large internal project (FastMM5 now discovered at its library folder; check passed). CLI pipeline examples in `Docs/CI-INTEGRATION.md` are untested on GitHub/GitLab.
 
 ## Next Action
 
@@ -76,6 +76,7 @@ Open questions from the 41-project run (session 14, see the session log): (a) a 
 | 13 | DCU-only library discovery | DONE | `.dcu` on the search/library path → library root above build-output folders; source used when under it |
 | 14 | MAP-file unit list | DONE | `uMapFile.pas`; GUI row + `--map` |
 | 15 | Dependency graph and post-write check | DONE | bom-refs + two-level `dependencies`; `uSBOMValidator.pas` |
+| 16 | Opt-in online check | DONE | `uOnlineCheck.pas` + `uOnlineCheckForm.pas`; Check Online button, `--check-online`; GitHub only |
 
 ---
 
@@ -98,3 +99,4 @@ Open questions from the 41-project run (session 14, see the session log): (a) a 
 | 2026-10-07 | 13 | Implemented the DX.Comply-inspired features (credited in `THIRD-PARTY-NOTICES.md`): DCU-only library discovery, MAP-file unit list, bom-refs + dependency graph, post-write SBOM check, HTML/Markdown reports, `DelphiSBOMCLI.exe` with exit codes and `.delphisbom.json`, GUI MAP row and reports checkbox, CI guide. Found and fixed on real data: project-folder units without an `in` clause were never searched; FastMM5 was hidden by the ".dpr means another project" rule. 68 new tests (142), each red first or mutation-checked; GUI checks 30 → 40. |
 | 2026-10-07 | 14 | Ran the CLI over 41 real projects (apps, services, tools, DUnitX test projects; MAP runs where a Release map existed). Fixed: libraries installed inside the Delphi folder were skipped (ReportBuilder, 408 units); stray drive-scan copies became libraries; vendor read from identifiers, history prose and ASCII art; design-only package and "windows" folder names; `packages\Delphi 13 Florence` DCU roots; manifest syntax errors now name file and line. 12 new tests (154), each red first. GUI checks 40/40. Committed and pushed (96f3310..207b519). |
 | 2026-10-07 | 15 | Vendor detection: up to 200 files vote, a company on an ASCII-art banner counts, and a holder written before "copyright" is read. Ian confirmed ReportBuilder's vendor is Digital Metaphors; the 41-project re-run now gives it, Pierre le Riche (FastMM5), Primoz Gabrijelcic (OmniThreadLibrary), Woll2Woll Software (InfoPower) and Stefan Glienke (TestInsight), with no other vendor changed. 3 new tests (157). GUI checks 40/40. |
+| 2026-10-07 | 16 | Opt-in online check: compares components with a GitHub vendor_url against GitHub (licence detection, latest release/tag, archived, pkg:github purl); findings are advice, ticked suggestions are written by `SetComponentFields`. GUI button + dialog, CLI `--check-online` / `checkOnline` (exit code unchanged). Live run on a real manifest matched the manual FastMM5 check. 17 new tests (172); GUI checks 45/45 against a fake API on loopback. |

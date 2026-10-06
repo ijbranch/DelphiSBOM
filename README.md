@@ -53,6 +53,10 @@ that have no awareness of the Delphi ecosystem.
 6. **Generate** a CycloneDX 1.5 JSON SBOM file with a dependency graph, check
    the written file, and optionally write HTML and Markdown reports beside it
 
+An opt-in **online check** compares `components.json` with each library's
+GitHub repository — licence, latest release, archived — and lets you apply the
+suggestions you choose. DelphiSBOM makes no network connections otherwise.
+
 The same pipeline runs from the command line (`DelphiSBOMCLI.exe`) for builds
 and CI, with exit codes and a per-project `.delphisbom.json` config — see
 [Command Line](#command-line).
@@ -132,7 +136,9 @@ write are:
 | `components.json` | Your project directory | Written when you click "Save & Regenerate" or "Mark as Own Code", and after a successful run that auto-detected own-code units |
 | `DelphiSBOM.ini` | `%APPDATA%\DelphiSBOM\` | Application settings (UTF-8): MRU project list (up to 10) with per-project manifest path, output directory, version override, DX.Comply file, MAP file and report choice. Created on first successful SBOM generation |
 
-DelphiSBOM does **not** write to the Windows Registry.
+DelphiSBOM does **not** write to the Windows Registry, and connects to the
+network only for the online check you ask for (`api.github.com`, the repository
+names in your `vendor_url` fields).
 
 ## Requirements
 
@@ -199,12 +205,13 @@ deletes it afterwards.
 
 `Tests/GuiChecks.ps1` drives the built application (`Source\Win64\Release\DelphiSBOM.exe`)
 through window messages to its controls — no screen coordinates, no stealing
-focus — and reports PASS/FAIL for 40 checks: switching projects resets the
+focus — and reports PASS/FAIL for 45 checks: switching projects resets the
 per-project fields, the recent-projects list restores them (including a path
 with Cyrillic characters, across a restart), result buttons are disabled while
 a run is in progress, the MAP-file unit list and the reports checkbox, the
-library editor's Space toggle, missing-name warning and discard prompt, and
-Save & Regenerate writing the manifest.
+library editor's Space toggle, missing-name warning and discard prompt,
+Save & Regenerate writing the manifest, and the online check's dialog — against
+a fake GitHub API the script serves on a loopback port, so it needs no network.
 
 ```
 pwsh -File Tests\GuiChecks.ps1

@@ -41,7 +41,12 @@ and describe the partial state in the Next Action line.
     `.dproj` (this happened twice). `.githooks/pre-commit` rejects such a `.dproj`
     (enable once per clone: `git config core.hooksPath .githooks`)
 - Allowed RTL units: `System.JSON`, `Xml.XMLDoc`, `Xml.XMLIntf`,
-  `System.Win.Registry`, `System.Threading`, and standard RTL/VCL units
+  `System.Win.Registry`, `System.Threading`, `System.Net.HttpClient` (the online check only),
+  and standard RTL/VCL units
+- **No network access except the opt-in online check** (`uOnlineCheck`, the Check Online button,
+  `--check-online`). Generation must never make a request. Tests reach it only through the seams:
+  `TOnlineChecker.Create( Log, FakeGet )`, the `OnlineHttpOverride` variable (CLI tests), and the
+  `DELPHISBOM_GITHUB_API` environment variable (`GuiChecks.ps1` serves a fake API on loopback)
 - After any code edit to `.pas`, `.dfm`, or `.dproj` files, prompt the user
   to build and report the result. Do not attempt to compile automatically.
 
@@ -61,6 +66,7 @@ and describe the partial state in the Next Action line.
                →  uSBOMBuilder                components, bom-refs, dependency graph
                →  uSBOMValidator              post-write check
                →  uReportWriter               HTML / Markdown reports
+  opt-in, outside the pipeline:  uOnlineCheck (GitHub comparison) → uOnlineCheckForm (tick and apply)
   shared: uTypes (records, SPDX/hash helpers), uTextFiles (encoding-safe read, atomic UTF-8 write)
 ```
 

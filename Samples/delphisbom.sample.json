@@ -5,5 +5,6 @@
     "dxcomply": "Win64\\Release\\bom.json",
     "productVersion": "2.4.0",
     "report": "both",
-    "failOnUnclassified": true
+    "failOnUnclassified": true,
+    "checkOnline": false
 }

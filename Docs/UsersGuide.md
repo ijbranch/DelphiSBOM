@@ -354,6 +354,35 @@ by libraries, not by units.
 The MAP file is remembered per project. It also raises the DX.Comply match rate,
 since DX.Comply's evidence comes from the same kind of file.
 
+## Online Check (Optional)
+
+Your `components.json` records each library's licence and version by hand, and
+they drift: a library is updated, a licence changes, a project is abandoned.
+**Check Online** compares each component whose `vendor_url` is a GitHub
+repository (`https://github.com/owner/repo`) with what GitHub reports:
+
+- **Licence** — GitHub's detection of the repository's licence file. A missing
+  licence in the manifest gets a suggestion; a different one is flagged. When
+  GitHub finds no licence file (some libraries state the licence only in their
+  source headers, as FastMM5 does), it says so rather than guessing.
+- **Version** — the latest release (or the newest tag). A matching version is
+  reported as current; an older one is flagged, without a suggestion, because
+  the manifest must keep the version you actually use; a missing one gets a
+  suggestion.
+- **Archived** — an archived repository is no longer maintained.
+- **purl** — the `pkg:github/owner/repo@tag` package URL, for information.
+
+The findings open in a list. Nothing is ticked: tick only the suggestions that
+apply to the version you use (GitHub describes its default branch and latest
+release, not your copy), then **Apply Ticked** writes them to `components.json`.
+Generate again to use them. Components without a GitHub `vendor_url` are listed
+as not checked — commercial vendors have no machine-readable data to compare.
+
+Without a token GitHub allows 60 requests an hour (about two per component);
+set the `GITHUB_TOKEN` environment variable for more. After a refusal the check
+stops asking and says so. From the command line, `--check-online` prints the
+same findings after the run; it is advice and never changes the exit code.
+
 ## Reports (Optional)
 
 Tick **Write HTML and Markdown reports** to write, beside the SBOM,
@@ -586,8 +615,12 @@ The following capabilities are planned for future versions:
 
 ## Files and Privacy
 
-DelphiSBOM is a local-only tool. It makes no network connections and sends
-no telemetry or data externally.
+DelphiSBOM is a local-only tool. It sends no telemetry, and makes no network
+connections — except when you ask for the [online check](#online-check-optional)
+(the **Check Online** button, or `--check-online`). That sends
+`api.github.com` the GitHub repository names from your `components.json`
+(`vendor_url`) and nothing else; set `GITHUB_TOKEN` to have the requests
+authenticated.
 
 | File | Location | Purpose |
 |------|----------|---------|

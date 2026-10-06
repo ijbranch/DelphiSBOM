@@ -2,6 +2,31 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-07 — Opt-In Online Check [Added]
+
+- **Online check.** Compares each `components.json` component whose `vendor_url` is a GitHub
+  repository with GitHub's API: licence (licence-file detection), latest release or newest tag, and
+  archived status; the `pkg:github` purl is shown for information. Findings are advice: a missing
+  licence or version gets a suggestion, a different licence is flagged with GitHub's as the suggestion,
+  an older version is flagged without one (the manifest keeps the version used), and a repository with
+  no licence file is reported as such rather than guessed. After a rate-limit refusal or no connection,
+  the check stops asking. `GITHUB_TOKEN` is sent when set. **Why:** licences and versions recorded by
+  hand drift, and checking them by hand found nothing wrong only because it was done — `Source/uOnlineCheck.pas`
+- **GUI.** A Check Online button, run off the UI thread; the findings open in a list where only
+  suggestions can be ticked and none are to begin with; Apply Ticked writes them —
+  `Source/uMainForm.pas`, `Source/uOnlineCheckForm.pas`, `Source/DelphiSBOM.dpr`, `Source/DelphiSBOM.dproj`
+- **Command line.** `--check-online` and the `checkOnline` config key print the findings after the run,
+  or after `--validate-manifest`; the exit code is unchanged — `Source/uCommandLine.pas`,
+  `CLI/DelphiSBOMCLI.dpr`, `CLI/DelphiSBOMCLI.dproj`, `Samples/delphisbom.sample.json`
+- `TManifestLoader.SetComponentFields` sets fields of one component and keeps everything else —
+  `Source/uManifestLoader.pas`
+- No request is made unless asked. Tests use an injected fetch, the `OnlineHttpOverride` seam, and (in
+  the GUI checks) a fake API on loopback through `DELPHISBOM_GITHUB_API`. Tests: 17 new (172), GUI
+  checks 40 → 45 — `Tests/TestOnlineCheck.pas`, `Tests/TestCommandLine.pas`, `Tests/TestManifestLoader.pas`,
+  `Tests/DelphiSBOMTests.dpr`, `Tests/DelphiSBOMTests.dproj`, `Tests/GuiChecks.ps1`
+- Docs: README, Help, User's Guide ("Online Check", privacy), CI guide, `CLAUDE.md` network rule —
+  `README.md`, `Docs/Help.md`, `Docs/UsersGuide.md`, `Docs/CI-INTEGRATION.md`, `CLAUDE.md`
+
 ## 2026-10-07 — Vendor Is What Most Files Say [Fixed]
 
 - A library's vendor came from the first file naming anyone, so one contributor's header named the

@@ -30,6 +30,12 @@ developer machine instead.
 Exit codes: `0` success, `1` usage error, `2` file or parse error, `3` validation error
 (the SBOM failed its check, or `--fail-on-unclassified` found units missing from it).
 
+`--check-online` (or `"checkOnline": true`) adds a comparison of `components.json` with each
+library's GitHub repository — licence, latest release, archived — to the build log as
+`[WARNING] online: ...` lines. It is advice: it never changes the exit code, and it writes
+nothing. It needs outbound access to `api.github.com`; set `GITHUB_TOKEN` (GitHub Actions
+provides one) to lift the 60-requests-an-hour anonymous limit.
+
 ## A project config instead of long command lines
 
 Put the settings in `.delphisbom.json` beside the project; the job then only names the
