@@ -119,8 +119,9 @@ Click **Generate SBOM**. The app runs the following pipeline in the background
      so a library checked out beside your project needs to be on the project's
      search path or the IDE library path
    - Groups found `.pas` files by directory (one directory = one library)
-   - Extracts metadata: library name from directory name, vendor from source
-     file headers, licence from LICENSE files
+   - Extracts metadata: library name from its runtime package or directory name,
+     vendor from the copyright holder most of its source file headers name,
+     licence from LICENSE files
 7. **Generates** the CycloneDX 1.5 JSON SBOM and writes it to the output
    directory
 8. **Checks** the written file against the schema rules its output could break,

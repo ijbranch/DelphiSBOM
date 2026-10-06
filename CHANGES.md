@@ -2,6 +2,18 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-07 — Vendor Is What Most Files Say [Fixed]
+
+- A library's vendor came from the first file naming anyone, so one contributor's header named the
+  whole library (ReportBuilder: "Willo van der Merwe"; a fork's maintainer instead of the author). Up to
+  200 of the library's files now vote, and the most common holder wins; a company name on an ASCII-art
+  banner (ReportBuilder's "Digital Metaphors Corporation") counts when the copyright line has only years,
+  and a holder written before the word ("Pierre le Riche, copyright 2004 - 2026") is read before any
+  banner, so a sponsor line does not win. One letter repeated (banner lettering) is never a name. On the
+  41-project run this corrected the vendors of ReportBuilder, FastMM5, OmniThreadLibrary, InfoPower and
+  TestInsight, and changed no other — `Source/uLibraryDiscovery.pas`
+- Tests: 3 new (157 in all), each red before its fix or mutation-checked — `Tests/TestLibraryDiscovery.pas`
+
 ## 2026-10-07 — Discovery Fixes From a 41-Project Run [Fixed]
 
 Found by running the command line over a suite of 41 real projects (applications, services,

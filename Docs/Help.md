@@ -54,10 +54,10 @@ Shows libraries discovered automatically by scanning the file system:
   (`E:\`), whose other folders are unrelated libraries
 - **Directory** — where the `.pas` files were found, or, for a library found only as
   `.dcu` files, the library folder above its build-output folders
-- **Vendor** — extracted from the first copyright line in the library's source files
-  (`Copyright (c) 2024 Name`, `© Name`, or `Copyright:` with the name on the next line).
-  It is a best guess — a header may credit one contributor, or have no copyright line
-  at all (ASCII-art banners) — so check it in **Edit...**
+- **Vendor** — the copyright holder most of the library's source files name (up to 200
+  files): `Copyright (c) 2024 Name`, `Name, copyright 2024`, `© Name`, `Copyright:` with
+  the name on the next line, or a company name on a banner header. It is still a best
+  guess, so check it in **Edit...**
 - **Licence** — detected from LICENSE/LICENCE/COPYING files
 - **Found as** — shown as `DCUs only` when no source exists under the library folder
 - **Prefix** — computed common prefix for unit matching

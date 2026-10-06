@@ -46,8 +46,8 @@ that have no awareness of the Delphi ecosystem.
 4. **Discover** — for any unclassified units, scan the file system to find their
    `.pas` source files (or, for a library the IDE library path points at as
    compiled units only, its `.dcu` files and the library folder above them),
-   group them by library directory, and extract metadata (vendor from source
-   headers, licence from LICENSE files)
+   group them by library directory, and extract metadata (vendor: the
+   copyright holder most of its source headers name; licence from LICENSE files)
 5. **Review & Save** — confirm discovered libraries in the app, then save to
    `components.json` with one click
 6. **Generate** a CycloneDX 1.5 JSON SBOM file with a dependency graph, check
