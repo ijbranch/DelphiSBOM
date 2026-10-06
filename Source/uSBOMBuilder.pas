@@ -1,4 +1,4 @@
-(*
+﻿(*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
@@ -27,32 +27,84 @@ type
 
     /// <summary>
     ///   Builds the SBOM JSON string from project info, classified units, and manifest.
-    ///   AVersionOverride, if non-empty, replaces the version from .dproj.
     /// </summary>
+    /// <param name="AProjectInfo">Parsed project metadata.</param>
+    /// <param name="AClassifiedUnits">Classification of every project unit.</param>
+    /// <param name="AManifest">The loaded components.json.</param>
+    /// <param name="AVersionOverride">If non-empty, replaces the version from the .dproj.</param>
+    /// <param name="AEvidence">Optional per-unit hashes from DX.Comply.</param>
+    /// <returns>The pretty-printed CycloneDX 1.5 JSON document.</returns>
     function Build( const AProjectInfo: TProjectInfo;
       const AClassifiedUnits: TArray<TClassifiedUnit>;
       const AManifest: TManifest;
-      ARTLScanAvailable: Boolean;
       const AVersionOverride: string;
       const AEvidence: TArray<TUnitEvidence> ): string;
 
     /// <summary>
-    ///   Builds and writes the SBOM to a file. Returns the output file path.
+    ///   Builds the SBOM and writes it as UTF-8 without a BOM to &lt;ProjectName&gt;.cdx.json.
     /// </summary>
+    /// <param name="AProjectInfo">Parsed project metadata.</param>
+    /// <param name="AClassifiedUnits">Classification of every project unit.</param>
+    /// <param name="AManifest">The loaded components.json.</param>
+    /// <param name="AVersionOverride">If non-empty, replaces the version from the .dproj.</param>
+    /// <param name="AOutputDir">Output directory; empty means the project directory.</param>
+    /// <param name="AEvidence">Optional per-unit hashes from DX.Comply.</param>
+    /// <returns>The path of the written file.</returns>
+    /// <exception cref="Exception">The output directory does not exist or the file cannot be written.</exception>
     function BuildAndSave( const AProjectInfo: TProjectInfo;
       const AClassifiedUnits: TArray<TClassifiedUnit>;
       const AManifest: TManifest;
-      ARTLScanAvailable: Boolean;
       const AVersionOverride: string;
       const AOutputDir: string;
       const AEvidence: TArray<TUnitEvidence> ): string;
   end;
 
+/// <summary>
+///   Percent-encodes a purl name or version segment as the package-url specification requires:
+///   unreserved characters (A-Z a-z 0-9 . - _ ~) are kept, everything else becomes %XX of its
+///   UTF-8 bytes. Unlike form encoding, a space becomes %20, never '+'.
+/// </summary>
+/// <param name="AValue">The segment to encode.</param>
+/// <returns>The encoded segment.</returns>
+function PurlEncode( const AValue: string ): string;
+
 implementation
 
 uses
   System.JSON, System.IOUtils, System.DateUtils, System.Generics.Collections,
-  System.NetEncoding;
+  uTextFiles;
+
+function PurlEncode( const AValue: string ): string;
+begin
+
+  var Builder       := TStringBuilder.Create;
+  try
+    for var B in TEncoding.UTF8.GetBytes( AValue ) do
+      if CharInSet( Char( B ), [ 'A'..'Z', 'a'..'z', '0'..'9', '.', '-', '_', '~' ] ) then
+        Builder.Append( Char( B ) )
+      else
+        Builder.Append( '%' ).Append( IntToHex( B, 2 ) );
+
+    Result          := Builder.ToString;
+  finally
+    Builder.Free;
+  end;
+
+end;
+
+/// <summary>
+///   Returns the CycloneDX component type for a manifest value: lower-cased, and 'library' for
+///   anything outside the enum (the schema enum is case-sensitive).
+/// </summary>
+function NormaliseComponentType( const AType: string ): string;
+begin
+
+  Result            := LowerCase( Trim( AType ) );
+
+  if ( Result <> 'library' ) and ( Result <> 'framework' ) and ( Result <> 'application' ) then
+    Result          := 'library';
+
+end;
 
 { TSBOMBuilder }
 
@@ -60,7 +112,7 @@ constructor TSBOMBuilder.Create( ALogProc: TProc<TLogLevel, string> );
 begin
 
   inherited Create;
-  FLog := ALogProc;
+  FLog              := ALogProc;
 
 end;
 
@@ -75,15 +127,12 @@ end;
 function TSBOMBuilder.Build( const AProjectInfo: TProjectInfo;
   const AClassifiedUnits: TArray<TClassifiedUnit>;
   const AManifest: TManifest;
-  ARTLScanAvailable: Boolean;
   const AVersionOverride: string;
   const AEvidence: TArray<TUnitEvidence> ): string;
 
-  // Builds a JSON array of sub-component objects with hashes for units matching AClassification
-  function BuildEvidenceSubComponents( AClassification: TUnitClassification; AComponentIndex: Integer ): TJSONArray;
+// Adds a "components" array of evidence sub-components (one per matched unit) to AOwner
+  procedure AddEvidenceSubComponents( AOwner: TJSONObject; AClassification: TUnitClassification; AComponentIndex: Integer );
   begin
-
-    Result := nil;
 
     if Length( AEvidence ) = 0 then Exit;
 
@@ -94,74 +143,91 @@ function TSBOMBuilder.Build( const AProjectInfo: TProjectInfo;
       if CU.Classification <> AClassification then Continue;
       if ( AClassification = ucThirdParty ) and ( CU.ComponentIndex <> AComponentIndex ) then Continue;
 
-      // Find matching evidence by unit name (case-insensitive)
+      // Match on the name as written, or scope-stripped on both sides (SysUtils matches System.SysUtils)
       for var Ev in AEvidence do
-        if SameText( Ev.UnitName, CU.OriginalName ) then
+        if SameText( Ev.UnitName, CU.OriginalName ) or SameText( StripScopePrefix( Ev.UnitName ), CU.UnitName ) then
         begin
-          if not Assigned( SubComps ) then
+          if ( not Assigned( SubComps ) ) then
+          begin
             SubComps := TJSONArray.Create;
+            AOwner.AddPair( 'components', SubComps );
+          end;
 
           var SubComp := TJSONObject.Create;
+          SubComps.AddElement( SubComp );
           SubComp.AddPair( 'type', 'library' );
           SubComp.AddPair( 'name', Ev.UnitName );
 
           if ( Ev.Algorithm <> '' ) and ( Ev.HashValue <> '' ) then
           begin
+            var HashArr := TJSONArray.Create;
+            SubComp.AddPair( 'hashes', HashArr );
+
             var HashObj := TJSONObject.Create;
+            HashArr.AddElement( HashObj );
             HashObj.AddPair( 'alg', Ev.Algorithm );
             HashObj.AddPair( 'content', Ev.HashValue );
-
-            var HashArr := TJSONArray.Create;
-            HashArr.AddElement( HashObj );
-            SubComp.AddPair( 'hashes', HashArr );
           end;
 
-          SubComps.AddElement( SubComp );
+          if Ev.Origin <> '' then
+          begin
+            var PropArr := TJSONArray.Create;
+            SubComp.AddPair( 'properties', PropArr );
+
+            var PropObj := TJSONObject.Create;
+            PropArr.AddElement( PropObj );
+            PropObj.AddPair( 'name', 'dxcomply:origin' );
+            PropObj.AddPair( 'value', Ev.Origin );
+          end;
+
           Break;
         end;
     end;
-
-    Result := SubComps;
 
   end;
 
 begin
 
-  var Root := TJSONObject.Create;
+  // Every child is attached to its parent as soon as it is created, so an exception part-way
+  // through leaves nothing unowned when Root is freed
+  var Root          := TJSONObject.Create;
   try
     Root.AddPair( 'bomFormat', 'CycloneDX' );
     Root.AddPair( 'specVersion', '1.5' );
-    var GuidStr := TGUID.NewGuid.ToString;
-    GuidStr := StringReplace( GuidStr, '{', '', [ rfReplaceAll ] );
-    GuidStr := StringReplace( GuidStr, '}', '', [ rfReplaceAll ] );
+    var GuidStr     := TGUID.NewGuid.ToString;
+    GuidStr         := StringReplace( GuidStr, '{', '', [ rfReplaceAll ] );
+    GuidStr         := StringReplace( GuidStr, '}', '', [ rfReplaceAll ] );
     Root.AddPair( 'serialNumber', 'urn:uuid:' + LowerCase( GuidStr ) );
     Root.AddPair( 'version', TJSONNumber.Create( 1 ) );
 
     // Metadata
-    var Metadata := TJSONObject.Create;
+    var Metadata    := TJSONObject.Create;
+    Root.AddPair( 'metadata', Metadata );
 
-    var UtcNow := TTimeZone.Local.ToUniversalTime( Now );
-    Metadata.AddPair( 'timestamp', FormatDateTime( 'yyyy-mm-dd"T"hh:nn:ss"Z"', UtcNow ) );
+    // ISO 8601 UTC; the quoted separators keep the locale's time separator out of it
+    var UtcNow      := TTimeZone.Local.ToUniversalTime( Now );
+    Metadata.AddPair( 'timestamp', FormatDateTime( 'yyyy"-"mm"-"dd"T"hh":"nn":"ss"Z"', UtcNow, TFormatSettings.Create( 'en-US' ) ) );
 
     // Metadata > tools
-    var ToolComp := TJSONObject.Create;
+    var ToolsObj    := TJSONObject.Create;
+    Metadata.AddPair( 'tools', ToolsObj );
+
+    var ToolsArray  := TJSONArray.Create;
+    ToolsObj.AddPair( 'components', ToolsArray );
+
+    var ToolComp    := TJSONObject.Create;
+    ToolsArray.AddElement( ToolComp );
     ToolComp.AddPair( 'type', 'application' );
     ToolComp.AddPair( 'name', AppName );
     ToolComp.AddPair( 'version', AppVersion );
 
     var ToolSupplier := TJSONObject.Create;
-    ToolSupplier.AddPair( 'name', 'DelphiSBOM Contributors' );
     ToolComp.AddPair( 'supplier', ToolSupplier );
-
-    var ToolsArray := TJSONArray.Create;
-    ToolsArray.AddElement( ToolComp );
-
-    var ToolsObj := TJSONObject.Create;
-    ToolsObj.AddPair( 'components', ToolsArray );
-    Metadata.AddPair( 'tools', ToolsObj );
+    ToolSupplier.AddPair( 'name', 'DelphiSBOM Contributors' );
 
     // Metadata > component (the application being described)
-    var MainComp := TJSONObject.Create;
+    var MainComp    := TJSONObject.Create;
+    Metadata.AddPair( 'component', MainComp );
     MainComp.AddPair( 'type', 'application' );
     MainComp.AddPair( 'name', AProjectInfo.ProjectName );
 
@@ -178,49 +244,42 @@ begin
     if AManifest.Supplier.Name <> '' then
     begin
       var SupplierObj := TJSONObject.Create;
+      MainComp.AddPair( 'supplier', SupplierObj );
       SupplierObj.AddPair( 'name', AManifest.Supplier.Name );
 
       if AManifest.Supplier.URL <> '' then
       begin
         var UrlArray := TJSONArray.Create;
-        UrlArray.Add( AManifest.Supplier.URL );
         SupplierObj.AddPair( 'url', UrlArray );
+        UrlArray.Add( AManifest.Supplier.URL );
       end;
-
-      MainComp.AddPair( 'supplier', SupplierObj );
     end;
 
-    Metadata.AddPair( 'component', MainComp );
-    Root.AddPair( 'metadata', Metadata );
-
     // Components array
-    var Components := TJSONArray.Create;
+    var Components  := TJSONArray.Create;
+    Root.AddPair( 'components', Components );
 
     // Add RTL as single aggregate component
-    var RTLComp := TJSONObject.Create;
+    var RTLComp     := TJSONObject.Create;
+    Components.AddElement( RTLComp );
     RTLComp.AddPair( 'type', 'framework' );
     RTLComp.AddPair( 'name', 'Embarcadero Delphi RTL' );
 
-    var DelphiVer := AProjectInfo.DelphiVersion;
+    var DelphiVer   := AProjectInfo.DelphiVersion;
 
     if DelphiVer = '' then
-      DelphiVer := 'unknown';
+      DelphiVer     := 'unknown';
 
     RTLComp.AddPair( 'version', DelphiVer );
 
     var RTLSupplier := TJSONObject.Create;
-    RTLSupplier.AddPair( 'name', 'Embarcadero Technologies' );
     RTLComp.AddPair( 'supplier', RTLSupplier );
+    RTLSupplier.AddPair( 'name', 'Embarcadero Technologies' );
 
-    RTLComp.AddPair( 'purl', Format( 'pkg:delphi/embarcadero-rtl@%s', [ TNetEncoding.URL.Encode( DelphiVer ) ] ) );
+    RTLComp.AddPair( 'purl', 'pkg:delphi/embarcadero-rtl@' + PurlEncode( DelphiVer ) );
 
     // Attach per-unit evidence from DX.Comply if available
-    var RTLEvidence := BuildEvidenceSubComponents( ucRTL, -1 );
-
-    if Assigned( RTLEvidence ) then
-      RTLComp.AddPair( 'components', RTLEvidence );
-
-    Components.AddElement( RTLComp );
+    AddEvidenceSubComponents( RTLComp, ucRTL, -1 );
 
     // Add third-party components (deduplicated by component index)
     var AddedComponents := TDictionary<Integer, Boolean>.Create;
@@ -229,83 +288,97 @@ begin
       begin
         if ( CU.Classification <> ucThirdParty ) or ( CU.ComponentIndex < 0 ) then Continue;
 
+        if CU.ComponentIndex > High( AManifest.Components ) then
+        begin
+          Log( llError, Format( 'Unit %s refers to manifest component %d, which does not exist — skipped', [ CU.OriginalName, CU.ComponentIndex ] ) );
+          Continue;
+        end;
+
         if AddedComponents.ContainsKey( CU.ComponentIndex ) then Continue;
 
         AddedComponents.Add( CU.ComponentIndex, True );
 
-        var Entry := AManifest.Components[ CU.ComponentIndex ];
+        var Entry   := AManifest.Components[ CU.ComponentIndex ];
         var CompObj := TJSONObject.Create;
+        Components.AddElement( CompObj );
 
-        CompObj.AddPair( 'type', Entry.CompType );
+        CompObj.AddPair( 'type', NormaliseComponentType( Entry.CompType ) );
         CompObj.AddPair( 'name', Entry.Name );
-        CompObj.AddPair( 'version', Entry.Version );
+
+        if Entry.Version <> '' then
+          CompObj.AddPair( 'version', Entry.Version );
 
         if Entry.Vendor <> '' then
         begin
           var VendorObj := TJSONObject.Create;
-          VendorObj.AddPair( 'name', Entry.Vendor );
           CompObj.AddPair( 'supplier', VendorObj );
+          VendorObj.AddPair( 'name', Entry.Vendor );
         end;
 
-        // Licences
-        if Entry.Licence <> '' then
-        begin
-          var LicObj := TJSONObject.Create;
+        // Licences: license.id is an SPDX enum, so only recognised identifiers go there
+        var Licence := '';
+        var LicenceKind := ClassifyLicence( Entry.Licence, Licence );
 
-          if SameText( Entry.Licence, 'Commercial' ) then
-            LicObj.AddPair( 'name', 'Commercial' )
-          else
-            LicObj.AddPair( 'id', Entry.Licence );
+        case LicenceKind of
+          lkSPDX, lkName:
+            begin
+              var LicArray := TJSONArray.Create;
+              CompObj.AddPair( 'licenses', LicArray );
 
-          if Entry.LicenceURL <> '' then
-            LicObj.AddPair( 'url', Entry.LicenceURL );
+              var LicWrapper := TJSONObject.Create;
+              LicArray.AddElement( LicWrapper );
 
-          var LicWrapper := TJSONObject.Create;
-          LicWrapper.AddPair( 'license', LicObj );
+              var LicObj := TJSONObject.Create;
+              LicWrapper.AddPair( 'license', LicObj );
 
-          var LicArray := TJSONArray.Create;
-          LicArray.AddElement( LicWrapper );
+              if LicenceKind = lkSPDX then
+                LicObj.AddPair( 'id', Licence )
+              else
+                LicObj.AddPair( 'name', Licence );
 
-          CompObj.AddPair( 'licenses', LicArray );
+              if Entry.LicenceURL <> '' then
+                LicObj.AddPair( 'url', Entry.LicenceURL );
+            end;
+
+          lkExpression:
+            begin
+              var LicArray := TJSONArray.Create;
+              CompObj.AddPair( 'licenses', LicArray );
+
+              var ExprObj := TJSONObject.Create;
+              LicArray.AddElement( ExprObj );
+              ExprObj.AddPair( 'expression', Licence );
+            end;
         end;
 
         // External references
         if Entry.VendorURL <> '' then
         begin
+          var ExtRefArray := TJSONArray.Create;
+          CompObj.AddPair( 'externalReferences', ExtRefArray );
+
           var ExtRef := TJSONObject.Create;
+          ExtRefArray.AddElement( ExtRef );
           ExtRef.AddPair( 'type', 'website' );
           ExtRef.AddPair( 'url', Entry.VendorURL );
-
-          var ExtRefArray := TJSONArray.Create;
-          ExtRefArray.AddElement( ExtRef );
-
-          CompObj.AddPair( 'externalReferences', ExtRefArray );
         end;
 
         // PURL
-        var EncodedName := TNetEncoding.URL.Encode( Entry.Name );
-
-        if Entry.Version <> '' then
-          CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s@%s', [ EncodedName, TNetEncoding.URL.Encode( Entry.Version ) ] ) )
+        if Trim( Entry.Name ) = '' then
+          Log( llWarning, Format( 'Manifest component %d has no name — no purl emitted', [ CU.ComponentIndex ] ) )
+        else if Entry.Version <> '' then
+          CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s@%s', [ PurlEncode( Entry.Name ), PurlEncode( Entry.Version ) ] ) )
         else
-          CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s', [ EncodedName ] ) );
+          CompObj.AddPair( 'purl', 'pkg:delphi/' + PurlEncode( Entry.Name ) );
 
         // Attach per-unit evidence from DX.Comply if available
-        var CompEvidence := BuildEvidenceSubComponents( ucThirdParty, CU.ComponentIndex );
-
-        if Assigned( CompEvidence ) then
-          CompObj.AddPair( 'components', CompEvidence );
-
-        Components.AddElement( CompObj );
+        AddEvidenceSubComponents( CompObj, ucThirdParty, CU.ComponentIndex );
       end;
     finally
       AddedComponents.Free;
     end;
 
-    Root.AddPair( 'components', Components );
-
-    Result := Root.Format;
-
+    Result          := Root.Format;
   finally
     Root.Free;
   end;
@@ -315,28 +388,30 @@ end;
 function TSBOMBuilder.BuildAndSave( const AProjectInfo: TProjectInfo;
   const AClassifiedUnits: TArray<TClassifiedUnit>;
   const AManifest: TManifest;
-  ARTLScanAvailable: Boolean;
   const AVersionOverride: string;
   const AOutputDir: string;
   const AEvidence: TArray<TUnitEvidence> ): string;
 begin
 
-  var Json := Build( AProjectInfo, AClassifiedUnits, AManifest, ARTLScanAvailable, AVersionOverride, AEvidence );
+  var Json          := Build( AProjectInfo, AClassifiedUnits, AManifest, AVersionOverride, AEvidence );
 
-  var EffectiveDir := AOutputDir;
+  var EffectiveDir  := AOutputDir;
 
   if EffectiveDir = '' then
-    EffectiveDir := AProjectInfo.ProjectDir;
+    EffectiveDir    := AProjectInfo.ProjectDir;
 
-  if not TDirectory.Exists( EffectiveDir ) then
+  if ( not TDirectory.Exists( EffectiveDir ) ) then
     raise Exception.CreateFmt( 'Output directory does not exist: %s', [ EffectiveDir ] );
 
-  Result := TPath.Combine( EffectiveDir, AProjectInfo.ProjectName + '.cdx.json' );
+  Result            := TPath.Combine( EffectiveDir, AProjectInfo.ProjectName + '.cdx.json' );
 
+  // UTF-8 without a BOM (RFC 8259), written atomically so a failure keeps the previous SBOM intact
   try
-    TFile.WriteAllText( Result, Json, TEncoding.UTF8 );
+    WriteTextFileAtomic( Result, Json );
   except
-    on E: Exception do
+    on E: EInOutError do
+      raise Exception.CreateFmt( 'Failed to write SBOM to %s: %s', [ Result, E.Message ] );
+    on E: EStreamError do
       raise Exception.CreateFmt( 'Failed to write SBOM to %s: %s', [ Result, E.Message ] );
   end;
 
@@ -345,3 +420,4 @@ begin
 end;
 
 end.
+
