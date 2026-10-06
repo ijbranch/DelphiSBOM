@@ -1,19 +1,24 @@
-(*
+﻿(*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
-  uManifestLoader.pas — Loads and validates the components.json manifest
+  uManifestLoader.pas — Loads, validates and updates the components.json manifest
 *)
 unit uManifestLoader;
 
 interface
 
 uses
-  System.SysUtils, System.Classes,
+  System.SysUtils, System.Classes, System.JSON,
   uTypes;
 
 type
+  /// <summary>
+  ///   Raised when an existing components.json cannot be parsed, so it is never overwritten.
+  /// </summary>
+  EManifestError = class( Exception );
+
   /// <summary>
   ///   Loads and validates a components.json manifest file.
   /// </summary>
@@ -22,40 +27,73 @@ type
     FLog: TProc<TLogLevel, string>;
 
     procedure ValidateComponent( const AComp: TComponentEntry; AIndex: Integer );
+    function ReadString( AObject: TJSONObject; const AName, ADefault, AContext: string ): string;
+    function ReadStringArray( AObject: TJSONObject; const AName, AContext: string ): TArray<string>;
+    function LoadRootForUpdate( const AManifestFile: string ): TJSONObject;
+    function GetOrAddArray( ARoot: TJSONObject; const AName: string ): TJSONArray;
+    procedure SetLastUpdated( ARoot: TJSONObject );
     procedure Log( ALevel: TLogLevel; const AMessage: string );
   public
     constructor Create( ALogProc: TProc<TLogLevel, string> );
 
     /// <summary>
     ///   Loads a components.json file and returns the parsed manifest.
-    ///   Raises an exception if the file is missing or has invalid JSON.
     ///   Logs warnings for schema issues that are non-fatal.
     /// </summary>
+    /// <param name="AManifestFile">Full path of components.json.</param>
+    /// <returns>The parsed manifest.</returns>
+    /// <exception cref="EManifestError">The file is missing, is not valid JSON, or its root is not an object.</exception>
     function Load( const AManifestFile: string ): TManifest;
 
     /// <summary>
     ///   Validates a manifest without loading it for SBOM generation.
-    ///   Returns True if valid (warnings are acceptable), False if errors found.
     /// </summary>
+    /// <param name="AManifestFile">Full path of components.json.</param>
+    /// <returns>True if valid (warnings are acceptable), False if errors were found.</returns>
     function Validate( const AManifestFile: string ): Boolean;
 
     /// <summary>
-    ///   Appends discovered libraries to an existing components.json file.
+    ///   Appends confirmed discovered libraries to components.json, creating the file with a
+    ///   default skeleton when it does not exist.
     /// </summary>
+    /// <param name="AManifestFile">Full path of components.json.</param>
+    /// <param name="ALibraries">Libraries to add; only those with Confirmed = True are written.</param>
+    /// <exception cref="EManifestError">The existing file cannot be parsed; it is left untouched.</exception>
     procedure SaveDiscoveredLibraries( const AManifestFile: string;
       const ALibraries: TArray<TDiscoveredLibrary> );
 
     /// <summary>
-    ///   Adds unit names to the own_code_units array in components.json.
+    ///   Adds unit names to the own_code_units array in components.json, creating the file with a
+    ///   default skeleton when it does not exist.
     /// </summary>
+    /// <param name="AManifestFile">Full path of components.json.</param>
+    /// <param name="AUnitNames">Unit names to add; names already present are skipped.</param>
+    /// <exception cref="EManifestError">The existing file cannot be parsed; it is left untouched.</exception>
     procedure SaveOwnCodeUnits( const AManifestFile: string;
       const AUnitNames: TArray<string> );
+
+    /// <summary>
+    ///   Returns the default components.json skeleton text (pretty-printed JSON).
+    /// </summary>
+    /// <returns>The skeleton, with schema_version, last_updated, an empty supplier and no components.</returns>
+    class function DefaultManifestText: string;
   end;
 
 implementation
 
 uses
-  System.IOUtils, System.JSON, System.Generics.Collections;
+  System.IOUtils, System.Generics.Collections,
+  uTextFiles;
+
+/// <summary>
+///   Today's date as ISO 8601 (yyyy-mm-dd), independent of the locale.
+/// </summary>
+function TodayISO: string;
+begin
+
+  Result            := FormatDateTime( 'yyyy"-"mm"-"dd', Now, TFormatSettings.Create( 'en-US' ) );
+
+end;
 
 { TManifestLoader }
 
@@ -63,7 +101,7 @@ constructor TManifestLoader.Create( ALogProc: TProc<TLogLevel, string> );
 begin
 
   inherited Create;
-  FLog := ALogProc;
+  FLog              := ALogProc;
 
 end;
 
@@ -75,46 +113,118 @@ begin
 
 end;
 
+class function TManifestLoader.DefaultManifestText: string;
+begin
+
+  var Root          := TJSONObject.Create;
+  try
+    Root.AddPair( 'schema_version', '1.0' );
+    Root.AddPair( 'last_updated', TodayISO );
+
+    var Supplier    := TJSONObject.Create;
+    Root.AddPair( 'supplier', Supplier );
+    Supplier.AddPair( 'name', '' );
+    Supplier.AddPair( 'url', '' );
+
+    Root.AddPair( 'components', TJSONArray.Create );
+    Result          := Root.Format;
+  finally
+    Root.Free;
+  end;
+
+end;
+
+function TManifestLoader.ReadString( AObject: TJSONObject; const AName, ADefault, AContext: string ): string;
+begin
+
+  var Value         := AObject.GetValue( AName );
+
+  if ( not Assigned( Value ) ) or ( Value is TJSONNull ) then Exit( ADefault );
+
+  // Strings, numbers ("version": 3.7) and booleans are all usable as text
+  if ( Value is TJSONString ) or ( Value is TJSONNumber ) or ( Value is TJSONBool ) then
+    Exit( Value.Value );
+
+  Log( llWarning, Format( '%s: "%s" should be a string — ignored', [ AContext, AName ] ) );
+  Result            := ADefault;
+
+end;
+
+function TManifestLoader.ReadStringArray( AObject: TJSONObject; const AName, AContext: string ): TArray<string>;
+begin
+
+  Result            := nil;
+
+  var Value         := AObject.GetValue( AName );
+
+  if ( not Assigned( Value ) ) or ( Value is TJSONNull ) then Exit;
+
+  if ( not ( Value is TJSONArray ) ) then
+  begin
+    Log( llWarning, Format( '%s: "%s" should be an array — ignored', [ AContext, AName ] ) );
+    Exit;
+  end;
+
+  var List          := TList<string>.Create;
+  try
+    for var Item in TJSONArray( Value ) do
+    begin
+      // An empty entry would match every unit as a prefix — never accept one
+      if ( Item is TJSONString ) and ( Trim( Item.Value ) <> '' ) then
+        List.Add( Trim( Item.Value ) )
+      else
+        Log( llWarning, Format( '%s: skipping empty or non-string entry in "%s"', [ AContext, AName ] ) );
+    end;
+
+    Result          := List.ToArray;
+  finally
+    List.Free;
+  end;
+
+end;
+
 function TManifestLoader.Load( const AManifestFile: string ): TManifest;
 begin
 
-  Result := Default( TManifest );
+  Result            := Default( TManifest );
 
   if ( not FileExists( AManifestFile ) ) then
-    raise Exception.CreateFmt( 'Manifest file not found: %s', [ AManifestFile ] );
+    raise EManifestError.CreateFmt( 'Manifest file not found: %s', [ AManifestFile ] );
 
   Log( llInfo, Format( 'Loading manifest from %s', [ ExtractFileName( AManifestFile ) ] ) );
 
-  var Content := TFile.ReadAllText( AManifestFile, TEncoding.UTF8 );
-  var JsonVal := TJSONObject.ParseJSONValue( Content );
+  var JsonVal       := TJSONObject.ParseJSONValue( ReadTextFile( AManifestFile ) );
 
   if ( not Assigned( JsonVal ) ) then
-    raise Exception.Create( 'Invalid JSON in manifest file' );
+    raise EManifestError.Create( 'Invalid JSON in manifest file' );
 
   try
     if ( not ( JsonVal is TJSONObject ) ) then
-      raise Exception.Create( 'Manifest root must be a JSON object' );
+      raise EManifestError.Create( 'Manifest root must be a JSON object' );
 
-    var Root := JsonVal as TJSONObject;
+    var Root        := JsonVal as TJSONObject;
 
     // Schema version
-    var SchemaVer := Root.GetValue<string>( 'schema_version', '' );
+    Result.SchemaVersion := ReadString( Root, 'schema_version', '', 'Manifest' );
 
-    if SchemaVer = '' then
+    if Result.SchemaVersion = '' then
       Log( llWarning, 'Missing schema_version field' )
-    else
-      Result.SchemaVersion := SchemaVer;
+    else if Result.SchemaVersion <> '1.0' then
+      Log( llWarning, Format( 'schema_version "%s" is not supported (expected "1.0") — reading it as 1.0', [ Result.SchemaVersion ] ) );
 
     // Last updated
-    Result.LastUpdated := Root.GetValue<string>( 'last_updated', '' );
+    Result.LastUpdated := ReadString( Root, 'last_updated', '', 'Manifest' );
+
+    if Result.LastUpdated = '' then
+      Log( llWarning, 'Missing last_updated field' );
 
     // Supplier
-    var SupplierObj: TJSONObject;
+    var SupplierVal := Root.GetValue( 'supplier' );
 
-    if Root.TryGetValue<TJSONObject>( 'supplier', SupplierObj ) then
+    if SupplierVal is TJSONObject then
     begin
-      Result.Supplier.Name := SupplierObj.GetValue<string>( 'name', '' );
-      Result.Supplier.URL  := SupplierObj.GetValue<string>( 'url', '' );
+      Result.Supplier.Name := ReadString( TJSONObject( SupplierVal ), 'name', '', 'Supplier' );
+      Result.Supplier.URL := ReadString( TJSONObject( SupplierVal ), 'url', '', 'Supplier' );
 
       if Result.Supplier.Name = '' then
         Log( llWarning, 'Supplier name is empty' );
@@ -123,48 +233,35 @@ begin
       Log( llWarning, 'Missing supplier object in manifest' );
 
     // Components array
-    var CompArray: TJSONArray;
+    var CompVal     := Root.GetValue( 'components' );
 
-    if Root.TryGetValue<TJSONArray>( 'components', CompArray ) then
+    if CompVal is TJSONArray then
     begin
-      var CompList := TList<TComponentEntry>.Create;
+      var CompArray := TJSONArray( CompVal );
+      var CompList  := TList<TComponentEntry>.Create;
       try
         for var I := 0 to CompArray.Count - 1 do
         begin
-          if not ( CompArray.Items[ I ] is TJSONObject ) then Continue;
+          if ( not ( CompArray.Items[ I ] is TJSONObject ) ) then
+          begin
+            Log( llWarning, Format( 'Component[%d] is not an object — skipped', [ I ] ) );
+            Continue;
+          end;
+
           var CompObj := CompArray.Items[ I ] as TJSONObject;
-          var Entry: TComponentEntry;
+          var Context := Format( 'Component[%d]', [ I ] );
+          var Entry := Default( TComponentEntry );
 
-          Entry.Name       := CompObj.GetValue<string>( 'name', '' );
-          Entry.Version    := CompObj.GetValue<string>( 'version', '' );
-          Entry.Vendor     := CompObj.GetValue<string>( 'vendor', '' );
-          Entry.VendorURL  := CompObj.GetValue<string>( 'vendor_url', '' );
-          Entry.Licence    := CompObj.GetValue<string>( 'licence', '' );
-          Entry.LicenceURL := CompObj.GetValue<string>( 'licence_url', '' );
-          Entry.CompType   := CompObj.GetValue<string>( 'type', 'library' );
-          Entry.Notes      := CompObj.GetValue<string>( 'notes', '' );
-
-          // Parse units_prefix array
-          var PrefixArray: TJSONArray;
-
-          if CompObj.TryGetValue<TJSONArray>( 'units_prefix', PrefixArray ) then
-          begin
-            SetLength( Entry.Prefixes, PrefixArray.Count );
-
-            for var J := 0 to PrefixArray.Count - 1 do
-              Entry.Prefixes[ J ] := PrefixArray.Items[ J ].Value;
-          end;
-
-          // Parse units_exact array
-          var ExactArray: TJSONArray;
-
-          if CompObj.TryGetValue<TJSONArray>( 'units_exact', ExactArray ) then
-          begin
-            SetLength( Entry.ExactUnits, ExactArray.Count );
-
-            for var J := 0 to ExactArray.Count - 1 do
-              Entry.ExactUnits[ J ] := ExactArray.Items[ J ].Value;
-          end;
+          Entry.Name := ReadString( CompObj, 'name', '', Context );
+          Entry.Version := ReadString( CompObj, 'version', '', Context );
+          Entry.Vendor := ReadString( CompObj, 'vendor', '', Context );
+          Entry.VendorURL := ReadString( CompObj, 'vendor_url', '', Context );
+          Entry.Licence := ReadString( CompObj, 'licence', '', Context );
+          Entry.LicenceURL := ReadString( CompObj, 'licence_url', '', Context );
+          Entry.CompType := ReadString( CompObj, 'type', 'library', Context );
+          Entry.Notes := ReadString( CompObj, 'notes', '', Context );
+          Entry.Prefixes := ReadStringArray( CompObj, 'units_prefix', Context );
+          Entry.ExactUnits := ReadStringArray( CompObj, 'units_exact', Context );
 
           ValidateComponent( Entry, I );
           CompList.Add( Entry );
@@ -180,32 +277,21 @@ begin
     else
       Log( llWarning, 'No components array found in manifest' );
 
-    // Load own_code_units array
-    var OwnCodeArray: TJSONArray;
+    // own_code_units and own_code_prefixes
+    Result.OwnCodeUnits := ReadStringArray( Root, 'own_code_units', 'Manifest' );
 
-    if Root.TryGetValue<TJSONArray>( 'own_code_units', OwnCodeArray ) then
-    begin
-      SetLength( Result.OwnCodeUnits, OwnCodeArray.Count );
-
-      for var I := 0 to OwnCodeArray.Count - 1 do
-        Result.OwnCodeUnits[ I ] := OwnCodeArray.Items[ I ].Value;
-
+    if Length( Result.OwnCodeUnits ) > 0 then
       Log( llInfo, Format( 'Loaded %d own-code unit exclusions', [ Length( Result.OwnCodeUnits ) ] ) );
-    end;
 
-    // Load own_code_prefixes array
-    var OwnPrefixArray: TJSONArray;
+    Result.OwnCodePrefixes := ReadStringArray( Root, 'own_code_prefixes', 'Manifest' );
 
-    if Root.TryGetValue<TJSONArray>( 'own_code_prefixes', OwnPrefixArray ) then
-    begin
-      SetLength( Result.OwnCodePrefixes, OwnPrefixArray.Count );
+    for var P in Result.OwnCodePrefixes do
+      if P.Length < MinPrefixLength then
+        Log( llWarning, Format( 'own_code_prefixes: prefix "%s" is shorter than %d characters — risk of classifying third-party units as own code',
+            [ P, MinPrefixLength ] ) );
 
-      for var I := 0 to OwnPrefixArray.Count - 1 do
-        Result.OwnCodePrefixes[ I ] := OwnPrefixArray.Items[ I ].Value;
-
+    if Length( Result.OwnCodePrefixes ) > 0 then
       Log( llInfo, Format( 'Loaded %d own-code prefix rules', [ Length( Result.OwnCodePrefixes ) ] ) );
-    end;
-
   finally
     JsonVal.Free;
   end;
@@ -215,15 +301,25 @@ end;
 function TManifestLoader.Validate( const AManifestFile: string ): Boolean;
 begin
 
-  Result := True;
+  Result            := True;
 
   try
     Load( AManifestFile );
   except
-    on E: Exception do
+    on E: EManifestError do
     begin
       Log( llError, Format( 'Validation failed: %s', [ E.Message ] ) );
-      Result := False;
+      Result        := False;
+    end;
+    on E: EInOutError do
+    begin
+      Log( llError, Format( 'Validation failed: %s', [ E.Message ] ) );
+      Result        := False;
+    end;
+    on E: EStreamError do
+    begin
+      Log( llError, Format( 'Validation failed: %s', [ E.Message ] ) );
+      Result        := False;
     end;
   end;
 
@@ -232,7 +328,7 @@ end;
 procedure TManifestLoader.ValidateComponent( const AComp: TComponentEntry; AIndex: Integer );
 begin
 
-  var Prefix := Format( 'Component[%d] "%s"', [ AIndex, AComp.Name ] );
+  var Prefix        := Format( 'Component[%d] "%s"', [ AIndex, AComp.Name ] );
 
   if AComp.Name = '' then
     Log( llWarning, Format( '%s: missing name', [ Prefix ] ) );
@@ -244,21 +340,30 @@ begin
     Log( llWarning, Format( '%s: missing vendor', [ Prefix ] ) );
 
   if AComp.Licence = '' then
-    Log( llWarning, Format( '%s: missing licence', [ Prefix ] ) );
+    Log( llWarning, Format( '%s: missing licence', [ Prefix ] ) )
+  else
+  begin
+    var Normalised  := '';
 
-  // Validate component type
+    if ( ClassifyLicence( AComp.Licence, Normalised ) = lkName ) and ( not SameText( AComp.Licence, 'Commercial' ) ) then
+      Log( llWarning, Format( '%s: licence "%s" is not a recognised SPDX identifier — it will be written as a licence name',
+          [ Prefix, AComp.Licence ] ) );
+  end;
+
+  // Validate component type (the SBOM builder lower-cases it, and falls back to library)
   var ValidTypes: TArray<string> := [ 'library', 'framework', 'application' ];
-  var TypeValid := False;
+  var TypeValid     := False;
 
   for var VT in ValidTypes do
     if SameText( AComp.CompType, VT ) then
     begin
-      TypeValid := True;
+      TypeValid     := True;
       Break;
     end;
 
   if ( not TypeValid ) then
-    Log( llWarning, Format( '%s: type "%s" is not a valid CycloneDX type (expected library, framework, or application)', [ Prefix, AComp.CompType ] ) );
+    Log( llWarning, Format( '%s: type "%s" is not a valid CycloneDX type (expected library, framework, or application) — library will be used',
+        [ Prefix, AComp.CompType ] ) );
 
   // Check that at least one matching rule exists
   if ( Length( AComp.Prefixes ) = 0 ) and ( Length( AComp.ExactUnits ) = 0 ) then
@@ -268,7 +373,70 @@ begin
   for var P in AComp.Prefixes do
     if P.Length < MinPrefixLength then
       Log( llWarning, Format( '%s: prefix "%s" is shorter than %d characters — risk of false matches. Use units_exact instead.',
-        [ Prefix, P, MinPrefixLength ] ) );
+          [ Prefix, P, MinPrefixLength ] ) );
+
+end;
+
+// ---------------------------------------------------------------------------
+//  Updating the manifest
+// ---------------------------------------------------------------------------
+
+function TManifestLoader.LoadRootForUpdate( const AManifestFile: string ): TJSONObject;
+begin
+
+  if ( not FileExists( AManifestFile ) ) then
+  begin
+    Log( llInfo, Format( 'Creating %s', [ AManifestFile ] ) );
+    Exit( TJSONObject.ParseJSONValue( DefaultManifestText ) as TJSONObject );
+  end;
+
+  var Content       := ReadTextFile( AManifestFile );
+
+  if Trim( Content ) = '' then
+    Exit( TJSONObject.ParseJSONValue( DefaultManifestText ) as TJSONObject );
+
+  // Never replace a file that does not parse: that would silently discard every entry in it
+  var Parsed        := TJSONObject.ParseJSONValue( Content );
+
+  if ( not Assigned( Parsed ) ) or ( not ( Parsed is TJSONObject ) ) then
+  begin
+    Parsed.Free;
+    raise EManifestError.CreateFmt( '%s is not valid JSON — fix it (or run Validate Manifest) before saving. The file was not changed.',
+      [ AManifestFile ] );
+  end;
+
+  Result            := Parsed as TJSONObject;
+
+end;
+
+function TManifestLoader.GetOrAddArray( ARoot: TJSONObject; const AName: string ): TJSONArray;
+begin
+
+  var Value         := ARoot.GetValue( AName );
+
+  if Assigned( Value ) then
+  begin
+    if ( not ( Value is TJSONArray ) ) then
+      raise EManifestError.CreateFmt( '"%s" in the manifest is not an array — fix it before saving. The file was not changed.', [ AName ] );
+
+    Exit( TJSONArray( Value ) );
+  end;
+
+  Result            := TJSONArray.Create;
+  ARoot.AddPair( AName, Result );
+
+end;
+
+procedure TManifestLoader.SetLastUpdated( ARoot: TJSONObject );
+begin
+
+  // Replace the value in place so the key keeps its position in the file
+  var Pair          := ARoot.Get( 'last_updated' );
+
+  if Assigned( Pair ) then
+    Pair.JsonValue  := TJSONString.Create( TodayISO )
+  else
+    ARoot.AddPair( 'last_updated', TodayISO );
 
 end;
 
@@ -276,50 +444,28 @@ procedure TManifestLoader.SaveDiscoveredLibraries( const AManifestFile: string;
   const ALibraries: TArray<TDiscoveredLibrary> );
 begin
 
-  // Load existing manifest JSON
-  var Content := '';
-
-  if FileExists( AManifestFile ) then
-    Content := TFile.ReadAllText( AManifestFile, TEncoding.UTF8 );
-
-  var Root: TJSONObject;
-
-  if Content <> '' then
-  begin
-    var Parsed := TJSONObject.ParseJSONValue( Content );
-
-    if ( Assigned( Parsed ) ) and ( Parsed is TJSONObject ) then
-      Root := Parsed as TJSONObject
-    else
-    begin
-      Parsed.Free;
-      Root := TJSONObject.Create;
-    end;
-  end
-  else
-    Root := TJSONObject.Create;
-
+  var Root          := LoadRootForUpdate( AManifestFile );
   try
-    // Get or create the components array
-    var CompArray: TJSONArray;
-
-    if ( not Root.TryGetValue<TJSONArray>( 'components', CompArray ) ) then
-    begin
-      CompArray := TJSONArray.Create;
-      Root.AddPair( 'components', CompArray );
-    end;
+    var CompArray   := GetOrAddArray( Root, 'components' );
+    var Added       := 0;
 
     // Add each confirmed library (skip duplicates by name)
     for var Lib in ALibraries do
     begin
       if ( not Lib.Confirmed ) then Continue;
 
+      if Trim( Lib.Name ) = '' then
+      begin
+        Log( llWarning, Format( 'Skipping a library with no name (directory %s)', [ Lib.Directory ] ) );
+        Continue;
+      end;
+
       // Check if a component with the same name already exists
       var AlreadyExists := False;
 
       for var K := 0 to CompArray.Count - 1 do
         if ( CompArray.Items[ K ] is TJSONObject ) then
-          if SameText( ( CompArray.Items[ K ] as TJSONObject ).GetValue<string>( 'name', '' ), Lib.Name ) then
+          if SameText( ReadString( CompArray.Items[ K ] as TJSONObject, 'name', '', 'Component' ), Lib.Name ) then
           begin
             AlreadyExists := True;
             Break;
@@ -331,7 +477,8 @@ begin
         Continue;
       end;
 
-      var CompObj := TJSONObject.Create;
+      var CompObj   := TJSONObject.Create;
+      CompArray.AddElement( CompObj );
 
       CompObj.AddPair( 'name', Lib.Name );
       CompObj.AddPair( 'version', Lib.Version );
@@ -343,33 +490,26 @@ begin
       if ( Lib.SuggestedPrefix.Length >= MinPrefixLength ) then
       begin
         var PrefixArr := TJSONArray.Create;
-        PrefixArr.Add( Lib.SuggestedPrefix );
         CompObj.AddPair( 'units_prefix', PrefixArr );
+        PrefixArr.Add( Lib.SuggestedPrefix );
       end
       else
       begin
         var ExactArr := TJSONArray.Create;
+        CompObj.AddPair( 'units_exact', ExactArr );
 
         for var U in Lib.Units do
           ExactArr.Add( U );
-
-        CompObj.AddPair( 'units_exact', ExactArr );
       end;
 
-      CompArray.AddElement( CompObj );
-
+      Inc( Added );
       Log( llInfo, Format( 'Added component "%s" to manifest', [ Lib.Name ] ) );
     end;
 
-    // Update last_updated
-    Root.RemovePair( 'last_updated' );
-    Root.AddPair( 'last_updated', FormatDateTime( 'yyyy-mm-dd', Now ) );
+    SetLastUpdated( Root );
+    WriteTextFileAtomic( AManifestFile, Root.Format );
 
-    // Write back pretty-printed
-    TFile.WriteAllText( AManifestFile, Root.Format, TEncoding.UTF8 );
-
-    Log( llInfo, Format( 'Manifest saved to %s', [ AManifestFile ] ) );
-
+    Log( llInfo, Format( 'Manifest saved to %s (%d components added)', [ AManifestFile, Added ] ) );
   finally
     Root.Free;
   end;
@@ -380,66 +520,35 @@ procedure TManifestLoader.SaveOwnCodeUnits( const AManifestFile: string;
   const AUnitNames: TArray<string> );
 begin
 
-  var Content := '';
-
-  if FileExists( AManifestFile ) then
-    Content := TFile.ReadAllText( AManifestFile, TEncoding.UTF8 );
-
-  var Root: TJSONObject;
-
-  if Content <> '' then
-  begin
-    var Parsed := TJSONObject.ParseJSONValue( Content );
-
-    if ( Assigned( Parsed ) ) and ( Parsed is TJSONObject ) then
-      Root := Parsed as TJSONObject
-    else
-    begin
-      Parsed.Free;
-      Root := TJSONObject.Create;
-    end;
-  end
-  else
-    Root := TJSONObject.Create;
-
+  var Root          := LoadRootForUpdate( AManifestFile );
   try
-    // Get or create the own_code_units array
-    var OwnCodeArray: TJSONArray;
+    var OwnCodeArray := GetOrAddArray( Root, 'own_code_units' );
+    var Added       := 0;
 
-    if Root.TryGetValue<TJSONArray>( 'own_code_units', OwnCodeArray ) then
+    for var UnitName in AUnitNames do
     begin
-      for var UnitName in AUnitNames do
+      if Trim( UnitName ) = '' then Continue;
+
+      var AlreadyExists := False;
+
+      for var I := 0 to OwnCodeArray.Count - 1 do
+        if SameText( OwnCodeArray.Items[ I ].Value, UnitName ) then
+        begin
+          AlreadyExists := True;
+          Break;
+        end;
+
+      if ( not AlreadyExists ) then
       begin
-        var AlreadyExists := False;
-
-        for var I := 0 to OwnCodeArray.Count - 1 do
-          if SameText( OwnCodeArray.Items[ I ].Value, UnitName ) then
-          begin
-            AlreadyExists := True;
-            Break;
-          end;
-
-        if ( not AlreadyExists ) then
-          OwnCodeArray.Add( UnitName );
-      end;
-    end
-    else
-    begin
-      OwnCodeArray := TJSONArray.Create;
-
-      for var UnitName in AUnitNames do
         OwnCodeArray.Add( UnitName );
-
-      Root.AddPair( 'own_code_units', OwnCodeArray );
+        Inc( Added );
+      end;
     end;
 
-    Root.RemovePair( 'last_updated' );
-    Root.AddPair( 'last_updated', FormatDateTime( 'yyyy-mm-dd', Now ) );
+    SetLastUpdated( Root );
+    WriteTextFileAtomic( AManifestFile, Root.Format );
 
-    TFile.WriteAllText( AManifestFile, Root.Format, TEncoding.UTF8 );
-
-    Log( llInfo, Format( 'Saved %d own-code units to manifest', [ Length( AUnitNames ) ] ) );
-
+    Log( llInfo, Format( 'Saved %d new own-code units to manifest (%d already present)', [ Added, Length( AUnitNames ) - Added ] ) );
   finally
     Root.Free;
   end;
@@ -447,3 +556,4 @@ begin
 end;
 
 end.
+
