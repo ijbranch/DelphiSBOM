@@ -1,19 +1,19 @@
 # DelphiSBOM — Implementation Progress
 
 **Plan document:** `DelphiSBOM_Refined_Plan.md` (v0.6 — Final Draft)
-**Last updated:** 2026-10-07 (Session 11)
+**Last updated:** 2026-10-07 (Session 13)
 
 ---
 
 ## Current State
 
-**Phase:** 2 — Polish and Reliability. 2026-10-06 audit fixes landed.
-**Step:** Phase 2, audit fixes complete (45 of 49 items; see `Docs/AUDIT-2026-10-06.md`)
-**Status:** Clean Debug + Release Win64 builds (no hints/warnings, built WITHOUT `USE_SYNEDIT`). 52-check scratch harness (outside the repo) passes: version map, SPDX/purl/hash helpers, ANSI decoding, `.dproj` Condition evaluation, manifest safety, and an end-to-end engine run on a synthetic sibling layout. GUI verified 2026-10-06 by a scripted window-message run (30 checks, all pass): project switching, result buttons disabled during a run, no manifest created on select, MRU restore, library-editor Space toggle, nameless-row warning, discard prompt, Save & Regenerate honouring Include=No, MRU UTF-8 round trip with a Cyrillic path.
+**Phase:** 2 — Polish and Reliability. DCU-only discovery, MAP input, dependency graph, post-write check, reports and CLI landed 2026-10-07.
+**Step:** Phase 2 — remaining: cancellation (audit M21), v1.0.0 release tag
+**Status:** Clean (no hints/warnings, built WITHOUT `USE_SYNEDIT`) builds 2026-10-07: GUI Win64 Debug + Release, CLI Win64 Release, tests Win64 Debug + Release. DUnitX suite 142/142. `Tests/GuiChecks.ps1` 40/40 against the Release exe. Real-data runs: the CLI over DelphiSBOM itself with its Release MAP (166 linked units, check passed, both reports written) and over a large internal project (FastMM5 now discovered at its library folder; check passed). CLI pipeline examples in `Docs/CI-INTEGRATION.md` are untested on GitHub/GitLab.
 
 ## Next Action
 
-Libraries consumed only as DCUs (the IDE library path points at DCU folders, no `.pas` visible) stay unresolved in discovery; decide whether to document that or search for their source. Run a generated SBOM from a real project through a CycloneDX 1.5 validator (e.g. `cyclonedx validate`). Run `Tests\Win64\Debug\DelphiSBOMTests.exe` after any change to the pipeline units. DX.Comply: Olaf's draft PR #56 (stacked on #53/#55) reads components.json as is via `--manifest`; answered his two questions (dependency graph is fine; units_exact > own_code_units > units_prefix) on 2026-10-07 in https://github.com/omonien/DX.Comply/issues/20#issuecomment-6020132977 — once #56 merges, run it against our manifests. Decide on the `LICENCE` copyright line (audit L21). Olaf asked (2026-10-06) for a sample components.json — the extended `Samples/components.sample.json` covers every field. Then Phase 2 items: cancellation (audit M21), report writer, cancel button, CLI mode, DUnitX tests, v1.0.0 release tag. Future enhancement: capture DX.Comply confidence/evidence-type properties in TUnitEvidence.
+Run a generated SBOM from a real project through an official CycloneDX 1.5 validator (e.g. `cyclonedx validate`), now including the `dependencies` section — the built-in check is structural only. Run `Tests\Win64\Debug\DelphiSBOMTests.exe` after any change to the pipeline units, and `Tests\GuiChecks.ps1` after UI changes. DX.Comply: Olaf's draft PR #56 (stacked on #53/#55) reads components.json as is via `--manifest`; answered his two questions on 2026-10-07 in https://github.com/omonien/DX.Comply/issues/20#issuecomment-6020132977 — once #56 merges, run it against our manifests. Decide on the `LICENCE` copyright line (audit L21). Remaining Phase 2: cancellation (audit M21, also for the CLI), v1.0.0 release tag (consider shipping DelphiSBOMCLI.exe beside the app). Open question: the manifest loader silently ignores a `components` value that is not an array — probably should be a validation error. Future: library-to-library dependency edges; capture DX.Comply confidence/evidence-type properties in TUnitEvidence.
 
 ## Blockers / Questions for Ian
 
@@ -61,10 +61,10 @@ Libraries consumed only as DCUs (the IDE library path points at DCU folders, no 
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | `uReportWriter.pas` — Human-readable `.txt` summary | NOT STARTED | |
-| 2 | Report checkbox on form | NOT STARTED | |
+| 1 | `uReportWriter.pas` — human-readable report | DONE | HTML + Markdown (not `.txt`), one block model for both; 2026-10-07 |
+| 2 | Report checkbox on form | DONE | "Write HTML and Markdown reports", remembered per project |
 | 3 | Cancel button via `ICancellationToken` | NOT STARTED | |
-| 4 | CLI mode / console wrapper | NOT STARTED | |
+| 4 | CLI mode / console wrapper | DONE | `CLI/DelphiSBOMCLI.dproj` over `uCommandLine`; exit codes 0/1/2/3; `.delphisbom.json` config |
 | 5 | DUnitX test project | DONE | `Tests/DelphiSBOMTests.dproj`: 64 tests in 9 fixtures over the non-VCL units; ported from the audit harness and extended (classifier precedence, evidence merger, manifest content preservation). 8 key fixes mutation-checked (each reintroduced defect turns its test red). VCL forms untested |
 | 6 | `components.sample.json` with common libraries | DONE | Created in Step 1 |
 | 7 | First tagged release on GitHub (v1.0.0) | NOT STARTED | |
@@ -73,6 +73,9 @@ Libraries consumed only as DCUs (the IDE library path points at DCU folders, no 
 | 9 | Optional SynEdit JSON viewer | DONE | `{$IFDEF USE_SYNEDIT}` with TMemo fallback |
 | 10 | View SBOM File button | DONE | Modal viewer, SynEdit or TMemo |
 | 11 | Help.md and UsersGuide.md | DONE | Comprehensive documentation |
+| 13 | DCU-only library discovery | DONE | `.dcu` on the search/library path → library root above build-output folders; source used when under it |
+| 14 | MAP-file unit list | DONE | `uMapFile.pas`; GUI row + `--map` |
+| 15 | Dependency graph and post-write check | DONE | bom-refs + two-level `dependencies`; `uSBOMValidator.pas` |
 
 ---
 
@@ -90,5 +93,6 @@ Libraries consumed only as DCUs (the IDE library path points at DCU folders, no 
 | 2026-10-06 | 8 | Full read-only audit of all units, `.dproj` and repository (four parallel reviews, top claims spot-checked against the code). Findings recorded in `Docs/AUDIT-2026-10-06.md`. Repository references moved from Codeberg to GitHub (`CLAUDE.md`, `Docs/Help.md`, `PROGRESS.md`, `Source/components.json`). No code changed. |
 | 2026-10-06 | 9 | Implemented the audit fixes (45 of 49; M21, L16, L17 deferred; L21 partial). New units `uTextFiles.pas` and `uDelphiInstall.pas`. `USE_SYNEDIT` moved to the `DELPHISBOM_DEFINES` environment variable with a `.githooks/pre-commit` guard. Docs updated (README, Help, UsersGuide, SCHEMA, CYCLONEDX-NOTES, CLAUDE.md) including the Delphi 13 / Win64-only test-environment caveat. Mid-session the IDE ran a formatter over every unit and re-saved the `.dfm` without `TextHeight` (restored). Verified by clean builds and a 52-check harness; GUI behaviour not yet exercised by hand. |
 | 2026-10-06 | 10 | DUnitX suite added (`Tests/`): runner, `TestSupport` scratch-dir helper and 9 fixtures, 64 tests, all passing on Delphi 13 Win64 with no hints. Eight fixes mutation-checked (H1, H2, H4, H5, H6, M4, M5, M7). `Samples/components.sample.json` extended with an SPDX expression, a Commercial licence, own_code_units and own_code_prefixes (for the DX.Comply author). README and CLAUDE.md document the suite and its environment caveat. |
-| 2026-10-07 | 11 | Answered the DX.Comply author's PR #56 questions on issue #20. Ran the Release exe over a large internal project (83 units). It found two discovery bugs: a library directly under a drive root was named after an unrelated `.dpk` in a sibling folder of that root, and a vendor name lost its closing bracket. Both fixed in `uLibraryDiscovery.pas` (`LibraryParentDirectory`, `CleanCopyrightHolder` moved to the interface), with 10 tests in `Tests/TestLibraryDiscovery.pas`, 5 red before the fix. Suite 74/74. Re-run confirmed correct names and vendor. Help, User's Guide and CHANGES updated. |
 | 2026-10-06 | 11 | GUI checks run against the Release build with a PowerShell script driving named controls by window messages (no coordinates; user INI backed up and restored): 30/30 pass. Script committed as `Tests/GuiChecks.ps1`. Note: library discovery only searches project search paths, the IDE library path and fixed roots, so a sibling library is found only when a search path points at it. |
+| 2026-10-07 | 12 | Answered the DX.Comply author's PR #56 questions on issue #20. Ran the Release exe over a large internal project (83 units). It found two discovery bugs: a library directly under a drive root was named after an unrelated `.dpk` in a sibling folder of that root, and a vendor name lost its closing bracket. Both fixed in `uLibraryDiscovery.pas` (`LibraryParentDirectory`, `CleanCopyrightHolder` moved to the interface), with 10 tests in `Tests/TestLibraryDiscovery.pas`, 5 red before the fix. Suite 74/74. Re-run confirmed correct names and vendor. Help, User's Guide and CHANGES updated. |
+| 2026-10-07 | 13 | Implemented the DX.Comply-inspired features (credited in `THIRD-PARTY-NOTICES.md`): DCU-only library discovery, MAP-file unit list, bom-refs + dependency graph, post-write SBOM check, HTML/Markdown reports, `DelphiSBOMCLI.exe` with exit codes and `.delphisbom.json`, GUI MAP row and reports checkbox, CI guide. Found and fixed on real data: project-folder units without an `in` clause were never searched; FastMM5 was hidden by the ".dpr means another project" rule. 68 new tests (142), each red first or mutation-checked; GUI checks 30 → 40. |

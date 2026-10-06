@@ -1,0 +1,9 @@
+{
+    "manifest": "components.json",
+    "output": "sbom",
+    "map": "Win64\\Release\\MyApp.map",
+    "dxcomply": "Win64\\Release\\bom.json",
+    "productVersion": "2.4.0",
+    "report": "both",
+    "failOnUnclassified": true
+}

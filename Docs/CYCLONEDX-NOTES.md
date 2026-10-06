@@ -146,6 +146,44 @@ Only units named in the project's own uses clause are classified, so DX.Comply
 entries for units the project uses transitively are not matched; the log
 reports how many entries matched.
 
+### bom-ref and the Dependency Graph
+
+The application (`metadata.component`), the RTL and every library carry a
+`bom-ref`: the component's purl, `application:<name>@<version>` for the
+application, and `component:<index>` for a manifest row with no name. A
+repeated value (two manifest rows with the same name and version) gets a
+`#2`, `#3`, ... suffix, since CycloneDX requires every `bom-ref` to be unique.
+
+The `dependencies` section has two levels:
+
+```json
+"dependencies": [
+  { "ref": "application:MyApp@2.4.0.0",
+    "dependsOn": [ "pkg:delphi/embarcadero-rtl@37.0", "pkg:delphi/OmniThreadLibrary@3.7.8" ] },
+  { "ref": "pkg:delphi/embarcadero-rtl@37.0", "dependsOn": [] }
+]
+```
+
+The application depends on the RTL and on each library; the RTL depends on
+nothing third-party. A library has no entry: CycloneDX 1.5 reads an empty
+`dependsOn` as "has no dependencies", which DelphiSBOM cannot know.
+
+Library units stay nested under their library when DX.Comply evidence is
+merged (see below); the graph does not replace that nesting.
+
+### Post-Write Check
+
+Every SBOM is read back after writing and checked against the schema rules
+DelphiSBOM's output could break: `bomFormat` and `specVersion`, the
+`serialNumber` pattern, an integer `version` of at least 1, the timestamp
+format, component types (the 1.5 enum, case-sensitive) and names, `license`
+holding exactly one of `id`/`name` with `id` an SPDX identifier in its exact
+spelling, `licenses` items holding exactly one of `license`/`expression`, hash
+algorithms from the 1.5 enum with a digest of the right length, purls starting
+`pkg:<type>/`, external reference types, unique `bom-ref`s, and dependency
+`ref`/`dependsOn` values that name a component. Problems are reported with
+their JSON path; the file is kept. This is not a full schema validation.
+
 ## Known Limitations
 
 ### Multi-Version Delphi Installations
@@ -161,14 +199,15 @@ installation.
 
 The unit list comes from the `.dpr` uses clause (or the `.dpk` contains clause)
 read as text: units in every `{$IFDEF}` branch are included, and units listed in
-`{$I}` include files are not read. The log warns when either is present.
+`{$I}` include files are not read. The log warns when either is present. A
+detailed MAP file given as input replaces this list with the units the linker
+used, which has none of these gaps (it describes one build configuration).
 
-### No Dependency Graph
+### Library-to-Library Dependencies Are Not Recorded
 
-v1.0 produces a flat component list with no inter-component dependency
-relationships. CycloneDX supports a `dependencies` section, but accurately
-deriving dependency graphs between Delphi libraries from `uses` clauses is
-complex and deferred to a future version.
+The dependency graph has two levels (see above). Which library uses which
+cannot be read from the project alone, so libraries have no entries of their
+own: their dependencies are unknown, not empty.
 
 ### Scope Prefix Stripping
 

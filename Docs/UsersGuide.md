@@ -91,7 +91,9 @@ Click **Generate SBOM**. The app runs the following pipeline in the background
    platform, search paths — evaluating it the way MSBuild does for a Release
    build of the target platform (Win64 when active)
 2. **Parses** the `.dpr` (or the `.dproj`'s `MainSource`; for a package, the
-   `.dpk` `contains` clause) to extract all unit names
+   `.dpk` `contains` clause) to extract all unit names — or, when a **MAP File**
+   is given, takes the units the linker used from it (see
+   [MAP Files](#map-files-optional))
 3. **Scans** the `lib` directory of the Delphi installation matching the
    project's version to build a list of known RTL/VCL/FMX units
 4. **Loads** your `components.json` manifest (if any libraries are defined)
@@ -103,8 +105,13 @@ Click **Generate SBOM**. The app runs the following pipeline in the background
    - Fifth: is it your own code (an `in 'file.pas'` reference, or `own_code_prefixes`)?
    - Otherwise: unclassified
 6. **Discovers** libraries for unclassified units by searching the file system:
-   - Searches your project's search paths (from the `.dproj`, with `$(BDS)`-style
-     macros expanded) and the IDE library path
+   - Searches the project directory, your project's search paths (from the
+     `.dproj`, with `$(BDS)`-style macros expanded) and the IDE library path
+   - For a unit with no `.pas` there, looks for its `.dcu` in the search paths
+     and the IDE library path — many libraries are installed as compiled units
+     only — and treats the folder above the build-output folders
+     (`Lib\Win64\Release`, `37.0\Win64\Release`, ...) as the library, using
+     the unit's source if it is anywhere under that folder
    - Searches common library locations (`D:\`, `C:\Program Files`)
    - Nothing else: a library folder is found only if one of these points at it,
      so a library checked out beside your project needs to be on the project's
@@ -114,6 +121,9 @@ Click **Generate SBOM**. The app runs the following pipeline in the background
      file headers, licence from LICENSE files
 7. **Generates** the CycloneDX 1.5 JSON SBOM and writes it to the output
    directory
+8. **Checks** the written file against the schema rules its output could break,
+   and writes the HTML and Markdown reports if you ticked **Write HTML and
+   Markdown reports**
 
 ### Step 3: Review Results
 
@@ -152,8 +162,9 @@ DISCOVERED LIBRARIES
     mclStringUtils
 ```
 
-Units found in the project directory, and in sibling directories (sharing the
-same parent as your project, such as a shared code folder) that do not look
+Units found in the project directory or its subfolders, and in sibling
+directories (sharing the same parent as your project, such as a shared code
+folder), that do not look
 like a library, are automatically marked as own code. A directory "looks like a
 library" when it, or its parent, has a `LICENSE`/`LICENCE`/`COPYING` file, or a
 `.dpk` package sits in it, its parent (unless the parent is a drive root such as
@@ -163,7 +174,11 @@ Auto-detected own-code units count as own code in the same run, and are saved to
 `components.json` once the SBOM has been written. You don't need to do anything
 for these.
 
-Any remaining units whose `.pas` files could not be found appear under
+A library found only as `.dcu` files is shown with **Found as: DCUs only**.
+Its name, licence and version come from the library folder; there is no source
+to read a vendor from, so check the vendor in **Edit...**.
+
+Any remaining units with neither a `.pas` nor a `.dcu` file found appear under
 **UNRESOLVED UNITS** at the bottom of the panel.
 
 ### Step 4: Save and Regenerate
@@ -309,6 +324,43 @@ indirectly. They are not lost — they remain in DX.Comply's own `bom.json`.
 The DX.Comply field is entirely optional. If left blank, DelphiSBOM produces
 a standard SBOM with no binary hashes — fully valid and compliant.
 
+## MAP Files (Optional)
+
+Without a MAP file, the unit list is the project's uses clause read as text. That
+misses units the project uses only indirectly (a unit used by one of your units),
+includes units in every `{$IFDEF}` branch whether or not the build compiles them,
+and cannot read `{$I}` include files.
+
+A detailed MAP file, written by the linker, lists exactly the units in the built
+program. To use one:
+
+1. In Project Options > Building > Delphi Compiler > Linking, set **Map file** to
+   **Detailed** (for MSBuild: `/p:DCC_MapFile=3`), and build the configuration you
+   ship.
+2. Give the `.map` file (normally beside the `.exe`, e.g. `Win64\Release\MyApp.map`)
+   in **MAP File**, and Generate.
+
+The log reports how the two lists differ, for example
+`MAP file MyApp.map lists 166 linked units: 151 not named in the uses clause,
+3 uses-clause units not linked`, and warns when the map is older than the `.dpr`
+(rebuild so it matches the current code). Expect many more units: the RTL and
+every library's internal units appear. RTL units still collapse into the single
+RTL component, and a library's units into its one component, so the SBOM grows
+by libraries, not by units.
+
+The MAP file is remembered per project. It also raises the DX.Comply match rate,
+since DX.Comply's evidence comes from the same kind of file.
+
+## Reports (Optional)
+
+Tick **Write HTML and Markdown reports** to write, beside the SBOM,
+`<Project>.sbom-report.html` and `<Project>.sbom-report.md`. They are for people
+rather than tools: the run details (Delphi version, where the unit list came from,
+the SBOM check result), the classification counts, each component with its version,
+supplier, licence and number of units, the units of each library, your own code,
+and — most useful while you are still completing `components.json` — the units not
+yet in the SBOM with the libraries found on disk for them.
+
 ## Understanding the Output
 
 ### The SBOM File
@@ -329,12 +381,16 @@ The generated `.cdx.json` contains:
   the Delphi version number
 - **Binary evidence** (when DX.Comply is used): nested sub-components under
   RTL and third-party entries, each with SHA-256 hashes from MAP file analysis
+- **Dependencies**: every component has a `bom-ref`, and the `dependencies`
+  section records that your application uses the RTL and each library
 
 ### What is NOT in the SBOM
 
 - **Your own code** — own-code units are the application itself, not dependencies
 - **Individual RTL units** — the entire RTL is listed as one component
-- **Dependency relationships** — the component list is flat (no dependency graph)
+- **Library-to-library dependencies** — the graph says your application uses
+  each library, not which libraries use which; a library's own dependencies are
+  left unstated rather than claimed to be none
 
 ## The `components.json` Manifest
 
@@ -402,10 +458,19 @@ field before generating. This overrides whatever the `.dproj` contains.
 
 ### CI/CD Integration
 
-The current version is a GUI application. A command-line mode for CI/CD
-integration is planned for a future release. In the meantime, generate your
-SBOM once and commit the `components.json` and `.cdx.json` files to version
-control.
+`DelphiSBOMCLI.exe` runs the same pipeline from a build script, with exit codes
+(0 success, 1 usage, 2 file or parse error, 3 validation error) and an optional
+`.delphisbom.json` beside the project for its settings. Build with a detailed MAP
+file and pass `--map` and `--fail-on-unclassified`, so a library added without a
+`components.json` entry fails the build rather than slipping out of the SBOM:
+
+```
+DelphiSBOMCLI MyApp.dproj --map=Win64\Release\MyApp.map --report=both --fail-on-unclassified
+```
+
+Complete `components.json` in the app first: the command line does not add
+libraries to it. See [CI-INTEGRATION.md](CI-INTEGRATION.md) for GitHub Actions and
+GitLab examples, and `DelphiSBOMCLI --help` for every option.
 
 ### Keeping the SBOM Current
 
@@ -524,7 +589,9 @@ no telemetry or data externally.
 | File | Location | Purpose |
 |------|----------|---------|
 | `<Project>.cdx.json` | Output directory | The generated CycloneDX 1.5 SBOM |
+| `<Project>.sbom-report.html` / `.md` | Beside the SBOM | Optional reports |
 | `components.json` | Project directory | Third-party library manifest (created on first save, updated on each save) |
+| `.delphisbom.json` | Project directory | Optional command-line settings; read only, never written |
 | `DelphiSBOM.ini` | `%APPDATA%\DelphiSBOM\` | MRU project list and per-project settings (UTF-8). Safe to delete |
 
 **Registry access** is read-only: `HKCU\Software\Embarcadero\BDS` (and the

@@ -11,7 +11,9 @@
 | **Output Dir** | Directory where the SBOM `.cdx.json` file will be written. Defaults to the project directory |
 | **Delphi Path** | Path to your Delphi installation. Leave blank (the default) to use the installed Delphi version that matches the project's `ProjectVersion`, or the newest installed version if that one is missing |
 | **Version Override** | Optional. If set, overrides the project version read from the `.dproj` file |
+| **Write HTML and Markdown reports** | Optional. Also writes `<ProjectName>.sbom-report.html` and `.md` beside the SBOM: run details, components with supplier and licence, the units of each, own code, what is still unclassified, and the SBOM check result |
 | **DX.Comply SBOM** | Optional. Path to a DX.Comply `bom.json` file. If provided, SHA-256 hashes from DX.Comply's MAP file analysis are merged into the SBOM output as nested sub-components |
+| **MAP File** | Optional. A detailed `.map` file from a build of the project (Project Options > Building > Delphi Compiler > Linking > Map file = Detailed). The units the linker used replace the uses-clause list: units used only indirectly are added, and units excluded by `{$IFDEF}`s are left out. The log warns when the map is older than the `.dpr` |
 | **Generate SBOM** | Runs the full pipeline: parse, classify, discover, generate |
 | **Validate Manifest** | Checks `components.json` for schema errors without generating an SBOM |
 | **Save & Regenerate** | Saves discovered libraries to `components.json` and re-runs the pipeline |
@@ -30,7 +32,17 @@ Shows a classification summary after generation:
 - **Own-code units** — your project's own source files
 - **Unclassified** — units that could not be matched to any category
 
-Also lists all recognised third-party components with their versions.
+Below the counts: where the unit list came from (the uses clause or the MAP
+file), the result of the SBOM check, and the reports written. Then all
+recognised third-party components with their versions.
+
+**SBOM check.** After writing, DelphiSBOM reads the file back and checks the
+parts of the CycloneDX 1.5 schema its output could break: format and version,
+serial number, component types and names, licence ids, hash algorithms and
+lengths, purls, unique `bom-ref`s and dependency references. Problems are
+logged as `[ERROR] SBOM check: ...` with the JSON path; the file is kept so it
+can be inspected. It is not a full schema validation — use an official
+CycloneDX validator for that.
 
 ### Discovery Panel (Right)
 
@@ -40,9 +52,11 @@ Shows libraries discovered automatically by scanning the file system:
   subdirectories, its parent or a `Packages` folder beside it; otherwise the nearest
   non-generic directory name. The parent is not searched when it is a drive or share root
   (`E:\`), whose other folders are unrelated libraries
-- **Directory** — where the `.pas` files were found
+- **Directory** — where the `.pas` files were found, or, for a library found only as
+  `.dcu` files, the library folder above its build-output folders
 - **Vendor** — extracted from copyright headers in source files
 - **Licence** — detected from LICENSE/LICENCE/COPYING files
+- **Found as** — shown as `DCUs only` when no source exists under the library folder
 - **Prefix** — computed common prefix for unit matching
 - **Units** — list of units belonging to this library
 
@@ -54,8 +68,20 @@ editor shows the full unit list for the selected library. Editor changes are
 kept only until you click **Save & Regenerate**; clicking **Generate SBOM**
 first asks before discarding them.
 
-Units found in the project directory, and in sibling directories (same parent
-as the project) that do **not** look like a library — no `LICENSE`/`LICENCE`/
+**Libraries the IDE uses as DCUs.** Many libraries are installed with the IDE
+library path pointing at their compiled units (`D:\Acme\37.0\Win64\Release`)
+rather than their source. For a unit with no `.pas` on the search tree,
+DelphiSBOM looks for its `.dcu` in the project search paths and the IDE library
+path, walks up past build-output folder names (platform, configuration,
+compiler version such as `37.0`, `D13`, `Delphi13`, `Studio37`, and `lib`,
+`dcu`, `bin`) to the library folder, and looks for the unit's source anywhere
+under it. With source, the library is reported as usual; without, it is reported
+as `DCUs only`, with the licence, name and version found at the library folder.
+A library folder that holds the `.dpr` that builds its DCUs is not mistaken
+for another project.
+
+Units found in the project directory or its subfolders, and in sibling
+directories (same parent as the project), that do **not** look like a library — no `LICENSE`/`LICENCE`/
 `COPYING` file and no `.dpk` package — are marked as own code in the same run,
 and saved to `own_code_units` in `components.json` once the SBOM has been
 written. A library checked out beside your project (e.g. `C:\Dev\Indy` next to
@@ -116,12 +142,16 @@ as text. Units inside every `{$IFDEF}` branch are included, and units listed in
 `{$I}` include files are not read. Review the SBOM if your uses clause depends
 on conditional compilation.
 
+**Fix:** build the project with a detailed map file and give it in **MAP File**.
+The map lists exactly the units the linker used for that build.
+
 ### A library next to my project is not discovered
 
-Discovery looks for `.pas` files only in the project's unit search paths (from
-the `.dproj`), the IDE library path for the project's Delphi version, the
-top-level folders of `D:\`, and the Program Files folders — each with its parent
-and one level of subfolders. A library checked out beside your project (e.g.
+Discovery looks for `.pas` files only in the project directory, the project's
+unit search paths (from the `.dproj`), the IDE library path for the project's
+Delphi version, the top-level folders of `D:\`, and the Program Files folders —
+each with its parent and one level of subfolders — and for `.dcu` files only in
+the search path and library path folders themselves. A library checked out beside your project (e.g.
 `C:\Dev\MyLib` next to `C:\Dev\MyApp`) is found only when one of those points at
 it. A plain `.dpr` with no `.dproj` has no search paths.
 
@@ -169,7 +199,15 @@ DelphiSBOM never modifies your project source files (`.dpr`, `.dproj`, `.pas`).
 
 The generated CycloneDX 1.5 SBOM. This is the file you submit for compliance
 purposes. Written to the output directory (defaults to the project directory).
-Conforms to the specification at https://cyclonedx.org/docs/1.5/json/.
+Conforms to the specification at https://cyclonedx.org/docs/1.5/json/. Checked
+after writing (see **SBOM check** above).
+
+### Output (optional): `<ProjectName>.sbom-report.html` and `.md`
+
+Written beside the SBOM when **Write HTML and Markdown reports** is ticked. The
+HTML page is self-contained (no scripts, follows the system's light or dark
+setting); the Markdown suits a repository or a pull request. Both are UTF-8
+without a BOM.
 
 ### Input/Output: `components.json`
 
@@ -185,7 +223,8 @@ Stored at `%APPDATA%\DelphiSBOM\DelphiSBOM.ini`. Contains:
 
 - **MRU list** — up to 10 recently used project file paths
 - **Per-project settings** — the manifest path, output directory, version
-  override, and DX.Comply file path last used for each project
+  override, DX.Comply file path, MAP file path and report choice last used for
+  each project
 
 Created on first successful SBOM generation. You can safely delete this file
 to reset the MRU list. DelphiSBOM recreates it as needed.
@@ -216,8 +255,8 @@ Where `<Platform>` is read from the `.dproj` target platform (e.g. `Win32`, `Win
 
 The Project File field is a dropdown that remembers your most recent projects
 (up to 10). Select a project from the dropdown to load it along with its
-associated manifest path, output directory, and version override from your
-last session.
+associated manifest path, output directory, version override, DX.Comply and
+MAP files, and report choice from your last session.
 
 Projects that no longer exist on disk are automatically removed from the list.
 The MRU list updates each time you successfully generate an SBOM.

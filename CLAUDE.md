@@ -48,14 +48,19 @@ and describe the partial state in the Next Action line.
 ## Architecture
 
 ```
-  uMainForm  →  uSBOMEngine  →  uProjectParser
-             →  uSettings       →  uDelphiInstall
-             →  uLibraryEditor  →  uRTLScanner
-                              →  uManifestLoader
-                              →  uUnitClassifier
-                              →  uLibraryDiscovery
-                              →  uEvidenceMerger
-                              →  uSBOMBuilder
+  GUI  (Source/DelphiSBOM.dpr):   uMainForm, uSettings, uLibraryEditor  ─┐
+  CLI  (CLI/DelphiSBOMCLI.dpr):   uCommandLine                          ─┤
+                                                                         ▼
+  uSBOMEngine  →  uProjectParser / uMapFile   unit list (uses clause, or the linker's MAP file)
+               →  uDelphiInstall              Delphi installation for the project's version
+               →  uRTLScanner                 RTL unit names
+               →  uManifestLoader             components.json
+               →  uUnitClassifier             RTL / third-party / own code
+               →  uLibraryDiscovery           .pas, then .dcu on the search and library path
+               →  uEvidenceMerger             DX.Comply hashes
+               →  uSBOMBuilder                components, bom-refs, dependency graph
+               →  uSBOMValidator              post-write check
+               →  uReportWriter               HTML / Markdown reports
   shared: uTypes (records, SPDX/hash helpers), uTextFiles (encoding-safe read, atomic UTF-8 write)
 ```
 
@@ -67,6 +72,11 @@ and describe the partial state in the Next Action line.
   No VCL dependencies.
 - **`uMainForm`** handles all UI concerns. It runs `uSBOMEngine` on a `TThread`
   descendant and marshals log lines and results back via `Synchronize`.
+- **`uCommandLine`** is the whole command-line mode (argument parsing, the
+  `.delphisbom.json` project config, exit codes) behind `RunCommandLine`, which
+  takes output callbacks so the suite tests it without a console. `CLI/DelphiSBOMCLI.dpr`
+  only forwards `ParamStr` and sets the console to UTF-8. Config values never override
+  options given on the command line (`TCLIOptions.Explicit`).
 - All other units are pure logic — no UI coupling.
 - All file reads go through `uTextFiles.ReadTextFile`/`ReadTextFileHead` (BOM, then
   UTF-8, then ANSI); all JSON writes through `WriteTextFileAtomic` (UTF-8, no BOM).
@@ -102,8 +112,8 @@ and describe the partial state in the Next Action line.
   All JSON output must be pretty-printed.
 - **XML:** `Xml.XMLDoc` and `Xml.XMLIntf` for `.dproj` parsing
 - **Error output:** `[ERROR]`, `[WARNING]`, `[INFO]` prefixed log messages
-- **Exit codes (future CLI mode):** 0 = success, 1 = usage error,
-  2 = file/parse error, 3 = validation error
+- **Exit codes (CLI, `uCommandLine` constants):** 0 = success, 1 = usage error,
+  2 = file/parse error, 3 = validation error (SBOM check, invalid manifest, `--fail-on-unclassified`)
 
 ## Public Repository Rules
 
@@ -114,6 +124,9 @@ This repository will become public. The following rules apply now:
 - Sample files (`components.sample.json`) must use only publicly recognisable
   Delphi libraries as examples (OmniThreadLibrary, Indy, Spring4D, etc.)
 - The only supplier reference is in `components.json` at runtime — not hardcoded
+- **Attribution:** a feature modelled on another project's design is credited in its unit
+  header and in `THIRD-PARTY-NOTICES.md` (with that project's licence text); copied code
+  additionally keeps its original copyright notice. README "Acknowledgements" links the file
 
 ## Testing
 
@@ -136,6 +149,8 @@ This repository will become public. The following rules apply now:
   `#32770`) only: other windows in the process (e.g. a monitor utility's helper) must be ignored.
   Detect run completion from the log text, not from the Generate button (a fast run can start and
   finish between two polls).
+- After a change to `uCommandLine` or the engine, also build `CLI/DelphiSBOMCLI.dproj`
+  (Win64 Release) and run `DelphiSBOMCLI --help`.
 - **Environment caveat:** the suite runs only on Delphi 13 Win64. `TestSBOMEngine` also scans
   the machine's library roots and `TestDelphiInstall` reads the registry — both are written to
   hold on any machine, but have only been run on one.
@@ -157,6 +172,10 @@ This repository will become public. The following rules apply now:
 | `Docs/SCHEMA.md` | `components.json` schema reference |
 | `Docs/CYCLONEDX-NOTES.md` | CycloneDX 1.5 compliance notes and known limitations |
 | `Samples/components.sample.json` | Example manifest for onboarding (every field and licence form) |
+| `CLI/DelphiSBOMCLI.dproj` | Command-line exe (build Win64 Release) |
+| `Docs/CI-INTEGRATION.md` | Build-server use of the CLI (untested examples) |
+| `Samples/delphisbom.sample.json` | Example `.delphisbom.json` project config |
+| `THIRD-PARTY-NOTICES.md` | Design credits (DX.Comply) and optional/test dependencies |
 | `Tests/DelphiSBOMTests.dproj` | DUnitX suite |
 | `Tests/GuiChecks.ps1` | Scripted GUI checks against the Release exe |
 | `Docs/AUDIT-2026-10-06.md` | Audit findings and their status |

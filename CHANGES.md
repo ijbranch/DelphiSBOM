@@ -2,6 +2,63 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-07 — Discovery Finds Project-Folder and Library-Path Units [Fixed]
+
+- A unit in the project folder but not named with an `in` clause stayed unclassified:
+  discovery searched the project's search paths but not the project folder itself, which the
+  compiler always searches. Found by the MAP-file input, which lists such units. Units in a
+  project subfolder are now own code too, unless the subfolder looks like a vendored library
+  (licence file or package) — `Source/uLibraryDiscovery.pas`
+- A FastMM5 checkout was never discovered: its folder holds the `.dpr` that builds its DCU, so the rule that skips
+  "another project's folder" hid it, although the IDE library path points at its DCUs. A unit
+  whose `.dcu` is on the search or library path is now never skipped that way, however its
+  source was found — `Source/uLibraryDiscovery.pas`
+- Tests for both, each red before its fix — `Tests/TestMapFile.pas`, `Tests/TestLibraryDiscovery.pas`
+
+## 2026-10-07 — MAP Files, DCU-Only Libraries, Command Line, Checks and Reports [Added]
+
+- **Libraries used as DCUs only.** A unit with no `.pas` on the search tree is looked up as a
+  `.dcu` in the project search paths and the IDE library path; the folder above the
+  build-output folders (`37.0\Win64\Release`, `Lib\D13\Win64`, ...) is the library, and the
+  unit's source is used if it is anywhere under it. Otherwise the library is reported as "DCUs
+  only" with the licence, name and version at its folder. **Why:** many libraries are installed
+  with the library path pointing at their compiled units, and were left unresolved —
+  `Source/uLibraryDiscovery.pas`, `Source/uTypes.pas`
+- **MAP-file unit list.** An optional detailed `.map` file replaces the uses-clause list with the
+  units the linker used: indirect uses are added, `{$IFDEF}`-excluded units dropped. Warns when the
+  map is older than the `.dpr` (not the `.dproj`, which build-number auto-increment rewrites) —
+  `Source/uMapFile.pas`, `Source/uSBOMEngine.pas`
+- **Dependency graph.** Every component has a unique `bom-ref`; `dependencies` links the
+  application to the RTL and each library, and declares the RTL with none — `Source/uSBOMBuilder.pas`
+- **Post-write check.** The written SBOM is read back and checked against the schema rules the
+  output could break (serial number, types, names, SPDX ids, hashes, purls, unique `bom-ref`s,
+  dependency references); problems are logged with their JSON path and the file is kept —
+  `Source/uSBOMValidator.pas`
+- **Reports.** Optional `<Project>.sbom-report.html` / `.md` beside the SBOM: run details,
+  counts, components with supplier and licence, units per library, own code, unclassified units
+  with the libraries found for them, and the check result — `Source/uReportWriter.pas`
+- **Command line.** `DelphiSBOMCLI.exe` runs the pipeline with exit codes 0/1/2/3, a
+  `.delphisbom.json` project config whose values never override options given explicitly,
+  `--fail-on-unclassified` and `--validate-manifest` — `Source/uCommandLine.pas`,
+  `CLI/DelphiSBOMCLI.dpr`, `CLI/DelphiSBOMCLI.dproj`, `CLI/DelphiSBOMCLI.res`,
+  `Samples/delphisbom.sample.json`, `Docs/CI-INTEGRATION.md`
+- **GUI.** A MAP File row and a "Write HTML and Markdown reports" checkbox, both remembered per
+  project; the summary shows the unit source, check result and reports; discovery marks
+  DCU-only libraries — `Source/uMainForm.pas`, `Source/uSettings.pas`, `Source/DelphiSBOM.dpr`,
+  `Source/DelphiSBOM.dproj`
+- Tests: 68 new (142 in all), each feature's red before its implementation or mutation-checked —
+  `Tests/TestMapFile.pas`, `Tests/TestSBOMValidator.pas`, `Tests/TestReportWriter.pas`,
+  `Tests/TestCommandLine.pas`, `Tests/TestLibraryDiscovery.pas`, `Tests/TestSBOMBuilder.pas`,
+  `Tests/TestSBOMEngine.pas`, `Tests/DelphiSBOMTests.dpr`, `Tests/DelphiSBOMTests.dproj`;
+  GUI checks 30 → 40 — `Tests/GuiChecks.ps1`
+- **Attribution.** The MAP reading, config precedence, dependency graph, check, reports and CI
+  guide follow approaches DX.Comply takes (Olaf Monien, MIT); credited in each unit header,
+  README "Acknowledgements" and `THIRD-PARTY-NOTICES.md`, which also lists SynEdit (optional)
+  and DUnitX (tests). No DX.Comply code is included — `THIRD-PARTY-NOTICES.md`, `README.md`
+- Docs: README, Help, User's Guide (MAP Files, Reports, CI), CycloneDX notes (bom-refs,
+  dependency graph, check), `CLAUDE.md` architecture and rules; `.gitignore` ignores the reports —
+  `README.md`, `Docs/Help.md`, `Docs/UsersGuide.md`, `Docs/CYCLONEDX-NOTES.md`, `CLAUDE.md`, `.gitignore`
+
 ## 2026-10-07 — Library Name and Vendor Detection [Fixed]
 
 - A library directly under a drive or share root took its name from an unrelated package: the
