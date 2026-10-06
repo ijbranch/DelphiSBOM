@@ -1,4 +1,4 @@
-(*
+﻿(*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
@@ -10,7 +10,7 @@ unit uSettings;
 interface
 
 uses
-  System.SysUtils, System.Generics.Collections;
+  System.SysUtils, System.Generics.Collections, System.IniFiles;
 
 type
   TMRUEntry = record
@@ -23,7 +23,8 @@ type
 
   /// <summary>
   ///   Manages a Most Recently Used project list persisted to an INI file
-  ///   in %APPDATA%\DelphiSBOM\DelphiSBOM.ini.
+  ///   in %APPDATA%\DelphiSBOM\DelphiSBOM.ini. The file is UTF-8, so project paths
+  ///   outside the ANSI code page (e.g. Cyrillic or CJK user folders) survive a round trip.
   /// </summary>
   TMRUManager = class
   private
@@ -31,6 +32,8 @@ type
     FSettingsFile: string;
 
     const MaxEntries = 10;
+
+    function OpenIni: TMemIniFile;
   public
     constructor Create;
     destructor Destroy; override;
@@ -47,7 +50,8 @@ type
 implementation
 
 uses
-  System.Classes, System.IOUtils, System.IniFiles;
+  System.Classes, System.IOUtils,
+  uTextFiles;
 
 { TMRUManager }
 
@@ -55,8 +59,8 @@ constructor TMRUManager.Create;
 begin
 
   inherited Create;
-  FEntries := TList<TMRUEntry>.Create;
-  FSettingsFile := GetSettingsPath;
+  FEntries          := TList<TMRUEntry>.Create;
+  FSettingsFile     := GetSettingsPath;
 
 end;
 
@@ -71,7 +75,26 @@ end;
 class function TMRUManager.GetSettingsPath: string;
 begin
 
-  Result := TPath.Combine( TPath.Combine( TPath.GetHomePath, 'DelphiSBOM' ), 'DelphiSBOM.ini' );
+  Result            := TPath.Combine( TPath.Combine( TPath.GetHomePath, 'DelphiSBOM' ), 'DelphiSBOM.ini' );
+
+end;
+
+function TMRUManager.OpenIni: TMemIniFile;
+begin
+
+  // Read with encoding detection: older versions wrote the file as ANSI, this version writes UTF-8
+  Result            := TMemIniFile.Create( '' );
+
+  if FileExists( FSettingsFile ) then
+  begin
+    var Lines       := TStringList.Create;
+    try
+      Lines.Text    := ReadTextFile( FSettingsFile );
+      Result.SetStrings( Lines );
+    finally
+      Lines.Free;
+    end;
+  end;
 
 end;
 
@@ -82,9 +105,9 @@ begin
 
   if not FileExists( FSettingsFile ) then Exit;
 
-  var Ini := TIniFile.Create( FSettingsFile );
+  var Ini           := OpenIni;
   try
-    var Count := Ini.ReadInteger( 'MRU', 'Count', 0 );
+    var Count       := Ini.ReadInteger( 'MRU', 'Count', 0 );
 
     for var I := 0 to Count - 1 do
     begin
@@ -93,13 +116,13 @@ begin
       if ( ProjectFile = '' ) or ( not FileExists( ProjectFile ) ) then Continue;
 
       var Entry: TMRUEntry;
-      Entry.ProjectFile    := ProjectFile;
+      Entry.ProjectFile := ProjectFile;
 
-      var Section := 'MRU:' + ProjectFile;
-      Entry.ManifestFile   := Ini.ReadString( Section, 'ManifestFile', '' );
-      Entry.OutputDir      := Ini.ReadString( Section, 'OutputDir', '' );
+      var Section   := 'MRU:' + ProjectFile;
+      Entry.ManifestFile := Ini.ReadString( Section, 'ManifestFile', '' );
+      Entry.OutputDir := Ini.ReadString( Section, 'OutputDir', '' );
       Entry.VersionOverride := Ini.ReadString( Section, 'VersionOverride', '' );
-      Entry.DXComplyFile   := Ini.ReadString( Section, 'DXComplyFile', '' );
+      Entry.DXComplyFile := Ini.ReadString( Section, 'DXComplyFile', '' );
 
       FEntries.Add( Entry );
     end;
@@ -112,12 +135,12 @@ end;
 procedure TMRUManager.Save;
 begin
 
-  var Dir := ExtractFilePath( FSettingsFile );
+  var Dir           := ExtractFilePath( FSettingsFile );
 
   if not TDirectory.Exists( Dir ) then
     TDirectory.CreateDirectory( Dir );
 
-  var Ini := TIniFile.Create( FSettingsFile );
+  var Ini           := OpenIni;
   try
     // Erase all existing MRU:* sections (including orphans from removed entries)
     var AllSections := TStringList.Create;
@@ -136,14 +159,22 @@ begin
 
     for var I := 0 to FEntries.Count - 1 do
     begin
-      var Entry := FEntries[ I ];
+      var Entry     := FEntries[ I ];
       Ini.WriteString( 'MRU', Format( 'Item%d', [ I ] ), Entry.ProjectFile );
 
-      var Section := 'MRU:' + Entry.ProjectFile;
+      var Section   := 'MRU:' + Entry.ProjectFile;
       Ini.WriteString( Section, 'ManifestFile', Entry.ManifestFile );
       Ini.WriteString( Section, 'OutputDir', Entry.OutputDir );
       Ini.WriteString( Section, 'VersionOverride', Entry.VersionOverride );
       Ini.WriteString( Section, 'DXComplyFile', Entry.DXComplyFile );
+    end;
+
+    var Lines       := TStringList.Create;
+    try
+      Ini.GetStrings( Lines );
+      WriteTextFileAtomic( FSettingsFile, Lines.Text );
+    finally
+      Lines.Free;
     end;
   finally
     Ini.Free;
@@ -171,14 +202,14 @@ end;
 function TMRUManager.GetEntries: TArray<TMRUEntry>;
 begin
 
-  Result := FEntries.ToArray;
+  Result            := FEntries.ToArray;
 
 end;
 
 function TMRUManager.FindEntry( const AProjectFile: string ): TMRUEntry;
 begin
 
-  Result := Default( TMRUEntry );
+  Result            := Default( TMRUEntry );
 
   for var Entry in FEntries do
     if SameText( Entry.ProjectFile, AProjectFile ) then
@@ -187,3 +218,4 @@ begin
 end;
 
 end.
+
