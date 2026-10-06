@@ -80,6 +80,10 @@ type
     FLblDXComply: TLabel;
     FEdtDXComply: TEdit;
     FBtnDXComply: TButton;
+    FLblMapFile: TLabel;
+    FEdtMapFile: TEdit;
+    FBtnMapFile: TButton;
+    FChkReports: TCheckBox;
 
     // Action buttons
     FBtnGenerate: TButton;
@@ -124,6 +128,7 @@ type
     procedure BtnProjectClick( Sender: TObject );
     procedure BtnManifestClick( Sender: TObject );
     procedure BtnOutputDirClick( Sender: TObject );
+    procedure BtnMapFileClick( Sender: TObject );
     procedure BtnDelphiPathClick( Sender: TObject );
     procedure BtnDXComplyClick( Sender: TObject );
     procedure BtnGenerateClick( Sender: TObject );
@@ -423,6 +428,14 @@ begin
   FEdtVersion.TextHint := 'blank = read from .dproj';
   FEdtVersion.Hint  := 'Override the version from .dproj. Leave blank to use the project version.';
 
+  FChkReports       := TCheckBox.Create( Self );
+  FChkReports.Parent := Self;
+  FChkReports.Left  := 340;
+  FChkReports.Top   := CurrentTop + 2;
+  FChkReports.Width := 260;
+  FChkReports.Caption := 'Write HTML and Markdown reports';
+  FChkReports.Hint  := 'Also write <Project>.sbom-report.html and .md beside the SBOM: components, licences, units and what is unclassified';
+
   Inc( CurrentTop, 30 );
 
   // DX.Comply evidence file (optional)
@@ -430,6 +443,13 @@ begin
   FEdtDXComply.TextHint := 'optional — merges binary evidence into SBOM';
   FEdtDXComply.Hint := 'Path to a DX.Comply bom.json file. If provided, SHA-256 hashes are merged into the SBOM output.';
   FBtnDXComply.Hint := 'Browse for a DX.Comply bom.json file';
+
+  // Linker MAP file (optional)
+  CreateInputRow( CurrentTop, 'MAP File:', FLblMapFile, FEdtMapFile, FBtnMapFile, BtnMapFileClick );
+  FEdtMapFile.TextHint := 'optional — the units the linker used, instead of the uses clause';
+  FEdtMapFile.Hint  := 'A detailed .map file from a build of the project (Linking > Map file = Detailed). It lists every unit linked, ' +
+    'including those used only indirectly, and leaves out {$IFDEF}-excluded ones.';
+  FBtnMapFile.Hint  := 'Browse for a .map file';
 
   Inc( CurrentTop, 4 );
 
@@ -702,6 +722,25 @@ begin
 
 end;
 
+procedure TMainForm.BtnMapFileClick( Sender: TObject );
+begin
+
+  var Dlg           := TOpenDialog.Create( nil );
+  try
+    Dlg.Filter      := 'MAP Files (*.map)|*.map|All Files (*.*)|*.*';
+    Dlg.Title       := 'Select a Detailed MAP File';
+
+    if FEdtProject.Text <> '' then
+      Dlg.InitialDir := ExtractFilePath( FEdtProject.Text );
+
+    if Dlg.Execute then
+      FEdtMapFile.Text := Dlg.FileName;
+  finally
+    Dlg.Free;
+  end;
+
+end;
+
 procedure TMainForm.BtnDXComplyClick( Sender: TObject );
 begin
 
@@ -758,13 +797,17 @@ begin
   FMmoDiscovery.Clear;
   FLibrariesEdited  := False;
 
-  var Options: TSBOMOptions;
+  var Options       := Default( TSBOMOptions );
   Options.ProjectFile := Trim( FEdtProject.Text );
   Options.ManifestFile := Trim( FEdtManifest.Text );
   Options.OutputDir := Trim( FEdtOutputDir.Text );
   Options.DelphiPath := Trim( FEdtDelphiPath.Text );
   Options.VersionOverride := Trim( FEdtVersion.Text );
   Options.DXComplyFile := Trim( FEdtDXComply.Text );
+  Options.MapFile   := Trim( FEdtMapFile.Text );
+
+  if FChkReports.Checked then
+    Options.ReportFormats := [ rfMarkdown, rfHtml ];
 
   TSBOMGenerateThread.Create( Self, Options ).Start;
 
@@ -823,6 +866,9 @@ begin
   FEdtVersion.Enabled := not AValue;
   FEdtDXComply.Enabled := not AValue;
   FBtnDXComply.Enabled := not AValue;
+  FEdtMapFile.Enabled := not AValue;
+  FBtnMapFile.Enabled := not AValue;
+  FChkReports.Enabled := not AValue;
 
   // The result buttons write components.json or read the SBOM file — never while a run is using them
   UpdateActionButtons;
@@ -892,6 +938,17 @@ begin
   FMmoSummary.Lines.Add( Format( 'Own-code units:     %5d', [ AResult.Summary.OwnCodeCount ] ) );
   FMmoSummary.Lines.Add( Format( 'Unclassified:       %5d', [ AResult.Summary.UnclassifiedCount ] ) );
   FMmoSummary.Lines.Add( '' );
+  FMmoSummary.Lines.Add( 'Units from:  ' + AResult.UnitSource );
+
+  if Length( AResult.ValidationErrors ) = 0 then
+    FMmoSummary.Lines.Add( 'SBOM check:  passed' )
+  else
+    FMmoSummary.Lines.Add( Format( 'SBOM check:  %d problems - see the log', [ Length( AResult.ValidationErrors ) ] ) );
+
+  for var F in AResult.ReportFiles do
+    FMmoSummary.Lines.Add( 'Report:      ' + ExtractFileName( F ) );
+
+  FMmoSummary.Lines.Add( '' );
 
   // Third-party components
   if Length( AResult.Manifest.Components ) > 0 then
@@ -950,6 +1007,9 @@ begin
         if Lib.Licence <> '' then
           FMmoDiscovery.Lines.Add( Format( '  Licence:   %s', [ Lib.Licence ] ) );
 
+        if Lib.BinaryOnly then
+          FMmoDiscovery.Lines.Add( '  Found as:  DCUs only - no source under this folder' );
+
         if Lib.SuggestedPrefix <> '' then
           FMmoDiscovery.Lines.Add( Format( '  Prefix:    %s', [ Lib.SuggestedPrefix ] ) );
 
@@ -991,7 +1051,7 @@ begin
       begin
         FMmoDiscovery.Lines.Add( 'UNRESOLVED UNITS' );
         FMmoDiscovery.Lines.Add( '================' );
-        FMmoDiscovery.Lines.Add( 'No .pas files found. Click "Mark as Own Code"' );
+        FMmoDiscovery.Lines.Add( 'No .pas or .dcu files found. Click "Mark as Own Code"' );
         FMmoDiscovery.Lines.Add( 'if these are your own project files:' );
 
         for var U in UnfoundUnits do
@@ -1228,12 +1288,14 @@ end;
 procedure TMainForm.SaveToMRU;
 begin
 
-  var Entry: TMRUEntry;
+  var Entry         := Default( TMRUEntry );
   Entry.ProjectFile := Trim( FEdtProject.Text );
   Entry.ManifestFile := Trim( FEdtManifest.Text );
   Entry.OutputDir   := Trim( FEdtOutputDir.Text );
   Entry.VersionOverride := Trim( FEdtVersion.Text );
   Entry.DXComplyFile := Trim( FEdtDXComply.Text );
+  Entry.MapFile     := Trim( FEdtMapFile.Text );
+  Entry.WriteReports := FChkReports.Checked;
 
   if Entry.ProjectFile = '' then Exit;
 
@@ -1305,6 +1367,8 @@ begin
 
   FEdtVersion.Text  := '';
   FEdtDXComply.Text := '';
+  FEdtMapFile.Text  := '';
+  FChkReports.Checked := False;
 
   // Then the project's remembered settings
   var Entry         := FMRUManager.FindEntry( ProjectFile );
@@ -1319,6 +1383,8 @@ begin
 
   FEdtVersion.Text  := Entry.VersionOverride;
   FEdtDXComply.Text := Entry.DXComplyFile;
+  FEdtMapFile.Text  := Entry.MapFile;
+  FChkReports.Checked := Entry.WriteReports;
 
 end;
 

@@ -13,12 +13,24 @@ uses
   System.SysUtils, System.Generics.Collections, System.IniFiles;
 
 type
+  /// <summary>
+  ///   A recently used project and the settings last used with it.
+  /// </summary>
   TMRUEntry = record
+    /// <summary>The project file (.dpr, .dpk or .dproj); the entry's key.</summary>
     ProjectFile: string;
+    /// <summary>The components.json used.</summary>
     ManifestFile: string;
+    /// <summary>The output folder for the SBOM.</summary>
     OutputDir: string;
+    /// <summary>The application version override (empty = from the .dproj).</summary>
     VersionOverride: string;
+    /// <summary>The DX.Comply bom.json merged in (empty = none).</summary>
     DXComplyFile: string;
+    /// <summary>The MAP file the unit list came from (empty = the uses clause).</summary>
+    MapFile: string;
+    /// <summary>Whether the HTML and Markdown reports were written.</summary>
+    WriteReports: Boolean;
   end;
 
   /// <summary>
@@ -115,7 +127,7 @@ begin
 
       if ( ProjectFile = '' ) or ( not FileExists( ProjectFile ) ) then Continue;
 
-      var Entry: TMRUEntry;
+      var Entry     := Default( TMRUEntry );
       Entry.ProjectFile := ProjectFile;
 
       var Section   := 'MRU:' + ProjectFile;
@@ -123,6 +135,8 @@ begin
       Entry.OutputDir := Ini.ReadString( Section, 'OutputDir', '' );
       Entry.VersionOverride := Ini.ReadString( Section, 'VersionOverride', '' );
       Entry.DXComplyFile := Ini.ReadString( Section, 'DXComplyFile', '' );
+      Entry.MapFile := Ini.ReadString( Section, 'MapFile', '' );
+      Entry.WriteReports := Ini.ReadBool( Section, 'WriteReports', False );
 
       FEntries.Add( Entry );
     end;
@@ -167,6 +181,8 @@ begin
       Ini.WriteString( Section, 'OutputDir', Entry.OutputDir );
       Ini.WriteString( Section, 'VersionOverride', Entry.VersionOverride );
       Ini.WriteString( Section, 'DXComplyFile', Entry.DXComplyFile );
+      Ini.WriteString( Section, 'MapFile', Entry.MapFile );
+      Ini.WriteBool( Section, 'WriteReports', Entry.WriteReports );
     end;
 
     var Lines       := TStringList.Create;

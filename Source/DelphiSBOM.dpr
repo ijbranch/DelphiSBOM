@@ -15,7 +15,10 @@ uses
   uLibraryEditor in 'uLibraryEditor.pas',
   uEvidenceMerger in 'uEvidenceMerger.pas',
   uTextFiles in 'uTextFiles.pas',
-  uDelphiInstall in 'uDelphiInstall.pas';
+  uDelphiInstall in 'uDelphiInstall.pas',
+  uMapFile in 'uMapFile.pas',
+  uSBOMValidator in 'uSBOMValidator.pas',
+  uReportWriter in 'uReportWriter.pas';
 
 {$R *.res}
 
