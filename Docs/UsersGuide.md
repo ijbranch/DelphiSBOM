@@ -112,7 +112,9 @@ Click **Generate SBOM**. The app runs the following pipeline in the background
      only — and treats the folder above the build-output folders
      (`Lib\Win64\Release`, `37.0\Win64\Release`, ...) as the library, using
      the unit's source if it is anywhere under that folder
-   - Searches common library locations (`D:\`, `C:\Program Files`)
+   - Searches common library locations (`D:\`, `C:\Program Files`) as a fallback:
+     a `.pas` found only there gives way to the unit's `.dcu` on the search or
+     library path, so a stray copy in an old folder is not taken for the library
    - Nothing else: a library folder is found only if one of these points at it,
      so a library checked out beside your project needs to be on the project's
      search path or the IDE library path

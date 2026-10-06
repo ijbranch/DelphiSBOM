@@ -54,7 +54,10 @@ Shows libraries discovered automatically by scanning the file system:
   (`E:\`), whose other folders are unrelated libraries
 - **Directory** — where the `.pas` files were found, or, for a library found only as
   `.dcu` files, the library folder above its build-output folders
-- **Vendor** — extracted from copyright headers in source files
+- **Vendor** — extracted from the first copyright line in the library's source files
+  (`Copyright (c) 2024 Name`, `© Name`, or `Copyright:` with the name on the next line).
+  It is a best guess — a header may credit one contributor, or have no copyright line
+  at all (ASCII-art banners) — so check it in **Edit...**
 - **Licence** — detected from LICENSE/LICENCE/COPYING files
 - **Found as** — shown as `DCUs only` when no source exists under the library folder
 - **Prefix** — computed common prefix for unit matching
@@ -78,7 +81,14 @@ compiler version such as `37.0`, `D13`, `Delphi13`, `Studio37`, and `lib`,
 under it. With source, the library is reported as usual; without, it is reported
 as `DCUs only`, with the licence, name and version found at the library folder.
 A library folder that holds the `.dpr` that builds its DCUs is not mistaken
-for another project.
+for another project. Libraries installed inside the Delphi folder (ReportBuilder
+in `$(BDS)\RBuilder`) are found the same way; only the installation's own `lib`
+folder, the RTL's, is left out.
+
+**The drive scan is a fallback.** A `.pas` found only by scanning the top-level
+folders of `D:\` and Program Files is a guess — the compiler never looks there.
+When the unit's `.dcu` is on the search or library path, that is followed
+instead, so a stray copy in an old backup folder does not become a library.
 
 Units found in the project directory or its subfolders, and in sibling
 directories (same parent as the project), that do **not** look like a library — no `LICENSE`/`LICENCE`/

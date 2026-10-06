@@ -2,6 +2,33 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-07 — Discovery Fixes From a 41-Project Run [Fixed]
+
+Found by running the command line over a suite of 41 real projects (applications, services,
+tools and DUnitX test projects); each fix has a test that was red before it.
+
+- A library installed inside the Delphi folder was never found: the DCU index skipped the whole
+  installation, so ReportBuilder (`$(BDS)\RBuilder\Lib\Win64`, 408 units in one project) stayed
+  unresolved. Only the installation's own `lib` folder (the RTL's) is skipped now — `Source/uLibraryDiscovery.pas`
+- A stray copy of a unit in a junk folder on a scanned drive (`D:\USB Temp\daSQL.pas`) became a
+  library of its own. A `.pas` found only by the drive scan now gives way to the unit's `.dcu` on the
+  search or library path, which is what the compiler reads; the scanned roots are a `ScanRoots`
+  property, so tests no longer scan the real drive for this — `Source/uLibraryDiscovery.pas`
+- Vendor detection read "copyright" inside an identifier (`FlblCopyRight : TLabel;` gave "TLabel"),
+  in revision history ("Updated copyright to say 2003" gave "to say 2003"), and in ASCII-art headers
+  (`Copyright (c) 1996-2011        BBBBB` gave "BBBBB"). The word must now open the comment or be
+  followed by (c), ©, a year or a colon; the holder ends at a wide gap; after a bare `Copyright:` the
+  holder is read from the next line (Indy); a trailing dash is dropped — `Source/uLibraryDiscovery.pas`
+- A library was named after its design-only package (`{$DESIGNONLY}`, whatever its name) or after a
+  platform folder ("windows"). Design-only packages are passed over; `windows`, `win32`, `win64`,
+  `vcl`, `fmx` and `sources` are generic folder names — `Source/uLibraryDiscovery.pas`
+- A DCU folder under `packages\Delphi 13 Florence\...` or `Library\Delphi13\...` was taken for the
+  library root, so the library was reported as DCU-only. `packages`, `package`, `library` and compiler
+  folders with a release name are build-output folders now — `Source/uLibraryDiscovery.pas`
+- A manifest with a JSON syntax error failed with only "Invalid JSON in manifest file". The message now
+  names the file and the parser's path, line and position — `Source/uManifestLoader.pas`
+- Tests: 12 new (154 in all) — `Tests/TestLibraryDiscovery.pas`, `Tests/TestManifestLoader.pas`
+
 ## 2026-10-07 — Discovery Finds Project-Folder and Library-Path Units [Fixed]
 
 - A unit in the project folder but not named with an `in` clause stayed unclassified:
