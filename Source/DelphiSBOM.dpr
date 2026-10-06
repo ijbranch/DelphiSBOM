@@ -18,7 +18,9 @@ uses
   uDelphiInstall in 'uDelphiInstall.pas',
   uMapFile in 'uMapFile.pas',
   uSBOMValidator in 'uSBOMValidator.pas',
-  uReportWriter in 'uReportWriter.pas';
+  uReportWriter in 'uReportWriter.pas',
+  uOnlineCheck in 'uOnlineCheck.pas',
+  uOnlineCheckForm in 'uOnlineCheckForm.pas';
 
 {$R *.res}
 

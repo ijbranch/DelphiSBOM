@@ -13,7 +13,7 @@ uses
   Winapi.Windows, Winapi.Messages,
   System.SysUtils, System.Classes,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.FileCtrl,
-  uTypes, uSettings;
+  uTypes, uSettings, uOnlineCheck;
 
 type
   TMainForm = class;
@@ -45,6 +45,26 @@ type
   private
     FForm: TMainForm;
     FManifestPath: string;
+    FLogLevel: TLogLevel;
+    FLogMsg: string;
+
+    procedure DoLog( ALevel: TLogLevel; const AMsg: string );
+    procedure SyncLog;
+    procedure SyncComplete;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create( AForm: TMainForm; const AManifestPath: string );
+  end;
+
+  /// <summary>
+  ///   Background thread for the opt-in online check (network requests must not block the form).
+  /// </summary>
+  TSBOMOnlineThread = class( TThread )
+  private
+    FForm: TMainForm;
+    FManifestPath: string;
+    FFindings: TArray<TOnlineFinding>;
     FLogLevel: TLogLevel;
     FLogMsg: string;
 
@@ -89,6 +109,7 @@ type
     FBtnGenerate: TButton;
     FBtnValidate: TButton;
     FBtnViewSBOM: TButton;
+    FBtnCheckOnline: TButton;
 
     // Results panel
     FPnlResults: TPanel;
@@ -129,6 +150,8 @@ type
     procedure BtnManifestClick( Sender: TObject );
     procedure BtnOutputDirClick( Sender: TObject );
     procedure BtnMapFileClick( Sender: TObject );
+    procedure BtnCheckOnlineClick( Sender: TObject );
+    procedure ShowOnlineFindings( const AFindings: TArray<TOnlineFinding>; const AManifestPath: string );
     procedure BtnDelphiPathClick( Sender: TObject );
     procedure BtnDXComplyClick( Sender: TObject );
     procedure BtnGenerateClick( Sender: TObject );
@@ -170,7 +193,7 @@ uses
 {$IFDEF USE_SYNEDIT}
   SynEdit, SynHighlighterJSON,
 {$ENDIF}
-  uSBOMEngine, uManifestLoader, uLibraryEditor;
+  uSBOMEngine, uManifestLoader, uLibraryEditor, uOnlineCheckForm;
 
 {$R *.dfm}
 
@@ -322,6 +345,90 @@ begin
   finally
     Engine.Free;
   end;
+
+end;
+
+// ---------------------------------------------------------------------------
+//  TSBOMOnlineThread
+// ---------------------------------------------------------------------------
+
+constructor TSBOMOnlineThread.Create( AForm: TMainForm; const AManifestPath: string );
+begin
+
+  inherited Create( True );
+  FreeOnTerminate   := True;
+  FForm             := AForm;
+  FManifestPath     := AManifestPath;
+
+end;
+
+procedure TSBOMOnlineThread.SyncLog;
+begin
+
+  FForm.LogMessage( FLogLevel, FLogMsg );
+
+end;
+
+procedure TSBOMOnlineThread.SyncComplete;
+begin
+
+  // Always leave the form usable, whatever happens while showing the findings
+  try
+    try
+      FForm.ShowOnlineFindings( FFindings, FManifestPath );
+    except
+      Application.HandleException( FForm );
+    end;
+  finally
+    FForm.SetProcessing( False );
+  end;
+
+end;
+
+procedure TSBOMOnlineThread.DoLog( ALevel: TLogLevel; const AMsg: string );
+begin
+
+  FLogLevel         := ALevel;
+  FLogMsg           := AMsg;
+  Synchronize( SyncLog );
+
+end;
+
+procedure TSBOMOnlineThread.Execute;
+begin
+
+  var Self_         := Self;
+  var LogProc: TProc<TLogLevel, string> :=
+    procedure( ALevel: TLogLevel; AMsg: string )
+    begin
+      Self_.DoLog( ALevel, AMsg );
+    end;
+
+  try
+    var Loader      := TManifestLoader.Create( LogProc );
+    try
+      var Manifest  := Loader.Load( FManifestPath );
+
+      var Checker   := TOnlineChecker.Create( LogProc );
+      try
+        FFindings   := Checker.Check( Manifest );
+      finally
+        Checker.Free;
+      end;
+    finally
+      Loader.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      FFindings     := nil;
+      FLogLevel     := llError;
+      FLogMsg       := 'Online check failed: ' + E.Message;
+      Synchronize( SyncLog );
+    end;
+  end;
+
+  Synchronize( SyncComplete );
 
 end;
 
@@ -484,6 +591,17 @@ begin
   FBtnViewSBOM.Hint := 'View the last generated SBOM JSON file';
   FBtnViewSBOM.OnClick := BtnViewSBOMClick;
   FBtnViewSBOM.Enabled := False;
+
+  FBtnCheckOnline   := TButton.Create( Self );
+  FBtnCheckOnline.Parent := Self;
+  FBtnCheckOnline.Left := 540;
+  FBtnCheckOnline.Top := CurrentTop;
+  FBtnCheckOnline.Width := 120;
+  FBtnCheckOnline.Height := 30;
+  FBtnCheckOnline.Caption := 'Check Online';
+  FBtnCheckOnline.Hint := 'Compare components.json with each component''s GitHub repository (licence, latest release, archived). ' +
+    'Connects to api.github.com; nothing is written unless you tick a suggestion.';
+  FBtnCheckOnline.OnClick := BtnCheckOnlineClick;
 
   Inc( CurrentTop, 42 );
 
@@ -839,6 +957,86 @@ begin
 
 end;
 
+procedure TMainForm.BtnCheckOnlineClick( Sender: TObject );
+begin
+
+  if FProcessing then Exit;
+
+  // A project path typed by hand: make sure its own settings (the manifest path) are in the fields
+  if ( Trim( FEdtProject.Text ) <> '' ) and ( not SameText( Trim( FEdtProject.Text ), FFieldsProject ) ) then
+    ApplyProjectSettings;
+
+  var ManifestPath  := Trim( FEdtManifest.Text );
+
+  if ( ManifestPath = '' ) or ( not FileExists( ManifestPath ) ) then
+  begin
+    ShowMessage( 'There is no components.json to check yet. Generate the SBOM and save the libraries first.' );
+    Exit;
+  end;
+
+  SetProcessing( True );
+  FMmoLog.Clear;
+  LogMessage( llInfo, 'Checking components.json against GitHub...' );
+
+  TSBOMOnlineThread.Create( Self, ManifestPath ).Start;
+
+end;
+
+procedure TMainForm.ShowOnlineFindings( const AFindings: TArray<TOnlineFinding>; const AManifestPath: string );
+begin
+
+  for var F in AFindings do
+    if F.Kind = ofkWarning then
+      LogMessage( llWarning, Format( 'online: %s: %s', [ F.Component, F.Message ] ) )
+    else
+      LogMessage( llInfo, Format( 'online: %s: %s', [ F.Component, F.Message ] ) );
+
+  if Length( AFindings ) = 0 then Exit;
+
+  var Chosen: TArray<TOnlineFinding>;
+
+  if ( not TOnlineCheckForm.Execute( AFindings, Chosen ) ) then Exit;
+
+  // One write per component, with every field chosen for it
+  var Loader        := TManifestLoader.Create(
+    procedure( ALevel: TLogLevel; AMsg: string )
+    begin
+      LogMessage( ALevel, AMsg );
+    end );
+  try
+    var Done        := TDictionary<string, Boolean>.Create;
+    try
+      for var F in Chosen do
+      begin
+        if Done.ContainsKey( F.Component ) then Continue;
+
+        Done.Add( F.Component, True );
+        var Fields: TArray<TPair<string, string>> := nil;
+
+        for var G in Chosen do
+          if G.Component = F.Component then
+            Fields  := Fields + [ TPair<string, string>.Create( G.Field, G.Suggested ) ];
+
+        try
+          Loader.SetComponentFields( AManifestPath, F.Component, Fields );
+        except
+          on E: EManifestError do
+            LogMessage( llError, E.Message );
+          on E: EInOutError do
+            LogMessage( llError, 'Could not save components.json: ' + E.Message );
+        end;
+      end;
+    finally
+      Done.Free;
+    end;
+  finally
+    Loader.Free;
+  end;
+
+  LogMessage( llInfo, 'Generate the SBOM again to use the updated components.json' );
+
+end;
+
 // ---------------------------------------------------------------------------
 //  UI helpers
 // ---------------------------------------------------------------------------
@@ -868,6 +1066,7 @@ begin
   FBtnDXComply.Enabled := not AValue;
   FEdtMapFile.Enabled := not AValue;
   FBtnMapFile.Enabled := not AValue;
+  FBtnCheckOnline.Enabled := not AValue;
   FChkReports.Enabled := not AValue;
 
   // The result buttons write components.json or read the SBOM file — never while a run is using them
