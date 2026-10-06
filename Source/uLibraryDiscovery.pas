@@ -1,4 +1,4 @@
-(*
+﻿(*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
@@ -21,12 +21,25 @@ type
   /// </summary>
   TLibraryDiscovery = class
   private
-    FLog: TProc<TLogLevel, string>;
+    type
+      /// <summary>Where a .pas file was found, and the search order it was found in.</summary>
+      TIndexEntry = record
+        Path: string;
+        Order: Integer;
+      end;
 
-    function FindUnitFile( const AUnitName: string; const ASearchPaths: TArray<string> ): string;
+    var
+      FLog          : TProc<TLogLevel, string>;
+      FMacros       : TDictionary<string, string>;
+
+    procedure BuildMacroTable( const ADelphiPath, ABDSVersion, APlatform: string );
+    function ExpandMacros( const AValue: string ): string;
+    function BuildUnitFileIndex( const ASearchPaths: TArray<string> ): TDictionary<string, TIndexEntry>;
+    function FindUnitFile( const AUnitName: string; AIndex: TDictionary<string, TIndexEntry> ): string;
     function GetCommonRootDirs: TArray<string>;
-    function GetDelphiLibraryPaths( const ADelphiPath: string; const APlatform: string ): TArray<string>;
+    function GetDelphiLibraryPaths( const ABDSVersion: string; const APlatform: string ): TArray<string>;
     function IsProjectDirectory( const ADirectory: string ): Boolean;
+    function LooksLikeLibrary( const ADirectory: string ): Boolean;
     function IsGenericDirectoryName( const AName: string ): Boolean;
     function GetAllPasUnitNames( const ADirectory: string ): TArray<string>;
     function DetectLicence( const ADirectory: string; out ALicenceFile: string ): string;
@@ -44,12 +57,21 @@ type
 
     /// <summary>
     ///   Discovers libraries for unclassified units.
-    ///   Searches project search paths and common root directories.
+    ///   Searches project search paths, the IDE library path, and common root directories.
     /// </summary>
+    /// <param name="AUnclassifiedUnits">Unit names that no manifest rule classified.</param>
+    /// <param name="ASearchPaths">The project's evaluated DCC_UnitSearchPath entries.</param>
+    /// <param name="AProjectDir">The project directory.</param>
+    /// <param name="ADelphiPath">Resolved Delphi root directory (may be empty).</param>
+    /// <param name="ABDSVersion">BDS version of that installation, e.g. '37.0' (may be empty).</param>
+    /// <param name="APlatform">Target platform, e.g. 'Win64'.</param>
+    /// <param name="AAutoOwnCodeUnits">Units found in the project directory or in sibling own-code directories.</param>
+    /// <returns>The libraries found, with nested directories merged.</returns>
     function Discover( const AUnclassifiedUnits: TArray<string>;
       const ASearchPaths: TArray<string>;
       const AProjectDir: string;
       const ADelphiPath: string;
+      const ABDSVersion: string;
       const APlatform: string;
       out AAutoOwnCodeUnits: TArray<string> ): TArray<TDiscoveredLibrary>;
   end;
@@ -57,7 +79,76 @@ type
 implementation
 
 uses
-  System.IOUtils, System.StrUtils, System.Math, System.Win.Registry, Winapi.Windows;
+  System.IOUtils, System.StrUtils, System.Math, System.RegularExpressions, System.Generics.Defaults,
+  System.Win.Registry, Winapi.Windows,
+  uTextFiles;
+
+const
+  /// <summary>Licence file names looked for in a library directory.</summary>
+  LicenceFileNames  : array[ 0..7 ] of string = (
+    'LICENSE', 'LICENSE.txt', 'LICENSE.md',
+    'LICENCE', 'LICENCE.txt', 'LICENCE.md',
+    'COPYING', 'COPYING.txt'
+    );
+
+/// <summary>
+///   Returns the parent of a directory, or '' for a drive root. Unlike ExtractFilePath on
+///   'D:\X', this returns 'D:\' rather than the drive-relative 'D:'.
+/// </summary>
+function ParentDirectory( const ADirectory: string ): string;
+begin
+
+  var Trimmed       := ExcludeTrailingPathDelimiter( ADirectory );
+  Result            := TPath.GetDirectoryName( Trimmed );
+
+  if SameText( IncludeTrailingPathDelimiter( Result ), IncludeTrailingPathDelimiter( Trimmed ) ) then
+    Result          := '';
+
+end;
+
+/// <summary>
+///   Strips Delphi-version and numeric suffixes from a package name
+///   (StyledComponentsD13 → StyledComponents, EurekaLogCore50 → EurekaLogCore).
+/// </summary>
+function CleanPackageName( const ADpkName: string ): string;
+begin
+
+  Result            := ADpkName;
+
+  // Strip trailing Delphi version suffix like D13, D12, D10_4
+  var DPos          := 0;
+
+  for var C := Result.Length downto 1 do
+    if CharInSet( Result[ C ], [ 'D', 'd' ] ) then
+    begin
+      var Suffix    := Copy( Result, C + 1, Length( Result ) );
+      var IsVersionSuffix := ( Suffix.Length > 0 );
+
+      for var SC in Suffix do
+        if ( not CharInSet( SC, [ '0'..'9', '_' ] ) ) then
+        begin
+          IsVersionSuffix := False;
+          Break;
+        end;
+
+      if IsVersionSuffix then
+      begin
+        DPos        := C;
+        Break;
+      end;
+    end;
+
+  if DPos > 1 then
+    Result          := Copy( Result, 1, DPos - 1 );
+
+  // Strip trailing version numbers and a trailing underscore
+  while ( Result.Length > 0 ) and CharInSet( Result[ Result.Length ], [ '0'..'9' ] ) do
+    Delete( Result, Result.Length, 1 );
+
+  if Result.EndsWith( '_' ) then
+    Delete( Result, Result.Length, 1 );
+
+end;
 
 { TLibraryDiscovery }
 
@@ -65,13 +156,15 @@ constructor TLibraryDiscovery.Create( ALogProc: TProc<TLogLevel, string> );
 begin
 
   inherited Create;
-  FLog := ALogProc;
+  FLog              := ALogProc;
+  FMacros           := TDictionary<string, string>.Create( TIStringComparer.Ordinal );
 
 end;
 
 destructor TLibraryDiscovery.Destroy;
 begin
 
+  FMacros.Free;
   inherited;
 
 end;
@@ -88,63 +181,75 @@ function TLibraryDiscovery.Discover( const AUnclassifiedUnits: TArray<string>;
   const ASearchPaths: TArray<string>;
   const AProjectDir: string;
   const ADelphiPath: string;
+  const ABDSVersion: string;
   const APlatform: string;
   out AAutoOwnCodeUnits: TArray<string> ): TArray<TDiscoveredLibrary>;
 begin
 
   AAutoOwnCodeUnits := nil;
+  Result            := nil;
 
-  var OwnCodeList := TList<string>.Create;
+  BuildMacroTable( ADelphiPath, ABDSVersion, APlatform );
 
-  // Build extended search paths: project search paths + common root dirs
-  var AllPaths := TList<string>.Create;
+  var OwnCodeList   := TList<string>.Create;
+  var AllPaths      := TList<string>.Create;
   try
+    // Project search paths, resolved against the project directory
     for var P in ASearchPaths do
     begin
-      var Expanded := P;
+      try
+        var Expanded := ExpandMacros( P );
 
-      // Resolve relative paths against the project directory
-      if ( not TPath.IsPathRooted( Expanded ) ) and ( AProjectDir <> '' ) then
-        Expanded := TPath.Combine( AProjectDir, Expanded );
+        if Expanded.Contains( '$(' ) then
+        begin
+          Log( llWarning, Format( 'Skipping search path with unresolved macro: %s', [ P ] ) );
+          Continue;
+        end;
 
-      if TDirectory.Exists( Expanded ) then
-        AllPaths.Add( Expanded );
+        if ( not TPath.IsPathRooted( Expanded ) ) and ( AProjectDir <> '' ) then
+          Expanded  := TPath.GetFullPath( TPath.Combine( AProjectDir, Expanded ) );
+
+        if TDirectory.Exists( Expanded ) then
+          AllPaths.Add( Expanded )
+        else
+          Log( llInfo, Format( 'Search path not found, skipped: %s', [ Expanded ] ) );
+      except
+        on E: EArgumentException do
+          Log( llWarning, Format( 'Skipping invalid search path "%s": %s', [ P, E.Message ] ) );
+      end;
     end;
 
-    // Add Delphi IDE library paths from registry
-    var IDEPaths := GetDelphiLibraryPaths( ADelphiPath, APlatform );
-
-    for var IP in IDEPaths do
+    // Delphi IDE library paths from the registry
+    for var IP in GetDelphiLibraryPaths( ABDSVersion, APlatform ) do
       if ( not AllPaths.Contains( IP ) ) and TDirectory.Exists( IP ) then
         AllPaths.Add( IP );
 
-    // Add common root directories
-    var RootDirs := GetCommonRootDirs;
-
-    for var RD in RootDirs do
+    // Common root directories
+    for var RD in GetCommonRootDirs do
       if ( not AllPaths.Contains( RD ) ) then
         AllPaths.Add( RD );
 
     Log( llInfo, Format( 'Searching %d directories for unclassified units...', [ AllPaths.Count ] ) );
 
-    // Phase 1: Find .pas files for each unclassified unit
-    var UnitToDir := TDictionary<string, string>.Create;    // unit name → directory
-    var UnitToFile := TDictionary<string, string>.Create;   // unit name → full .pas path
+    // Phase 1: Find .pas files for each unclassified unit, from a single index of the search tree
+    var UnitToDir   := TDictionary<string, string>.Create; // unit name → directory (lower case)
+    var UnitToFile  := TDictionary<string, string>.Create; // unit name → full .pas path
+    var FileIndex   := BuildUnitFileIndex( AllPaths.ToArray );
     try
       for var UnitName in AUnclassifiedUnits do
       begin
-        var FoundFile := FindUnitFile( UnitName, AllPaths.ToArray );
+        var FoundFile := FindUnitFile( UnitName, FileIndex );
 
         if FoundFile <> '' then
         begin
-          var Dir := LowerCase( ExcludeTrailingPathDelimiter( ExtractFilePath( FoundFile ) ) );
+          var Dir   := LowerCase( ExcludeTrailingPathDelimiter( ExtractFilePath( FoundFile ) ) );
           UnitToDir.AddOrSetValue( UnitName, Dir );
           UnitToFile.AddOrSetValue( UnitName, FoundFile );
         end;
       end;
 
       Log( llInfo, Format( 'Found .pas files for %d of %d unclassified units',
-        [ UnitToDir.Count, Length( AUnclassifiedUnits ) ] ) );
+          [ UnitToDir.Count, Length( AUnclassifiedUnits ) ] ) );
 
       // Phase 2: Group units by directory
       var DirToUnits := TDictionary<string, TList<string>>.Create;
@@ -156,6 +261,10 @@ begin
 
           DirToUnits[ Pair.Value ].Add( Pair.Key );
         end;
+
+        // The sibling rule only applies when the project's parent is a real folder, not a drive root
+        var ProjectParent := ParentDirectory( AProjectDir );
+        var ParentIsRoot := ( ProjectParent = '' ) or ( ParentDirectory( ProjectParent ) = '' );
 
         // Phase 3: Build discovered library records
         var Libraries := TList<TDiscoveredLibrary>.Create;
@@ -171,30 +280,24 @@ begin
             if UnitToFile.ContainsKey( FirstUnit ) then
               ActualDir := ExcludeTrailingPathDelimiter( ExtractFilePath( UnitToFile[ FirstUnit ] ) );
 
-            // Skip if this is the project's own directory — mark units as own code
+            // The project's own directory — its units are own code
             if SameText( ExcludeTrailingPathDelimiter( ActualDir ),
-                         ExcludeTrailingPathDelimiter( AProjectDir ) ) then
+              ExcludeTrailingPathDelimiter( AProjectDir ) ) then
             begin
-              Log( llInfo, Format( 'Skipping project directory: %s', [ ActualDir ] ) );
-
-              for var SkippedUnit in DirPair.Value do
-                OwnCodeList.Add( SkippedUnit );
-
+              Log( llInfo, Format( 'Units in the project directory are own code: %s', [ ActualDir ] ) );
+              OwnCodeList.AddRange( DirPair.Value );
               Continue;
             end;
 
-            // Skip directories that share the same parent as the project (related project code)
-            var ProjectParent := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( AProjectDir ) ) );
-            var DirParent     := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( ActualDir ) ) );
-
-            if ( ProjectParent <> '' ) and SameText( ProjectParent, DirParent ) then
+            // A sibling of the project directory is treated as related own code only when it does not
+            // look like a library (no licence file, no .dpk). Libraries checked out beside the project
+            // (C:\Dev\MyApp + C:\Dev\Indy) stay third-party.
+            if ( not ParentIsRoot ) and SameText( ProjectParent, ParentDirectory( ActualDir ) ) and
+              ( not LooksLikeLibrary( ActualDir ) ) then
             begin
-              Log( llInfo, Format( 'Auto-marking %d units from sibling directory as own code: %s',
-                [ DirPair.Value.Count, ActualDir ] ) );
-
-              for var SkippedUnit in DirPair.Value do
-                OwnCodeList.Add( SkippedUnit );
-
+              Log( llInfo, Format( 'Auto-marking %d units from sibling directory as own code (no licence file or package found): %s',
+                  [ DirPair.Value.Count, ActualDir ] ) );
+              OwnCodeList.AddRange( DirPair.Value );
               Continue;
             end;
 
@@ -205,9 +308,10 @@ begin
               Continue;
             end;
 
+            Lib     := Default( TDiscoveredLibrary );
             Lib.Directory := ActualDir;
-            Lib.Name      := DetectLibraryName( ActualDir );
-            Lib.Units     := DirPair.Value.ToArray;
+            Lib.Name := DetectLibraryName( ActualDir );
+            Lib.Units := DirPair.Value.ToArray;
             Lib.Confirmed := False;
 
             // Compute prefix from ALL .pas files in the directory, not just unclassified ones
@@ -220,13 +324,13 @@ begin
 
             // Detect metadata
             var LicFile := '';
-            Lib.Licence     := DetectLicence( ActualDir, LicFile );
+            Lib.Licence := DetectLicence( ActualDir, LicFile );
             Lib.LicenceFile := LicFile;
-            Lib.Version     := DetectVersion( ActualDir );
-            Lib.Vendor      := DetectVendor( ActualDir );
+            Lib.Version := DetectVersion( ActualDir );
+            Lib.Vendor := DetectVendor( ActualDir );
 
             Log( llInfo, Format( 'Discovered library: %s (%d units, dir: %s)',
-              [ Lib.Name, Length( Lib.Units ), Lib.Directory ] ) );
+                [ Lib.Name, Length( Lib.Units ), Lib.Directory ] ) );
 
             Libraries.Add( Lib );
           end;
@@ -252,29 +356,18 @@ begin
 
                   var Other := Libraries[ Y ];
                   var CurrentDir := LowerCase( IncludeTrailingPathDelimiter( Current.Directory ) );
-                  var OtherDir   := LowerCase( IncludeTrailingPathDelimiter( Other.Directory ) );
+                  var OtherDir := LowerCase( IncludeTrailingPathDelimiter( Other.Directory ) );
 
                   if OtherDir.StartsWith( CurrentDir ) or CurrentDir.StartsWith( OtherDir ) then
                   begin
                     // Merge Other into Current
-                    var CombinedUnits := TList<string>.Create;
-                    try
-                      for var CU in Current.Units do
-                        CombinedUnits.Add( CU );
-
-                      for var CU in Other.Units do
-                        CombinedUnits.Add( CU );
-
-                      Current.Units := CombinedUnits.ToArray;
-                    finally
-                      CombinedUnits.Free;
-                    end;
+                    Current.Units := Current.Units + Other.Units;
 
                     // Use the parent (outer) directory
                     if CurrentDir.StartsWith( OtherDir ) then
                     begin
                       Current.Directory := Other.Directory;
-                      Current.Name      := DetectLibraryName( Other.Directory );
+                      Current.Name := DetectLibraryName( Other.Directory );
                     end
                     else
                       Current.Name := DetectLibraryName( Current.Directory );
@@ -284,7 +377,10 @@ begin
                       Current.Vendor := Other.Vendor;
 
                     if ( Current.Licence = '' ) and ( Other.Licence <> '' ) then
+                    begin
                       Current.Licence := Other.Licence;
+                      Current.LicenceFile := Other.LicenceFile;
+                    end;
 
                     if ( Current.Version = '' ) and ( Other.Version <> '' ) then
                       Current.Version := Other.Version;
@@ -300,42 +396,124 @@ begin
 
                 Merged.Add( Current );
               end;
-
             finally
               MergedFlags.Free;
             end;
 
-            Result := Merged.ToArray;
+            Result  := Merged.ToArray;
           finally
             Merged.Free;
           end;
-
         finally
           Libraries.Free;
         end;
-
       finally
         for var UnitList in DirToUnits.Values do
           UnitList.Free;
 
         DirToUnits.Free;
       end;
-
     finally
+      FileIndex.Free;
       UnitToDir.Free;
       UnitToFile.Free;
     end;
 
+    AAutoOwnCodeUnits := OwnCodeList.ToArray;
+
+    if OwnCodeList.Count > 0 then
+      Log( llInfo, Format( 'Auto-detected %d own-code units', [ OwnCodeList.Count ] ) );
   finally
     AllPaths.Free;
+    OwnCodeList.Free;
   end;
 
-  AAutoOwnCodeUnits := OwnCodeList.ToArray;
+end;
 
-  if OwnCodeList.Count > 0 then
-    Log( llInfo, Format( 'Auto-detected %d own-code units from sibling directories', [ OwnCodeList.Count ] ) );
+// ---------------------------------------------------------------------------
+//  Macro expansion — $(BDS), $(BDSCOMMONDIR), IDE environment variables, etc.
+// ---------------------------------------------------------------------------
 
-  OwnCodeList.Free;
+procedure TLibraryDiscovery.BuildMacroTable( const ADelphiPath, ABDSVersion, APlatform: string );
+begin
+
+  FMacros.Clear;
+
+  var Platform      := APlatform;
+
+  if Platform = '' then
+    Platform        := 'Win64';
+
+  FMacros.AddOrSetValue( 'Platform', Platform );
+  FMacros.AddOrSetValue( 'Config', 'Release' );
+
+  if ADelphiPath <> '' then
+  begin
+    FMacros.AddOrSetValue( 'BDS', ADelphiPath );
+    FMacros.AddOrSetValue( 'BDSLIB', TPath.Combine( ADelphiPath, 'lib' ) );
+    FMacros.AddOrSetValue( 'BDSBIN', TPath.Combine( ADelphiPath, 'bin' ) );
+    FMacros.AddOrSetValue( 'BDSINCLUDE', TPath.Combine( ADelphiPath, 'include' ) );
+  end;
+
+  if ABDSVersion <> '' then
+  begin
+    var PublicStudio := TPath.Combine( GetEnvironmentVariable( 'PUBLIC' ), 'Documents\Embarcadero\Studio\' + ABDSVersion );
+    var UserStudio  := TPath.Combine( TPath.GetDocumentsPath, 'Embarcadero\Studio\' + ABDSVersion );
+
+    FMacros.AddOrSetValue( 'BDSCOMMONDIR', PublicStudio );
+    FMacros.AddOrSetValue( 'BDSUSERDIR', UserStudio );
+    FMacros.AddOrSetValue( 'BDSCatalogRepository', TPath.Combine( UserStudio, 'CatalogRepository' ) );
+    FMacros.AddOrSetValue( 'BDSCatalogRepositoryAllUsers', TPath.Combine( PublicStudio, 'CatalogRepository' ) );
+
+    // IDE-level environment variable overrides (Tools > Options > Environment Variables)
+    var Reg         := TRegistry.Create( KEY_READ );
+    try
+      Reg.RootKey   := HKEY_CURRENT_USER;
+
+      if Reg.OpenKeyReadOnly( Format( 'Software\Embarcadero\BDS\%s\Environment Variables', [ ABDSVersion ] ) ) then
+      begin
+        var ValueNames := TStringList.Create;
+        try
+          Reg.GetValueNames( ValueNames );
+
+          for var VN in ValueNames do
+            FMacros.AddOrSetValue( VN, Reg.ReadString( VN ) );
+
+          Log( llInfo, Format( 'Loaded %d IDE environment variables', [ ValueNames.Count ] ) );
+        finally
+          ValueNames.Free;
+        end;
+
+        Reg.CloseKey;
+      end;
+    finally
+      Reg.Free;
+    end;
+  end;
+
+end;
+
+function TLibraryDiscovery.ExpandMacros( const AValue: string ): string;
+begin
+
+  Result            := AValue;
+
+  // Repeat so a macro whose value contains another macro ($(InterBase) = $(BDS)\...) resolves fully
+  for var Pass := 1 to 4 do
+  begin
+    if ( not Result.Contains( '$(' ) ) then Break;
+
+    Result          := ExpandMacroReferences( Result,
+      function( AName: string ): string
+      begin
+        if FMacros.TryGetValue( AName, Result ) then Exit;
+
+        Result      := GetEnvironmentVariable( AName );
+
+        if Result = '' then
+          Result    := '$(' + AName + ')';
+      end );
+  end;
 
 end;
 
@@ -343,126 +521,48 @@ end;
 //  Delphi IDE library paths from registry
 // ---------------------------------------------------------------------------
 
-function TLibraryDiscovery.GetDelphiLibraryPaths( const ADelphiPath: string; const APlatform: string ): TArray<string>;
+function TLibraryDiscovery.GetDelphiLibraryPaths( const ABDSVersion: string; const APlatform: string ): TArray<string>;
 begin
 
-  Result := nil;
+  Result            := nil;
 
-  var Reg := TRegistry.Create( KEY_READ );
+  if ABDSVersion = '' then Exit;
+
+  var Platform      := APlatform;
+
+  if Platform = '' then
+    Platform        := 'Win64';
+
+  var Reg           := TRegistry.Create( KEY_READ );
   try
-    Reg.RootKey := HKEY_CURRENT_USER;
+    Reg.RootKey     := HKEY_CURRENT_USER;
 
-    // Find the highest BDS version
-    if Reg.OpenKeyReadOnly( 'Software\Embarcadero\BDS' ) then
-    begin
-      var SubKeys := TStringList.Create;
+    if ( not Reg.OpenKeyReadOnly( Format( 'Software\Embarcadero\BDS\%s\Library\%s', [ ABDSVersion, Platform ] ) ) ) then Exit;
+
+    try
+      if ( not Reg.ValueExists( 'Search Path' ) ) then Exit;
+
+      var Paths     := TList<string>.Create;
       try
-        Reg.GetKeyNames( SubKeys );
-        Reg.CloseKey;
-
-        var HighestVer        := '';
-        var HighestVal: Double := 0.0;
-        var FmtSettings       := TFormatSettings.Create( 'en-US' );
-
-        for var I := 0 to SubKeys.Count - 1 do
+        for var P in Reg.ReadString( 'Search Path' ).Split( [ ';' ] ) do
         begin
-          var NumVal: Double := 0.0;
+          var Trimmed := Trim( ExpandMacros( Trim( P ) ) );
 
-          if TryStrToFloat( SubKeys[ I ], NumVal, FmtSettings ) then
-            if NumVal > HighestVal then
-            begin
-              HighestVal := NumVal;
-              HighestVer := SubKeys[ I ];
-            end;
+          if Trimmed = '' then Continue;
+
+          if Trimmed.Contains( '$(' ) then
+            Log( llWarning, Format( 'Skipping unresolved library path: %s', [ Trimmed ] ) )
+          else
+            Paths.Add( Trimmed );
         end;
 
-        if HighestVer <> '' then
-        begin
-          var Platform := APlatform;
-
-          if Platform = '' then
-            Platform := 'Win64';
-
-          // Read the library search path from the IDE settings
-          var LibKey := Format( 'Software\Embarcadero\BDS\%s\Library\%s', [ HighestVer, Platform ] );
-
-          // Read custom IDE environment variables for path resolution
-          var EnvVars := TDictionary<string, string>.Create;
-          try
-            var EnvKey := Format( 'Software\Embarcadero\BDS\%s\Environment Variables', [ HighestVer ] );
-
-            if Reg.OpenKeyReadOnly( EnvKey ) then
-            begin
-              var ValueNames := TStringList.Create;
-              try
-                Reg.GetValueNames( ValueNames );
-
-                for var VN := 0 to ValueNames.Count - 1 do
-                  EnvVars.AddOrSetValue( ValueNames[ VN ], Reg.ReadString( ValueNames[ VN ] ) );
-              finally
-                ValueNames.Free;
-              end;
-
-              Reg.CloseKey;
-              Log( llInfo, Format( 'Loaded %d IDE environment variables', [ EnvVars.Count ] ) );
-            end;
-
-            // Add standard BDS variables
-            if ADelphiPath <> '' then
-            begin
-              EnvVars.AddOrSetValue( 'BDS', ADelphiPath );
-              EnvVars.AddOrSetValue( 'BDSLIB', TPath.Combine( ADelphiPath, 'lib' ) );
-              EnvVars.AddOrSetValue( 'BDSBIN', TPath.Combine( ADelphiPath, 'bin' ) );
-              EnvVars.AddOrSetValue( 'BDSCOMMONDIR', TPath.Combine( GetEnvironmentVariable( 'PUBLIC' ), 'Documents\Embarcadero\Studio\' + HighestVer ) );
-              EnvVars.AddOrSetValue( 'BDSUSERDIR', TPath.Combine( GetEnvironmentVariable( 'USERPROFILE' ), 'Documents\Embarcadero\Studio\' + HighestVer ) );
-              EnvVars.AddOrSetValue( 'BDSCatalogRepository', TPath.Combine( GetEnvironmentVariable( 'USERPROFILE' ), 'Documents\Embarcadero\Studio\' + HighestVer + '\CatalogRepository' ) );
-              EnvVars.AddOrSetValue( 'BDSCatalogRepositoryAllUsers', TPath.Combine( GetEnvironmentVariable( 'PUBLIC' ), 'Documents\Embarcadero\Studio\' + HighestVer + '\CatalogRepository' ) );
-              EnvVars.AddOrSetValue( 'PLATFORM', Platform );
-            end;
-
-            if Reg.OpenKeyReadOnly( LibKey ) then
-            begin
-              if Reg.ValueExists( 'Search Path' ) then
-              begin
-                var PathStr := Reg.ReadString( 'Search Path' );
-
-                // Resolve all $(VAR) references
-                for var EnvPair in EnvVars do
-                  PathStr := StringReplace( PathStr, '$(' + EnvPair.Key + ')', EnvPair.Value, [ rfReplaceAll, rfIgnoreCase ] );
-
-                var Parts := PathStr.Split( [ ';' ] );
-                var Paths := TList<string>.Create;
-                try
-                  for var P in Parts do
-                  begin
-                    var Trimmed := Trim( P );
-
-                    if Trimmed <> '' then
-                    begin
-                      if Trimmed.Contains( '$(' ) then
-                        Log( llWarning, Format( 'Skipping unresolved library path: %s', [ Trimmed ] ) )
-                      else
-                        Paths.Add( Trimmed );
-                    end;
-                  end;
-
-                  Result := Paths.ToArray;
-                  Log( llInfo, Format( 'Found %d Delphi IDE library paths', [ Length( Result ) ] ) );
-                finally
-                  Paths.Free;
-                end;
-              end;
-
-              Reg.CloseKey;
-            end;
-
-          finally
-            EnvVars.Free;
-          end;
-        end;
+        Result      := Paths.ToArray;
+        Log( llInfo, Format( 'Found %d Delphi IDE library paths (BDS %s, %s)', [ Length( Result ), ABDSVersion, Platform ] ) );
       finally
-        SubKeys.Free;
+        Paths.Free;
       end;
+    finally
+      Reg.CloseKey;
     end;
   finally
     Reg.Free;
@@ -477,24 +577,24 @@ end;
 function TLibraryDiscovery.IsProjectDirectory( const ADirectory: string ): Boolean;
 begin
 
-  Result := False;
+  Result            := False;
 
   try
     // If the directory contains .dpk files, it's a library (packages = library distribution)
     // even if it also has .dpr files (demos, tests, examples)
-    var DpkFiles := TDirectory.GetFiles( ADirectory, '*.dpk', TSearchOption.soTopDirectoryOnly );
+    var DpkFiles    := TDirectory.GetFiles( ADirectory, '*.dpk', TSearchOption.soTopDirectoryOnly );
 
     if Length( DpkFiles ) > 0 then
       Exit( False );
 
     // Check for .dpr files — indicates a standalone project, not a library
-    var DprFiles := TDirectory.GetFiles( ADirectory, '*.dpr', TSearchOption.soTopDirectoryOnly );
+    var DprFiles    := TDirectory.GetFiles( ADirectory, '*.dpr', TSearchOption.soTopDirectoryOnly );
 
     if Length( DprFiles ) > 0 then
     begin
       // Additional check: if there are many .pas files (10+) alongside the .dpr,
       // it's likely a library with a demo/test project, not a standalone app
-      var PasFiles := TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly );
+      var PasFiles  := TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly );
 
       if Length( PasFiles ) >= 10 then
         Exit( False );
@@ -502,8 +602,39 @@ begin
       Exit( True );
     end;
   except
-    // Access denied — treat as not a project directory
+    on E: EInOutError do
+      Log( llWarning, Format( 'Could not read directory %s: %s', [ ADirectory, E.Message ] ) );
   end;
+
+end;
+
+function TLibraryDiscovery.LooksLikeLibrary( const ADirectory: string ): Boolean;
+begin
+
+  // A licence file, or a package (.dpk) in the directory, its parent, or a subdirectory
+  var LicFile       := '';
+  DetectLicence( ADirectory, LicFile );
+
+  if LicFile <> '' then Exit( True );
+
+  try
+    var Candidates: TArray<string> := [ ADirectory ];
+    var Parent      := ParentDirectory( ADirectory );
+
+    if Parent <> '' then
+      Candidates    := Candidates + [ Parent ];
+
+    Candidates      := Candidates + TDirectory.GetDirectories( ADirectory );
+
+    for var Dir in Candidates do
+      if Length( TDirectory.GetFiles( Dir, '*.dpk', TSearchOption.soTopDirectoryOnly ) ) > 0 then
+        Exit( True );
+  except
+    on E: EInOutError do
+      Log( llWarning, Format( 'Could not read directory %s: %s', [ ADirectory, E.Message ] ) );
+  end;
+
+  Result            := False;
 
 end;
 
@@ -514,111 +645,125 @@ begin
     'source', 'src', 'lib', 'code', 'extras', 'delphi', 'pascal',
     'common', 'shared', 'include', 'units', 'packages', 'components',
     'dev', 'bin', 'release', 'debug', 'pas'
-  ];
+    ];
 
   for var GN in GenericNames do
     if SameText( AName, GN ) then
       Exit( True );
 
-  Result := False;
+  Result            := False;
 
 end;
 
 function TLibraryDiscovery.GetAllPasUnitNames( const ADirectory: string ): TArray<string>;
 begin
 
-  Result := nil;
+  Result            := nil;
 
   try
-    var PasFiles := TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly );
+    var PasFiles    := TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly );
     SetLength( Result, Length( PasFiles ) );
 
     for var I := 0 to High( PasFiles ) do
-      Result[ I ] := TPath.GetFileNameWithoutExtension( PasFiles[ I ] );
+      Result[ I ]   := TPath.GetFileNameWithoutExtension( PasFiles[ I ] );
   except
-    // Access denied
+    on E: EInOutError do
+      Log( llWarning, Format( 'Could not read directory %s: %s', [ ADirectory, E.Message ] ) );
   end;
 
 end;
 
 // ---------------------------------------------------------------------------
-//  File search
+//  File search — one index over the search tree, built once per run
 // ---------------------------------------------------------------------------
 
-function TLibraryDiscovery.FindUnitFile( const AUnitName: string;
-  const ASearchPaths: TArray<string> ): string;
+function TLibraryDiscovery.BuildUnitFileIndex( const ASearchPaths: TArray<string> ): TDictionary<string, TIndexEntry>;
 begin
 
-  Result := '';
+  var Index         := TDictionary<string, TIndexEntry>.Create;
+  var Order         := 0;
+  var Visited       := TDictionary<string, Boolean>.Create;
+  try
+    // Each search directory, then its parent, then one level of subdirectories — the same
+    // order the per-unit search used, so the first location found still wins
+    var AddDirectory :=
+      procedure( const ADir: string )
+      begin
+        var Key     := LowerCase( ExcludeTrailingPathDelimiter( ADir ) );
 
-  // Try both the original name and the scope-stripped name
-  var FileName := AUnitName + '.pas';
-  var StrippedName := StripScopePrefix( AUnitName );
-  var AltFileName := '';
+        if ( ADir = '' ) or Visited.ContainsKey( Key ) then Exit;
+
+        Visited.Add( Key, True );
+
+        try
+          for var PasFile in TDirectory.GetFiles( ADir, '*.pas', TSearchOption.soTopDirectoryOnly ) do
+          begin
+            var FileKey := LowerCase( ExtractFileName( PasFile ) );
+
+            if ( not Index.ContainsKey( FileKey ) ) then
+            begin
+              var Entry: TIndexEntry;
+              Entry.Path := PasFile;
+              Entry.Order := Order;
+              Index.Add( FileKey, Entry );
+            end;
+          end;
+        except
+          on EInOutError do
+            ; // Access denied or vanished directory — nothing to index
+          on EArgumentException do
+            ; // Invalid characters in a configured path — nothing to index
+        end;
+
+        Inc( Order );
+      end;
+
+    for var SearchDir in ASearchPaths do
+    begin
+      AddDirectory( SearchDir );
+      AddDirectory( ParentDirectory( SearchDir ) );
+
+      try
+        for var SubDir in TDirectory.GetDirectories( SearchDir ) do
+          AddDirectory( SubDir );
+      except
+        on EInOutError do
+          ; // Access denied — skip this directory's children
+        on EArgumentException do
+          ; // Invalid characters in a configured path
+      end;
+    end;
+  finally
+    Visited.Free;
+  end;
+
+  Result            := Index;
+  Log( llInfo, Format( 'Indexed %d .pas files', [ Result.Count ] ) );
+
+end;
+
+function TLibraryDiscovery.FindUnitFile( const AUnitName: string; AIndex: TDictionary<string, TIndexEntry> ): string;
+begin
+
+  Result            := '';
+
+  // Try both the original name (Vcl.StyledTaskDialog.pas) and the scope-stripped name (StyledTaskDialog.pas);
+  // when both exist, the one found earlier in the search order wins
+  var BestOrder     := MaxInt;
+  var Candidates: TArray<string> := [ AUnitName ];
+  var StrippedName  := StripScopePrefix( AUnitName );
 
   if StrippedName <> AUnitName then
-    AltFileName := StrippedName + '.pas';
+    Candidates      := Candidates + [ StrippedName ];
 
-  for var SearchDir in ASearchPaths do
+  for var Candidate in Candidates do
   begin
-    // Try primary filename (e.g. Vcl.StyledTaskDialog.pas)
-    var FullPath := TPath.Combine( SearchDir, FileName );
+    var Entry: TIndexEntry;
 
-    if FileExists( FullPath ) then
-      Exit( FullPath );
-
-    // Try alternate (scope-stripped) filename (e.g. StyledTaskDialog.pas)
-    if AltFileName <> '' then
+    if AIndex.TryGetValue( LowerCase( Candidate + '.pas' ), Entry ) and ( Entry.Order < BestOrder ) then
     begin
-      FullPath := TPath.Combine( SearchDir, AltFileName );
-
-      if FileExists( FullPath ) then
-        Exit( FullPath );
-    end;
-
-    // Also search the parent directory
-    var ParentDir := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( SearchDir ) ) );
-
-    if ( ParentDir <> '' ) and ( ParentDir <> SearchDir ) then
-    begin
-      FullPath := TPath.Combine( ParentDir, FileName );
-
-      if FileExists( FullPath ) then
-        Exit( FullPath );
-
-      if AltFileName <> '' then
-      begin
-        FullPath := TPath.Combine( ParentDir, AltFileName );
-
-        if FileExists( FullPath ) then
-          Exit( FullPath );
-      end;
-    end;
-
-    // Also search one level of subdirectories
-    if TDirectory.Exists( SearchDir ) then
-    begin
-      try
-        var SubDirs := TDirectory.GetDirectories( SearchDir );
-
-        for var SubDir in SubDirs do
-        begin
-          FullPath := TPath.Combine( SubDir, FileName );
-
-          if FileExists( FullPath ) then
-            Exit( FullPath );
-
-          if AltFileName <> '' then
-          begin
-            FullPath := TPath.Combine( SubDir, AltFileName );
-
-            if FileExists( FullPath ) then
-              Exit( FullPath );
-          end;
-        end;
-      except
-        // Access denied or other I/O error — skip this directory
-      end;
+      BestOrder     := Entry.Order;
+      Result        := Entry.Path;
     end;
   end;
 
@@ -627,43 +772,28 @@ end;
 function TLibraryDiscovery.GetCommonRootDirs: TArray<string>;
 begin
 
-  var Dirs := TList<string>.Create;
+  var Dirs          := TList<string>.Create;
   try
-    // Scan D:\ top-level directories (common location for Delphi libraries)
-    if TDirectory.Exists( 'D:\' ) then
-    begin
-      try
-        var SubDirs := TDirectory.GetDirectories( 'D:\' );
-
-        for var D in SubDirs do
-          Dirs.Add( D );
-      except
-        // Access denied
-      end;
-    end;
-
-    // Scan C:\Program Files and C:\Program Files (x86)
-    var ProgramDirs: TArray<string> := [
+    // D:\ top-level directories (a common location for Delphi libraries) and the Program Files folders
+    var RootDirs: TArray<string> := [
+      'D:\',
       'C:\Program Files',
       'C:\Program Files (x86)'
-    ];
+      ];
 
-    for var PD in ProgramDirs do
+    for var RD in RootDirs do
     begin
-      if TDirectory.Exists( PD ) then
-      begin
-        try
-          var SubDirs := TDirectory.GetDirectories( PD );
+      if ( not TDirectory.Exists( RD ) ) then Continue;
 
-          for var D in SubDirs do
-            Dirs.Add( D );
-        except
-          // Access denied
-        end;
+      try
+        Dirs.AddRange( TDirectory.GetDirectories( RD ) );
+      except
+        on E: EInOutError do
+          Log( llWarning, Format( 'Could not read directory %s: %s', [ RD, E.Message ] ) );
       end;
     end;
 
-    Result := Dirs.ToArray;
+    Result          := Dirs.ToArray;
   finally
     Dirs.Free;
   end;
@@ -680,158 +810,65 @@ begin
   // Strategy 1: Find a .dpk file in this directory or nearby and use its name
   var SearchDirs: TArray<string> := [ ADirectory ];
 
-  // Also check parent and sibling directories for .dpk files
-  var ParentDir := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( ADirectory ) ) );
+  // Also check the parent and a sibling Packages directory (common pattern)
+  var ParentDir     := ParentDirectory( ADirectory );
 
   if ParentDir <> '' then
   begin
-    SearchDirs := SearchDirs + [ ParentDir ];
+    SearchDirs      := SearchDirs + [ ParentDir ];
 
-    // Check sibling Packages directory (common pattern)
     var PackagesDir := TPath.Combine( ParentDir, 'Packages' );
 
     if TDirectory.Exists( PackagesDir ) then
-      SearchDirs := SearchDirs + [ PackagesDir ];
+      SearchDirs    := SearchDirs + [ PackagesDir ];
   end;
 
   for var SearchDir in SearchDirs do
   begin
     try
-      // Search this dir and one level of subdirs for .dpk files
-      var DpkFiles := TDirectory.GetFiles( SearchDir, '*.dpk', TSearchOption.soTopDirectoryOnly );
+      // This directory first, then one level of subdirectories
+      var Dirs: TArray<string> := [ SearchDir ];
+      Dirs          := Dirs + TDirectory.GetDirectories( SearchDir );
 
-      for var DpkFile in DpkFiles do
-      begin
-        var DpkName := TPath.GetFileNameWithoutExtension( DpkFile );
-
-        // Skip design-time packages (dcl prefix)
-        if DpkName.StartsWith( 'dcl', True ) then Continue;
-
-        // Strip version/Delphi suffixes (e.g. StyledComponentsD13 → StyledComponents)
-        // Strip trailing digits, D+digits patterns
-        var CleanName := DpkName;
-
-        // Strip trailing Delphi version suffix like D13, D12, D10_4
-        var DPos := 0;
-
-        for var C := CleanName.Length downto 1 do
-        begin
-          if ( CleanName[ C ] = 'D' ) or ( CleanName[ C ] = 'd' ) then
-          begin
-            var Suffix := Copy( CleanName, C + 1, Length( CleanName ) );
-            var IsVersionSuffix := ( Suffix.Length > 0 );
-
-            for var SC in Suffix do
-              if ( not CharInSet( SC, [ '0'..'9', '_' ] ) ) then
-              begin
-                IsVersionSuffix := False;
-                Break;
-              end;
-
-            if IsVersionSuffix then
-            begin
-              DPos := C;
-              Break;
-            end;
-          end;
-        end;
-
-        if DPos > 1 then
-          CleanName := Copy( CleanName, 1, DPos - 1 );
-
-        // Strip trailing version numbers (e.g. EurekaLogCore50 → EurekaLogCore)
-        while ( CleanName.Length > 0 ) and CharInSet( CleanName[ CleanName.Length ], [ '0'..'9' ] ) do
-          Delete( CleanName, CleanName.Length, 1 );
-
-        // Strip trailing underscore
-        if CleanName.EndsWith( '_' ) then
-          Delete( CleanName, CleanName.Length, 1 );
-
-        if CleanName.Length >= 3 then
-          Exit( CleanName );
-      end;
-
-      // Also search subdirectories
-      var SubDirs := TDirectory.GetDirectories( SearchDir );
-
-      for var SubDir in SubDirs do
-      begin
-        DpkFiles := TDirectory.GetFiles( SubDir, '*.dpk', TSearchOption.soTopDirectoryOnly );
-
-        for var DpkFile in DpkFiles do
+      for var Dir in Dirs do
+        for var DpkFile in TDirectory.GetFiles( Dir, '*.dpk', TSearchOption.soTopDirectoryOnly ) do
         begin
           var DpkName := TPath.GetFileNameWithoutExtension( DpkFile );
 
+          // Skip design-time packages (dcl prefix)
           if DpkName.StartsWith( 'dcl', True ) then Continue;
 
-          var CleanName := DpkName;
-
-          var DPos := 0;
-
-          for var C := CleanName.Length downto 1 do
-            if ( CleanName[ C ] = 'D' ) or ( CleanName[ C ] = 'd' ) then
-            begin
-              var Suffix := Copy( CleanName, C + 1, Length( CleanName ) );
-              var IsVersionSuffix := ( Suffix.Length > 0 );
-
-              for var SC in Suffix do
-                if ( not CharInSet( SC, [ '0'..'9', '_' ] ) ) then
-                begin
-                  IsVersionSuffix := False;
-                  Break;
-                end;
-
-              if IsVersionSuffix then
-              begin
-                DPos := C;
-                Break;
-              end;
-            end;
-
-          if DPos > 1 then
-            CleanName := Copy( CleanName, 1, DPos - 1 );
-
-          while ( CleanName.Length > 0 ) and CharInSet( CleanName[ CleanName.Length ], [ '0'..'9' ] ) do
-            Delete( CleanName, CleanName.Length, 1 );
-
-          if CleanName.EndsWith( '_' ) then
-            Delete( CleanName, CleanName.Length, 1 );
+          var CleanName := CleanPackageName( DpkName );
 
           if CleanName.Length >= 3 then
             Exit( CleanName );
         end;
-      end;
-
     except
-      // Access denied — skip
+      on E: EInOutError do
+        Log( llWarning, Format( 'Could not read directory %s: %s', [ SearchDir, E.Message ] ) );
     end;
   end;
 
   // Strategy 2: Use the nearest non-generic ancestor directory name
-  var DirName := ExtractFileName( ADirectory );
+  var DirName       := ExtractFileName( ExcludeTrailingPathDelimiter( ADirectory ) );
 
   if ( not IsGenericDirectoryName( DirName ) ) then
     Exit( DirName );
 
-  // Walk up to find a non-generic name
-  var Current := ExcludeTrailingPathDelimiter( ExtractFilePath( ExcludeTrailingPathDelimiter( ADirectory ) ) );
+  var Current       := ParentDirectory( ADirectory );
 
   while Current <> '' do
   begin
-    var Name := ExtractFileName( Current );
+    var Name        := ExtractFileName( Current );
 
     if ( Name <> '' ) and ( not IsGenericDirectoryName( Name ) ) then
       Exit( Name );
 
-    var Next := ExcludeTrailingPathDelimiter( ExtractFilePath( Current ) );
-
-    if Next = Current then Break;
-
-    Current := Next;
+    Current         := ParentDirectory( Current );
   end;
 
   // Fallback
-  Result := DirName;
+  Result            := DirName;
 
 end;
 
@@ -842,121 +879,113 @@ end;
 function TLibraryDiscovery.DetectLicence( const ADirectory: string; out ALicenceFile: string ): string;
 begin
 
-  Result := '';
-  ALicenceFile := '';
+  Result            := '';
+  ALicenceFile      := '';
 
-  var LicenceNames: TArray<string> := [
-    'LICENSE', 'LICENSE.txt', 'LICENSE.md',
-    'LICENCE', 'LICENCE.txt', 'LICENCE.md',
-    'COPYING', 'COPYING.txt'
-  ];
+  // This directory first, then the parent (some libraries nest source in a subdirectory)
+  var Dirs: TArray<string> := [ ADirectory ];
+  var ParentDir     := ParentDirectory( ADirectory );
 
-  for var LName in LicenceNames do
-  begin
-    var FullPath := TPath.Combine( ADirectory, LName );
+  if ParentDir <> '' then
+    Dirs            := Dirs + [ ParentDir ];
 
-    if FileExists( FullPath ) then
+  for var Dir in Dirs do
+    for var LName in LicenceFileNames do
     begin
-      ALicenceFile := FullPath;
+      var FullPath := TPath.Combine( Dir, LName );
+
+      if ( not FileExists( FullPath ) ) then Continue;
+
+      ALicenceFile  := FullPath;
 
       try
-        var Lines := TFile.ReadAllLines( FullPath, TEncoding.UTF8 );
+        // The first 50 lines carry the identifying text
+        var Lines   := ReadTextFileHead( FullPath, 16384 ).Split( [ #10 ] );
         var Preview := '';
 
         for var I := 0 to Min( 49, High( Lines ) ) do
-          Preview := Preview + Lines[ I ] + ' ';
+          Preview   := Preview + Trim( Lines[ I ] ) + ' ';
 
-        Result := MapLicenceText( Preview );
+        Result      := MapLicenceText( Preview );
       except
-        // Can't read file — return empty
+        on E: EInOutError do
+          Log( llWarning, Format( 'Could not read licence file %s: %s', [ FullPath, E.Message ] ) );
+        on E: EStreamError do
+          Log( llWarning, Format( 'Could not read licence file %s: %s', [ FullPath, E.Message ] ) );
       end;
 
       Exit;
     end;
-  end;
-
-  // Also check parent directory (some libraries nest source in a subdirectory)
-  var ParentDir := TDirectory.GetParent( ADirectory );
-
-  if ParentDir <> '' then
-  begin
-    for var LName in LicenceNames do
-    begin
-      var FullPath := TPath.Combine( ParentDir, LName );
-
-      if FileExists( FullPath ) then
-      begin
-        ALicenceFile := FullPath;
-
-        try
-          var Lines := TFile.ReadAllLines( FullPath, TEncoding.UTF8 );
-          var Preview := '';
-
-          for var I := 0 to Min( 49, High( Lines ) ) do
-            Preview := Preview + Lines[ I ] + ' ';
-
-          Result := MapLicenceText( Preview );
-        except
-        end;
-
-        Exit;
-      end;
-    end;
-  end;
 
 end;
 
 function TLibraryDiscovery.MapLicenceText( const AText: string ): string;
 begin
 
-  Result := '';
+  Result            := '';
 
-  var Upper := UpperCase( AText );
+  var Upper         := UpperCase( TRegEx.Replace( AText, '\s+', ' ' ) );
 
-  if ( Pos( 'MIT LICENSE', Upper ) > 0 ) or ( Pos( 'PERMISSION IS HEREBY GRANTED', Upper ) > 0 ) then
-    Exit( 'MIT' );
+  // Most specific texts first: the Boost and MPL texts quote phrases other licences use
+  if Pos( 'BOOST SOFTWARE LICENSE', Upper ) > 0 then
+    Exit( 'BSL-1.0' );
+
+  if Pos( 'MOZILLA PUBLIC LICENSE', Upper ) > 0 then
+  begin
+    if Pos( 'VERSION 2.0', Upper ) > 0 then
+      Exit( 'MPL-2.0' )
+    else if Pos( 'VERSION 1.1', Upper ) > 0 then
+      Exit( 'MPL-1.1' )
+    else if Pos( 'VERSION 1.0', Upper ) > 0 then
+      Exit( 'MPL-1.0' );
+
+    Exit;
+  end;
 
   if ( Pos( 'APACHE LICENSE', Upper ) > 0 ) and ( Pos( 'VERSION 2.0', Upper ) > 0 ) then
     Exit( 'Apache-2.0' );
 
-  if ( Pos( 'BSD 3-CLAUSE', Upper ) > 0 ) or
-     ( ( Pos( 'REDISTRIBUTION AND USE', Upper ) > 0 ) and ( Pos( 'THREE CONDITIONS', Upper ) > 0 ) ) then
-    Exit( 'BSD-3-Clause' );
-
-  if ( Pos( 'BSD 2-CLAUSE', Upper ) > 0 ) then
-    Exit( 'BSD-2-Clause' );
-
-  if ( Pos( 'GNU LESSER GENERAL PUBLIC LICENSE', Upper ) > 0 ) or ( Pos( 'LGPL', Upper ) > 0 ) then
+  if Pos( 'GNU LESSER GENERAL PUBLIC LICENSE', Upper ) > 0 then
   begin
     if Pos( 'VERSION 3', Upper ) > 0 then
       Exit( 'LGPL-3.0' )
-    else
+    else if Pos( 'VERSION 2.1', Upper ) > 0 then
       Exit( 'LGPL-2.1' );
+
+    Exit;
   end;
 
-  if ( Pos( 'GNU GENERAL PUBLIC LICENSE', Upper ) > 0 ) or ( Pos( ' GPL ', Upper ) > 0 ) then
+  if Pos( 'GNU GENERAL PUBLIC LICENSE', Upper ) > 0 then
   begin
     if Pos( 'VERSION 3', Upper ) > 0 then
       Exit( 'GPL-3.0' )
     else if Pos( 'VERSION 2', Upper ) > 0 then
-      Exit( 'GPL-2.0' )
-    else
-      Exit( 'GPL-3.0' );
+      Exit( 'GPL-2.0' );
+
+    Exit;
   end;
 
-  if ( Pos( 'MOZILLA PUBLIC LICENSE', Upper ) > 0 ) then
-  begin
-    if Pos( 'VERSION 2', Upper ) > 0 then
-      Exit( 'MPL-2.0' )
-    else
-      Exit( 'MPL-1.1' );
-  end;
-
-  if Pos( 'UNLICENSE', Upper ) > 0 then
+  if Pos( 'THIS IS FREE AND UNENCUMBERED SOFTWARE', Upper ) > 0 then
     Exit( 'Unlicense' );
 
-  if ( Pos( 'BOOST SOFTWARE LICENSE', Upper ) > 0 ) then
-    Exit( 'BSL-1.0' );
+  if ( Pos( 'MIT LICENSE', Upper ) > 0 ) or ( Pos( 'PERMISSION IS HEREBY GRANTED, FREE OF CHARGE, TO ANY PERSON OBTAINING A COPY', Upper ) > 0 ) then
+    Exit( 'MIT' );
+
+  if Pos( 'PERMISSION TO USE, COPY, MODIFY, AND/OR DISTRIBUTE THIS SOFTWARE', Upper ) > 0 then
+    Exit( 'ISC' );
+
+  if ( Pos( 'ALTERED SOURCE VERSIONS MUST BE PLAINLY MARKED', Upper ) > 0 ) then
+    Exit( 'Zlib' );
+
+  if Pos( 'REDISTRIBUTION AND USE IN SOURCE AND BINARY FORMS', Upper ) > 0 then
+  begin
+    if Pos( 'ADVERTISING MATERIALS', Upper ) > 0 then
+      Exit( 'BSD-4-Clause' )
+    else if Pos( 'NEITHER THE NAME', Upper ) > 0 then
+      Exit( 'BSD-3-Clause' )
+    else
+      Exit( 'BSD-2-Clause' );
+  end;
 
 end;
 
@@ -967,157 +996,126 @@ end;
 function TLibraryDiscovery.DetectVendor( const ADirectory: string ): string;
 begin
 
-  Result := '';
+  Result            := '';
 
   // Try multiple .pas files in the directory until we find vendor info
   try
-    var PasFiles := TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly );
-
-    for var PasFile in PasFiles do
+    for var PasFile in TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly ) do
     begin
-      Result := ExtractVendorFromFile( PasFile );
+      Result        := ExtractVendorFromFile( PasFile );
 
-      if Result <> '' then
-      begin
-        // Clean up common prefixes
-        if Result.StartsWith( 'by ', True ) then
-          Result := Trim( Copy( Result, 4, Length( Result ) ) );
-
-        Exit;
-      end;
+      if Result <> '' then Exit;
     end;
   except
-    // Access denied
+    on E: EInOutError do
+      Log( llWarning, Format( 'Could not read directory %s: %s', [ ADirectory, E.Message ] ) );
   end;
+
+end;
+
+/// <summary>
+///   Cleans the text that follows a copyright marker down to the holder's name:
+///   strips (c) / copyright signs, years and year ranges, "by", comment closers,
+///   "All rights reserved" and surrounding punctuation.
+/// </summary>
+function CleanCopyrightHolder( const AText: string ): string;
+begin
+
+  Result            := Trim( AText );
+
+  // Leading markers and years, in any order: "(C) 2020-2026, ", "© 2020 ", ": "
+  var Changed       := True;
+
+  while Changed and ( Result <> '' ) do
+  begin
+    Changed         := False;
+
+    if Result.StartsWith( '(c)', True ) then
+    begin
+      Result        := Trim( Result.Substring( 3 ) );
+      Changed       := True;
+    end
+    else if CharInSet( Result[ 1 ], [ '0'..'9', '-', ',', ':', ' ' ] ) or ( Result[ 1 ] = #$00A9 ) or ( Result[ 1 ] = #$2013 ) then
+    begin
+      Result        := Trim( Result.Substring( 1 ) );
+      Changed       := True;
+    end;
+  end;
+
+  if Result.StartsWith( 'by ', True ) then
+    Result          := Trim( Result.Substring( 3 ) );
+
+  // Trailing comment markers and "All rights reserved"
+  Result            := StringReplace( Result, '*)', '', [ rfReplaceAll ] );
+  Result            := StringReplace( Result, '}', '', [ rfReplaceAll ] );
+
+  var ArPos         := Pos( 'ALL RIGHTS', UpperCase( Result ) );
+
+  if ArPos > 0 then
+    Result          := Copy( Result, 1, ArPos - 1 );
+
+  Result            := Trim( Result );
+
+  // Surrounding parentheses and trailing punctuation
+  if Result.StartsWith( '(' ) and Result.EndsWith( ')' ) then
+    Result          := Copy( Result, 2, Result.Length - 2 )
+  else if Result.StartsWith( '(' ) then
+    Delete( Result, 1, 1 );
+
+  Result            := Trim( Result );
+
+  while ( Result.Length > 0 ) and CharInSet( Result[ Result.Length ], [ '.', ')', ',', ';', ' ' ] ) do
+    Delete( Result, Result.Length, 1 );
+
+  // Must contain a letter to be a name
+  if ( Result.Length <= 2 ) or ( not TRegEx.IsMatch( Result, '[A-Za-z]' ) ) then
+    Result          := '';
 
 end;
 
 function TLibraryDiscovery.ExtractVendorFromFile( const APasFile: string ): string;
 begin
 
-  Result := '';
+  Result            := '';
 
   try
-    var Lines := TFile.ReadAllLines( APasFile, TEncoding.UTF8 );
-    var MaxLines := Min( 29, High( Lines ) );
+    var Lines       := ReadTextFileHead( APasFile, 8192 ).Split( [ #10 ] );
 
-    for var I := 0 to MaxLines do
+    for var I := 0 to Min( 29, High( Lines ) ) do
     begin
-      var Line := Trim( Lines[ I ] );
+      var Line      := Trim( Lines[ I ] );
 
-      // Look for "Copyright (c) YYYY Name", "Copyright YYYY Name", or "© YYYY Name"
-      var CopyrightPos := Pos( 'Copyright', Line );
-      var CopyrightSymbolPos := Pos( '©', Line );
-
-      // Handle © symbol appearing without "Copyright" word
-      if ( CopyrightPos = 0 ) and ( CopyrightSymbolPos > 0 ) then
-      begin
-        var After := Trim( Copy( Line, CopyrightSymbolPos + 2, Length( Line ) ) );
-
-        // Strip year(s) and delimiters
-        while ( After.Length > 0 ) and ( CharInSet( After[ 1 ], [ '0'..'9', '-', ',', ' ' ] ) or ( Ord( After[ 1 ] ) = 8211 ) ) do
-          Delete( After, 1, 1 );
-
-        After := Trim( After );
-
-        // Strip trailing comment markers
-        After := StringReplace( After, '*)', '', [] );
-        After := StringReplace( After, '}', '', [] );
-        After := Trim( After );
-
-        // Strip surrounding parentheses
-        if After.StartsWith( '(' ) and After.EndsWith( ')' ) then
-          After := Copy( After, 2, After.Length - 2 )
-        else if After.StartsWith( '(' ) then
-          Delete( After, 1, 1 );
-
-        // Strip trailing period or closing paren
-        After := Trim( After );
-
-        while ( After.Length > 0 ) and CharInSet( After[ After.Length ], [ '.', ')' ] ) do
-          Delete( After, After.Length, 1 );
-
-        After := Trim( After );
-
-        // Strip "All rights reserved" suffix
-        var ArPos := Pos( '. All rights', After );
-
-        if ArPos > 0 then
-          After := Trim( Copy( After, 1, ArPos - 1 ) );
-
-        if After.Length > 2 then
-        begin
-          Result := Trim( After );
-          Exit;
-        end;
-      end;
+      // "Copyright (c) YYYY Name", "COPYRIGHT YYYY Name", or "© YYYY Name"
+      var CopyrightPos := Pos( 'COPYRIGHT', UpperCase( Line ) );
 
       if CopyrightPos > 0 then
+        Result      := CleanCopyrightHolder( Copy( Line, CopyrightPos + 9, Length( Line ) ) )
+      else
       begin
-        var After := Copy( Line, CopyrightPos + 9, Length( Line ) );
-        After := Trim( After );
+        var SymbolPos := Pos( #$00A9, Line );
 
-        // Strip (c) or ©
-        if After.StartsWith( '(c)' ) then
-          After := Trim( Copy( After, 4, Length( After ) ) )
-        else if After.StartsWith( '©' ) then
-          After := Trim( Copy( After, 3, Length( After ) ) );
-
-        // Strip year(s) like "2020" or "2020-2026" or "2020–2026" or "2020, 2026"
-        while ( After.Length > 0 ) and ( CharInSet( After[ 1 ], [ '0'..'9', '-', ',', ' ' ] ) or ( After[ 1 ] = '–' ) ) do
-          Delete( After, 1, 1 );
-
-        After := Trim( After );
-
-        // Strip trailing comment markers
-        After := StringReplace( After, '*)', '', [] );
-        After := StringReplace( After, '}', '', [] );
-        After := Trim( After );
-
-        // Strip surrounding parentheses
-        if After.StartsWith( '(' ) and After.EndsWith( ')' ) then
-          After := Copy( After, 2, After.Length - 2 )
-        else if After.StartsWith( '(' ) then
-          Delete( After, 1, 1 );
-
-        // Strip trailing period or closing paren
-        After := Trim( After );
-
-        while ( After.Length > 0 ) and CharInSet( After[ After.Length ], [ '.', ')' ] ) do
-          Delete( After, After.Length, 1 );
-
-        After := Trim( After );
-
-        // Strip "All rights reserved" suffix
-        var ArPos2 := Pos( '. All rights', After );
-
-        if ArPos2 > 0 then
-          After := Trim( Copy( After, 1, ArPos2 - 1 ) );
-
-        if After.Length > 2 then
-        begin
-          Result := Trim( After );
-          Exit;
-        end;
+        if SymbolPos > 0 then
+          Result    := CleanCopyrightHolder( Copy( Line, SymbolPos + 1, Length( Line ) ) );
       end;
 
-      // Look for "Author: Name"
-      if Line.StartsWith( 'Author:', True ) or Line.StartsWith( '  Author:', True ) then
+      if Result <> '' then Exit;
+
+      // "Author: Name"
+      if Line.StartsWith( 'Author:', True ) then
       begin
-        var After := Trim( Copy( Line, Pos( ':', Line ) + 1, Length( Line ) ) );
-        After := StringReplace( After, '*)', '', [] );
-        After := StringReplace( After, '}', '', [] );
-        After := Trim( After );
+        var After   := Trim( Copy( Line, Pos( ':', Line ) + 1, Length( Line ) ) );
+        After       := StringReplace( After, '*)', '', [ ] );
+        After       := Trim( StringReplace( After, '}', '', [ ] ) );
 
         if After.Length > 2 then
-        begin
-          Result := After;
-          Exit;
-        end;
+          Exit( After );
       end;
     end;
   except
-    // Can't read file — return empty
+    on E: EInOutError do
+      Log( llWarning, Format( 'Could not read %s: %s', [ APasFile, E.Message ] ) );
+    on E: EStreamError do
+      Log( llWarning, Format( 'Could not read %s: %s', [ APasFile, E.Message ] ) );
   end;
 
 end;
@@ -1129,33 +1127,29 @@ end;
 function TLibraryDiscovery.DetectVersion( const ADirectory: string ): string;
 begin
 
-  Result := '';
+  Result            := '';
 
-  // Look for .dpk files and try to extract version
+  // A package's {$LIBVERSION '...'} directive, or a version number in its {$DESCRIPTION '...'}
   try
-    var DpkFiles := TDirectory.GetFiles( ADirectory, '*.dpk', TSearchOption.soTopDirectoryOnly );
-
-    for var DpkFile in DpkFiles do
+    for var DpkFile in TDirectory.GetFiles( ADirectory, '*.dpk', TSearchOption.soTopDirectoryOnly ) do
     begin
-      var Content := TFile.ReadAllText( DpkFile, TEncoding.UTF8 );
+      var Content   := ReadTextFile( DpkFile );
 
-      // Look for version patterns like "version '1.2.3'" or version numbers in the filename
-      var VerPos := Pos( '{$ver ', LowerCase( Content ) );
+      var LibVersion := TRegEx.Match( Content, '\{\$LIBVERSION\s+''([^'']+)''', [ roIgnoreCase ] );
 
-      if VerPos > 0 then
-      begin
-        var After := Copy( Content, VerPos + 6, 20 );
-        var EndPos := Pos( '}', After );
+      if LibVersion.Success then
+        Exit( Trim( LibVersion.Groups[ 1 ].Value ) );
 
-        if EndPos > 0 then
-        begin
-          Result := Trim( Copy( After, 1, EndPos - 1 ) );
-          Exit;
-        end;
-      end;
+      var Description := TRegEx.Match( Content, '\{\$DESCRIPTION\s+''[^'']*?\bv?(\d+\.\d+(?:\.\d+){0,2})\b[^'']*''', [ roIgnoreCase ] );
+
+      if Description.Success then
+        Exit( Description.Groups[ 1 ].Value );
     end;
   except
-    // Can't read directory — return empty
+    on E: EInOutError do
+      Log( llWarning, Format( 'Could not read packages in %s: %s', [ ADirectory, E.Message ] ) );
+    on E: EStreamError do
+      Log( llWarning, Format( 'Could not read packages in %s: %s', [ ADirectory, E.Message ] ) );
   end;
 
 end;
@@ -1167,44 +1161,45 @@ end;
 function TLibraryDiscovery.ComputePrefix( const AUnitNames: TArray<string> ): string;
 begin
 
-  Result := '';
+  Result            := '';
 
   if Length( AUnitNames ) = 0 then Exit;
 
   if Length( AUnitNames ) = 1 then
   begin
     // Single unit — use the full name as exact match, no prefix
-    Result := AUnitNames[ 0 ];
+    Result          := AUnitNames[ 0 ];
     Exit;
   end;
 
   // Find the longest common prefix of all unit names
-  var First := AUnitNames[ 0 ];
+  var First         := AUnitNames[ 0 ];
 
   for var CharIdx := 1 to First.Length do
   begin
-    var AllMatch := True;
+    var AllMatch    := True;
 
     for var I := 1 to High( AUnitNames ) do
     begin
       if ( CharIdx > AUnitNames[ I ].Length ) or
-         ( not SameText( First[ CharIdx ], AUnitNames[ I ][ CharIdx ] ) ) then
+        ( not SameText( First[ CharIdx ], AUnitNames[ I ][ CharIdx ] ) ) then
       begin
-        AllMatch := False;
+        AllMatch    := False;
         Break;
       end;
     end;
 
     if AllMatch then
-      Result := Copy( First, 1, CharIdx )
+      Result        := Copy( First, 1, CharIdx )
     else
       Break;
   end;
 
   // Ensure minimum prefix length
   if Result.Length < MinPrefixLength then
-    Result := '';
+    Result          := '';
 
 end;
 
 end.
+
