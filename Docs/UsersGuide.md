@@ -156,7 +156,8 @@ Units found in the project directory, and in sibling directories (sharing the
 same parent as your project, such as a shared code folder) that do not look
 like a library, are automatically marked as own code. A directory "looks like a
 library" when it, or its parent, has a `LICENSE`/`LICENCE`/`COPYING` file, or a
-`.dpk` package sits in it, its parent or a subdirectory — so a third-party
+`.dpk` package sits in it, its parent (unless the parent is a drive root such as
+`E:\`) or a subdirectory — so a third-party
 library checked out beside your project is not mistaken for your own code.
 Auto-detected own-code units count as own code in the same run, and are saved to
 `components.json` once the SBOM has been written. You don't need to do anything

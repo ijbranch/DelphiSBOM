@@ -2,6 +2,21 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-07 — Library Name and Vendor Detection [Fixed]
+
+- A library directly under a drive or share root took its name from an unrelated package: the
+  parent searched for a `.dpk` was the root itself, whose subfolders are other checkouts, so
+  `E:\EurekaLog` was named "rbEDB" (from `E:\ElevateDB\rbEDB2337.dpk`). The parent is no longer
+  searched when it is a root, for the name or for "looks like a library" — `Source/uLibraryDiscovery.pas`
+- A vendor whose name ends in a bracket lost the bracket: "Jane Doe (Acme Software). All rights
+  reserved." gave "Jane Doe (Acme Software". A trailing `)` is now stripped only when unmatched —
+  `Source/uLibraryDiscovery.pas`
+- 10 tests for both (`LibraryParentDirectory`, `CleanCopyrightHolder`, now in the unit's interface);
+  5 were red before the fix. Found by running the Release exe over a real 83-unit project —
+  `Tests/TestLibraryDiscovery.pas`, `Tests/DelphiSBOMTests.dpr`, `Tests/DelphiSBOMTests.dproj`
+- Help and User's Guide describe how a library is named and the drive-root exception —
+  `Docs/Help.md`, `Docs/UsersGuide.md`
+
 ## 2026-10-06 — Scripted GUI Checks [Added]
 
 - `Tests/GuiChecks.ps1`: 30 PASS/FAIL checks against the Release exe, driven by window messages

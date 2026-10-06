@@ -1,7 +1,7 @@
 # DelphiSBOM — Implementation Progress
 
 **Plan document:** `DelphiSBOM_Refined_Plan.md` (v0.6 — Final Draft)
-**Last updated:** 2026-10-06 (Session 8)
+**Last updated:** 2026-10-07 (Session 11)
 
 ---
 
@@ -13,7 +13,7 @@
 
 ## Next Action
 
-Run a generated SBOM from a real project through a CycloneDX 1.5 validator (e.g. `cyclonedx validate`). Run `Tests\Win64\Debug\DelphiSBOMTests.exe` after any change to the pipeline units. DX.Comply: Olaf's draft PR #56 (stacked on #53/#55) reads components.json as is via `--manifest`; answered his two questions (dependency graph is fine; units_exact > own_code_units > units_prefix) on 2026-10-07 in https://github.com/omonien/DX.Comply/issues/20#issuecomment-6020132977 — once #56 merges, run it against our manifests. Decide on the `LICENCE` copyright line (audit L21). Olaf asked (2026-10-06) for a sample components.json — the extended `Samples/components.sample.json` covers every field. Then Phase 2 items: cancellation (audit M21), report writer, cancel button, CLI mode, DUnitX tests, v1.0.0 release tag. Future enhancement: capture DX.Comply confidence/evidence-type properties in TUnitEvidence.
+Libraries consumed only as DCUs (the IDE library path points at DCU folders, no `.pas` visible) stay unresolved in discovery; decide whether to document that or search for their source. Run a generated SBOM from a real project through a CycloneDX 1.5 validator (e.g. `cyclonedx validate`). Run `Tests\Win64\Debug\DelphiSBOMTests.exe` after any change to the pipeline units. DX.Comply: Olaf's draft PR #56 (stacked on #53/#55) reads components.json as is via `--manifest`; answered his two questions (dependency graph is fine; units_exact > own_code_units > units_prefix) on 2026-10-07 in https://github.com/omonien/DX.Comply/issues/20#issuecomment-6020132977 — once #56 merges, run it against our manifests. Decide on the `LICENCE` copyright line (audit L21). Olaf asked (2026-10-06) for a sample components.json — the extended `Samples/components.sample.json` covers every field. Then Phase 2 items: cancellation (audit M21), report writer, cancel button, CLI mode, DUnitX tests, v1.0.0 release tag. Future enhancement: capture DX.Comply confidence/evidence-type properties in TUnitEvidence.
 
 ## Blockers / Questions for Ian
 
@@ -90,4 +90,5 @@ Run a generated SBOM from a real project through a CycloneDX 1.5 validator (e.g.
 | 2026-10-06 | 8 | Full read-only audit of all units, `.dproj` and repository (four parallel reviews, top claims spot-checked against the code). Findings recorded in `Docs/AUDIT-2026-10-06.md`. Repository references moved from Codeberg to GitHub (`CLAUDE.md`, `Docs/Help.md`, `PROGRESS.md`, `Source/components.json`). No code changed. |
 | 2026-10-06 | 9 | Implemented the audit fixes (45 of 49; M21, L16, L17 deferred; L21 partial). New units `uTextFiles.pas` and `uDelphiInstall.pas`. `USE_SYNEDIT` moved to the `DELPHISBOM_DEFINES` environment variable with a `.githooks/pre-commit` guard. Docs updated (README, Help, UsersGuide, SCHEMA, CYCLONEDX-NOTES, CLAUDE.md) including the Delphi 13 / Win64-only test-environment caveat. Mid-session the IDE ran a formatter over every unit and re-saved the `.dfm` without `TextHeight` (restored). Verified by clean builds and a 52-check harness; GUI behaviour not yet exercised by hand. |
 | 2026-10-06 | 10 | DUnitX suite added (`Tests/`): runner, `TestSupport` scratch-dir helper and 9 fixtures, 64 tests, all passing on Delphi 13 Win64 with no hints. Eight fixes mutation-checked (H1, H2, H4, H5, H6, M4, M5, M7). `Samples/components.sample.json` extended with an SPDX expression, a Commercial licence, own_code_units and own_code_prefixes (for the DX.Comply author). README and CLAUDE.md document the suite and its environment caveat. |
+| 2026-10-07 | 11 | Answered the DX.Comply author's PR #56 questions on issue #20. Ran the Release exe over a large internal project (83 units). It found two discovery bugs: a library directly under a drive root was named after an unrelated `.dpk` in a sibling folder of that root, and a vendor name lost its closing bracket. Both fixed in `uLibraryDiscovery.pas` (`LibraryParentDirectory`, `CleanCopyrightHolder` moved to the interface), with 10 tests in `Tests/TestLibraryDiscovery.pas`, 5 red before the fix. Suite 74/74. Re-run confirmed correct names and vendor. Help, User's Guide and CHANGES updated. |
 | 2026-10-06 | 11 | GUI checks run against the Release build with a PowerShell script driving named controls by window messages (no coordinates; user INI backed up and restored): 30/30 pass. Script committed as `Tests/GuiChecks.ps1`. Note: library discovery only searches project search paths, the IDE library path and fixed roots, so a sibling library is found only when a search path points at it. |

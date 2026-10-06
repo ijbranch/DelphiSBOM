@@ -36,7 +36,10 @@ Also lists all recognised third-party components with their versions.
 
 Shows libraries discovered automatically by scanning the file system:
 
-- **Library name** — derived from the directory name
+- **Library name** — the name of a `.dpk` package in the library directory, one of its
+  subdirectories, its parent or a `Packages` folder beside it; otherwise the nearest
+  non-generic directory name. The parent is not searched when it is a drive or share root
+  (`E:\`), whose other folders are unrelated libraries
 - **Directory** — where the `.pas` files were found
 - **Vendor** — extracted from copyright headers in source files
 - **Licence** — detected from LICENSE/LICENCE/COPYING files
