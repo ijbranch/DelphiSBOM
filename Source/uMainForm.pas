@@ -1,4 +1,4 @@
-(*
+﻿(*
   DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
@@ -63,51 +63,53 @@ type
     procedure FormCloseQuery( Sender: TObject; var CanClose: Boolean );
   private
     // Input controls
-    FLblProject    : TLabel;
-    FEdtProject    : TComboBox;
-    FBtnProject    : TButton;
-    FLblManifest   : TLabel;
-    FEdtManifest   : TEdit;
-    FBtnManifest   : TButton;
-    FLblOutputDir  : TLabel;
-    FEdtOutputDir  : TEdit;
-    FBtnOutputDir  : TButton;
-    FLblDelphiPath : TLabel;
-    FEdtDelphiPath : TEdit;
-    FBtnDelphiPath : TButton;
-    FLblVersion    : TLabel;
-    FEdtVersion    : TEdit;
-    FLblDXComply   : TLabel;
-    FEdtDXComply   : TEdit;
-    FBtnDXComply   : TButton;
+    FLblProject: TLabel;
+    FEdtProject: TComboBox;
+    FBtnProject: TButton;
+    FLblManifest: TLabel;
+    FEdtManifest: TEdit;
+    FBtnManifest: TButton;
+    FLblOutputDir: TLabel;
+    FEdtOutputDir: TEdit;
+    FBtnOutputDir: TButton;
+    FLblDelphiPath: TLabel;
+    FEdtDelphiPath: TEdit;
+    FBtnDelphiPath: TButton;
+    FLblVersion: TLabel;
+    FEdtVersion: TEdit;
+    FLblDXComply: TLabel;
+    FEdtDXComply: TEdit;
+    FBtnDXComply: TButton;
 
     // Action buttons
-    FBtnGenerate : TButton;
-    FBtnValidate : TButton;
-    FBtnViewSBOM : TButton;
+    FBtnGenerate: TButton;
+    FBtnValidate: TButton;
+    FBtnViewSBOM: TButton;
 
     // Results panel
-    FPnlResults      : TPanel;
-    FPnlSummary      : TPanel;
-    FSplitter        : TSplitter;
-    FPnlDiscovery    : TPanel;
-    FMmoSummary      : TMemo;
-    FMmoDiscovery    : TMemo;
-    FBtnSaveRegen      : TButton;
-    FBtnEditLibraries  : TButton;
-    FBtnMarkOwnCode    : TButton;
+    FPnlResults: TPanel;
+    FPnlSummary: TPanel;
+    FSplitter: TSplitter;
+    FPnlDiscovery: TPanel;
+    FMmoSummary: TMemo;
+    FMmoDiscovery: TMemo;
+    FBtnSaveRegen: TButton;
+    FBtnEditLibraries: TButton;
+    FBtnMarkOwnCode: TButton;
 
     // Log panel
-    FMmoLog : TMemo;
+    FMmoLog: TMemo;
 
     // Dialogs
-    FDlgOpenProject  : TOpenDialog;
-    FDlgOpenManifest : TOpenDialog;
+    FDlgOpenProject: TOpenDialog;
+    FDlgOpenManifest: TOpenDialog;
 
-    FProcessing        : Boolean;
-    FLastResult        : TSBOMResult;
-    FDiscoveredLibraries : TArray<TDiscoveredLibrary>;
-    FMRUManager        : TMRUManager;
+    FProcessing: Boolean;
+    FLastResult: TSBOMResult;
+    FDiscoveredLibraries: TArray<TDiscoveredLibrary>;
+    FMRUManager: TMRUManager;
+    FFieldsProject: string; // Project the per-project fields were last populated for
+    FLibrariesEdited: Boolean; // Editor changes not yet saved to components.json
 
     procedure CreateControls;
     procedure CreateInputRow( var ATop: Integer; const ACaption: string;
@@ -116,8 +118,8 @@ type
 
     procedure LoadMRU;
     procedure SaveToMRU;
-    procedure RestoreProjectSettings( const AProjectFile: string );
     procedure CboProjectSelect( Sender: TObject );
+    procedure EdtProjectExit( Sender: TObject );
 
     procedure BtnProjectClick( Sender: TObject );
     procedure BtnManifestClick( Sender: TObject );
@@ -127,9 +129,20 @@ type
     procedure BtnGenerateClick( Sender: TObject );
     procedure BtnValidateClick( Sender: TObject );
 
-    procedure AutoPopulateDefaults;
-    procedure CreateDefaultManifest( const APath: string );
-    procedure DetectDelphiPath;
+    /// <summary>
+    ///   Starts a generation run on a worker thread.
+    /// </summary>
+    /// <param name="AClearLog">False keeps messages logged just before (e.g. "Manifest saved").</param>
+    procedure StartGenerate( AClearLog: Boolean );
+
+    /// <summary>
+    ///   Resets every per-project field (manifest, output directory, version override, DX.Comply file)
+    ///   to the project's defaults, then applies the project's MRU entry, and clears the previous
+    ///   project's results. Fields from one project must never carry over to another.
+    /// </summary>
+    procedure ApplyProjectSettings;
+    procedure ClearResults;
+    procedure UpdateActionButtons;
     procedure DisplayDiscoveredLibraries;
     procedure BtnSaveRegenClick( Sender: TObject );
     procedure BtnEditLibrariesClick( Sender: TObject );
@@ -143,15 +156,15 @@ type
   end;
 
 var
-  MainForm: TMainForm;
+  MainForm          : TMainForm;
 
 implementation
 
 uses
-  System.IOUtils, System.Win.Registry, System.Generics.Collections,
-  {$IFDEF USE_SYNEDIT}
+  System.IOUtils, System.Generics.Collections, System.UITypes, Winapi.ActiveX,
+{$IFDEF USE_SYNEDIT}
   SynEdit, SynHighlighterJSON,
-  {$ENDIF}
+{$ENDIF}
   uSBOMEngine, uManifestLoader, uLibraryEditor;
 
 {$R *.dfm}
@@ -164,9 +177,9 @@ constructor TSBOMGenerateThread.Create( AForm: TMainForm; const AOptions: TSBOMO
 begin
 
   inherited Create( True );
-  FreeOnTerminate := True;
-  FForm    := AForm;
-  FOptions := AOptions;
+  FreeOnTerminate   := True;
+  FForm             := AForm;
+  FOptions          := AOptions;
 
 end;
 
@@ -180,16 +193,25 @@ end;
 procedure TSBOMGenerateThread.SyncComplete;
 begin
 
-  FForm.DisplayResults( FResult );
-  FForm.SetProcessing( False );
+  // Always leave the form usable: a failure while displaying results must not strand it in
+  // the processing state, where it can neither run again nor close
+  try
+    try
+      FForm.DisplayResults( FResult );
+    except
+      Application.HandleException( FForm );
+    end;
+  finally
+    FForm.SetProcessing( False );
+  end;
 
 end;
 
 procedure TSBOMGenerateThread.DoLog( ALevel: TLogLevel; const AMsg: string );
 begin
 
-  FLogLevel := ALevel;
-  FLogMsg   := AMsg;
+  FLogLevel         := ALevel;
+  FLogMsg           := AMsg;
   Synchronize( SyncLog );
 
 end;
@@ -197,31 +219,38 @@ end;
 procedure TSBOMGenerateThread.Execute;
 begin
 
-  var Self_ := Self;
-  var Engine := TSBOMEngine.Create(
-    procedure ( ALevel: TLogLevel; AMsg: string )
-    begin
-      Self_.DoLog( ALevel, AMsg );
-    end );
+  // The .dproj is read with TXMLDocument (MSXML, a COM server): this thread needs its own apartment
+  var ComInitialised := Succeeded( CoInitializeEx( nil, COINIT_APARTMENTTHREADED ) );
   try
-    try
-      FResult := Engine.Execute( FOptions );
-    except
-      on E: Exception do
+    var Self_       := Self;
+    var Engine      := TSBOMEngine.Create(
+      procedure( ALevel: TLogLevel; AMsg: string )
       begin
-        FResult              := Default( TSBOMResult );
-        FResult.Success      := False;
-        FResult.ErrorMessage := E.Message;
+        Self_.DoLog( ALevel, AMsg );
+      end );
+    try
+      try
+        FResult     := Engine.Execute( FOptions );
+      except
+        on E: Exception do
+        begin
+          FResult   := Default( TSBOMResult );
+          FResult.Success := False;
+          FResult.ErrorMessage := E.Message;
 
-        FLogLevel := llError;
-        FLogMsg   := E.Message;
-        Synchronize( SyncLog );
+          FLogLevel := llError;
+          FLogMsg   := E.Message;
+          Synchronize( SyncLog );
+        end;
       end;
-    end;
 
-    Synchronize( SyncComplete );
+      Synchronize( SyncComplete );
+    finally
+      Engine.Free;
+    end;
   finally
-    Engine.Free;
+    if ComInitialised then
+      CoUninitialize;
   end;
 
 end;
@@ -234,9 +263,9 @@ constructor TSBOMValidateThread.Create( AForm: TMainForm; const AManifestPath: s
 begin
 
   inherited Create( True );
-  FreeOnTerminate := True;
-  FForm         := AForm;
-  FManifestPath := AManifestPath;
+  FreeOnTerminate   := True;
+  FForm             := AForm;
+  FManifestPath     := AManifestPath;
 
 end;
 
@@ -257,8 +286,8 @@ end;
 procedure TSBOMValidateThread.DoLog( ALevel: TLogLevel; const AMsg: string );
 begin
 
-  FLogLevel := ALevel;
-  FLogMsg   := AMsg;
+  FLogLevel         := ALevel;
+  FLogMsg           := AMsg;
   Synchronize( SyncLog );
 
 end;
@@ -266,9 +295,9 @@ end;
 procedure TSBOMValidateThread.Execute;
 begin
 
-  var Self_ := Self;
-  var Engine := TSBOMEngine.Create(
-    procedure ( ALevel: TLogLevel; AMsg: string )
+  var Self_         := Self;
+  var Engine        := TSBOMEngine.Create(
+    procedure( ALevel: TLogLevel; AMsg: string )
     begin
       Self_.DoLog( ALevel, AMsg );
     end );
@@ -278,8 +307,8 @@ begin
     except
       on E: Exception do
       begin
-        FLogLevel := llError;
-        FLogMsg   := E.Message;
+        FLogLevel   := llError;
+        FLogMsg     := E.Message;
         Synchronize( SyncLog );
       end;
     end;
@@ -298,22 +327,14 @@ end;
 procedure TMainForm.FormCreate( Sender: TObject );
 begin
 
-  Caption      := 'DelphiSBOM - CycloneDX SBOM Generator';
-  ShowHint     := True;
-  FProcessing  := False;
-  OnCloseQuery := FormCloseQuery;
+  Caption           := 'DelphiSBOM - CycloneDX SBOM Generator';
+  ShowHint          := True;
+  FProcessing       := False;
+  OnCloseQuery      := FormCloseQuery;
 
-  FMRUManager := TMRUManager.Create;
+  FMRUManager       := TMRUManager.Create;
 
   CreateControls;
-
-  try
-    DetectDelphiPath;
-  except
-    on E: Exception do
-      LogMessage( llWarning, 'Could not auto-detect Delphi path: ' + E.Message );
-  end;
-
   LoadMRU;
 
 end;
@@ -323,7 +344,7 @@ begin
 
   if FProcessing then
   begin
-    CanClose := False;
+    CanClose        := False;
     ShowMessage( 'Please wait for the current operation to complete before closing.' );
   end;
 
@@ -339,33 +360,34 @@ end;
 procedure TMainForm.CreateControls;
 begin
 
-  var CurrentTop := 12;
+  var CurrentTop    := 12;
 
   // Project file row — TComboBox for MRU dropdown
-  FLblProject := TLabel.Create( Self );
-  FLblProject.Parent  := Self;
-  FLblProject.Left    := 12;
-  FLblProject.Top     := CurrentTop + 4;
-  FLblProject.Width   := 100;
+  FLblProject       := TLabel.Create( Self );
+  FLblProject.Parent := Self;
+  FLblProject.Left  := 12;
+  FLblProject.Top   := CurrentTop + 4;
+  FLblProject.Width := 100;
   FLblProject.Caption := 'Project File:';
 
-  FEdtProject := TComboBox.Create( Self );
-  FEdtProject.Parent   := Self;
-  FEdtProject.Left     := 120;
-  FEdtProject.Top      := CurrentTop;
-  FEdtProject.Width    := ClientWidth - 120 - 90 - 24;
-  FEdtProject.Anchors  := [ akLeft, akTop, akRight ];
-  FEdtProject.Style    := csDropDown;
-  FEdtProject.Hint     := 'Path to .dpr or .dproj file. Recent projects available in dropdown.';
+  FEdtProject       := TComboBox.Create( Self );
+  FEdtProject.Parent := Self;
+  FEdtProject.Left  := 120;
+  FEdtProject.Top   := CurrentTop;
+  FEdtProject.Width := ClientWidth - 120 - 90 - 24;
+  FEdtProject.Anchors := [ akLeft, akTop, akRight ];
+  FEdtProject.Style := csDropDown;
+  FEdtProject.Hint  := 'Path to a .dpr, .dpk or .dproj file. Recent projects available in dropdown.';
   FEdtProject.OnSelect := CboProjectSelect;
+  FEdtProject.OnExit := EdtProjectExit;
 
-  FBtnProject := TButton.Create( Self );
-  FBtnProject.Parent  := Self;
-  FBtnProject.Left    := ClientWidth - 90 - 12;
-  FBtnProject.Top     := CurrentTop;
-  FBtnProject.Width   := 90;
+  FBtnProject       := TButton.Create( Self );
+  FBtnProject.Parent := Self;
+  FBtnProject.Left  := ClientWidth - 90 - 12;
+  FBtnProject.Top   := CurrentTop;
+  FBtnProject.Width := 90;
   FBtnProject.Caption := 'Browse...';
-  FBtnProject.Hint    := 'Browse for a Delphi project file';
+  FBtnProject.Hint  := 'Browse for a Delphi project file';
   FBtnProject.Anchors := [ akTop, akRight ];
   FBtnProject.OnClick := BtnProjectClick;
 
@@ -373,7 +395,7 @@ begin
 
   // Remaining input rows
   CreateInputRow( CurrentTop, 'Manifest:', FLblManifest, FEdtManifest, FBtnManifest, BtnManifestClick );
-  FEdtManifest.Hint := 'Path to components.json manifest. Auto-created if missing.';
+  FEdtManifest.Hint := 'Path to the components.json manifest. Created when you first save libraries or own-code units.';
   FBtnManifest.Hint := 'Browse for a components.json manifest file';
 
   CreateInputRow( CurrentTop, 'Output Dir:', FLblOutputDir, FEdtOutputDir, FBtnOutputDir, BtnOutputDirClick );
@@ -381,64 +403,65 @@ begin
   FBtnOutputDir.Hint := 'Browse for an output directory';
 
   CreateInputRow( CurrentTop, 'Delphi Path:', FLblDelphiPath, FEdtDelphiPath, FBtnDelphiPath, BtnDelphiPathClick );
-  FEdtDelphiPath.Hint := 'Delphi installation root directory. Auto-detected from the registry.';
+  FEdtDelphiPath.TextHint := 'blank = the project''s Delphi version, from the registry';
+  FEdtDelphiPath.Hint := 'Delphi installation root directory. Leave blank to use the installation matching the project''s Delphi version.';
   FBtnDelphiPath.Hint := 'Browse for the Delphi installation directory';
 
   // Version override
-  FLblVersion := TLabel.Create( Self );
-  FLblVersion.Parent  := Self;
-  FLblVersion.Left    := 12;
-  FLblVersion.Top     := CurrentTop + 4;
-  FLblVersion.Width   := 100;
+  FLblVersion       := TLabel.Create( Self );
+  FLblVersion.Parent := Self;
+  FLblVersion.Left  := 12;
+  FLblVersion.Top   := CurrentTop + 4;
+  FLblVersion.Width := 100;
   FLblVersion.Caption := 'Version Override:';
 
-  FEdtVersion := TEdit.Create( Self );
-  FEdtVersion.Parent    := Self;
-  FEdtVersion.Left      := 120;
-  FEdtVersion.Top       := CurrentTop;
-  FEdtVersion.Width     := 200;
-  FEdtVersion.TextHint  := 'blank = read from .dproj';
-  FEdtVersion.Hint      := 'Override the version from .dproj. Leave blank to use the project version.';
+  FEdtVersion       := TEdit.Create( Self );
+  FEdtVersion.Parent := Self;
+  FEdtVersion.Left  := 120;
+  FEdtVersion.Top   := CurrentTop;
+  FEdtVersion.Width := 200;
+  FEdtVersion.TextHint := 'blank = read from .dproj';
+  FEdtVersion.Hint  := 'Override the version from .dproj. Leave blank to use the project version.';
 
   Inc( CurrentTop, 30 );
 
   // DX.Comply evidence file (optional)
   CreateInputRow( CurrentTop, 'DX.Comply SBOM:', FLblDXComply, FEdtDXComply, FBtnDXComply, BtnDXComplyClick );
   FEdtDXComply.TextHint := 'optional — merges binary evidence into SBOM';
-  FEdtDXComply.Hint     := 'Path to a DX.Comply bom.json file. If provided, SHA-256 hashes are merged into the SBOM output.';
-  FBtnDXComply.Hint     := 'Browse for a DX.Comply bom.json file';
+  FEdtDXComply.Hint := 'Path to a DX.Comply bom.json file. If provided, SHA-256 hashes are merged into the SBOM output.';
+  FBtnDXComply.Hint := 'Browse for a DX.Comply bom.json file';
 
   Inc( CurrentTop, 4 );
 
   // Action buttons
-  FBtnGenerate := TButton.Create( Self );
-  FBtnGenerate.Parent  := Self;
-  FBtnGenerate.Left    := 120;
-  FBtnGenerate.Top     := CurrentTop;
-  FBtnGenerate.Width   := 130;
-  FBtnGenerate.Height  := 30;
+  FBtnGenerate      := TButton.Create( Self );
+  FBtnGenerate.Parent := Self;
+  FBtnGenerate.Left := 120;
+  FBtnGenerate.Top  := CurrentTop;
+  FBtnGenerate.Width := 130;
+  FBtnGenerate.Height := 30;
   FBtnGenerate.Caption := 'Generate SBOM';
-  FBtnGenerate.Hint    := 'Parse the project, classify units, and generate a CycloneDX 1.5 JSON SBOM';
+  FBtnGenerate.Hint := 'Parse the project, classify units, and generate a CycloneDX 1.5 JSON SBOM';
   FBtnGenerate.OnClick := BtnGenerateClick;
 
-  FBtnValidate := TButton.Create( Self );
-  FBtnValidate.Parent  := Self;
-  FBtnValidate.Left    := 260;
-  FBtnValidate.Top     := CurrentTop;
-  FBtnValidate.Width   := 140;
-  FBtnValidate.Height  := 30;
+  FBtnValidate      := TButton.Create( Self );
+  FBtnValidate.Parent := Self;
+  FBtnValidate.Left := 260;
+  FBtnValidate.Top  := CurrentTop;
+  FBtnValidate.Width := 140;
+  FBtnValidate.Height := 30;
   FBtnValidate.Caption := 'Validate Manifest';
-  FBtnValidate.Hint    := 'Check components.json for schema errors without generating an SBOM';
+  FBtnValidate.Hint := 'Check components.json for schema errors without generating an SBOM';
   FBtnValidate.OnClick := BtnValidateClick;
 
-  FBtnViewSBOM := TButton.Create( Self );
-  FBtnViewSBOM.Parent  := Self;
-  FBtnViewSBOM.Left    := 410;
-  FBtnViewSBOM.Top     := CurrentTop;
-  FBtnViewSBOM.Width   := 120;
-  FBtnViewSBOM.Height  := 30;
+  FBtnViewSBOM      := TButton.Create( Self );
+  FBtnViewSBOM.Parent := Self;
+  FBtnViewSBOM.Left := 410;
+  FBtnViewSBOM.Top  := CurrentTop;
+  FBtnViewSBOM.Width := 120;
+  FBtnViewSBOM.Height := 30;
   FBtnViewSBOM.Caption := 'View SBOM File';
-  FBtnViewSBOM.Hint    := 'View the last generated SBOM JSON file';
+  FBtnViewSBOM.Hint := 'View the last generated SBOM JSON file';
   FBtnViewSBOM.OnClick := BtnViewSBOMClick;
   FBtnViewSBOM.Enabled := False;
 
@@ -446,107 +469,107 @@ begin
 
   // Bottom area — contains results panel, splitter, and log panel
   // Using a wrapper panel with aligned children so the splitter works
-  var PnlBottom := TPanel.Create( Self );
-  PnlBottom.Parent     := Self;
-  PnlBottom.Left       := 12;
-  PnlBottom.Top        := CurrentTop;
-  PnlBottom.Width      := ClientWidth - 24;
-  PnlBottom.Height     := ClientHeight - CurrentTop - 12;
-  PnlBottom.Anchors    := [ akLeft, akTop, akRight, akBottom ];
+  var PnlBottom     := TPanel.Create( Self );
+  PnlBottom.Parent  := Self;
+  PnlBottom.Left    := 12;
+  PnlBottom.Top     := CurrentTop;
+  PnlBottom.Width   := ClientWidth - 24;
+  PnlBottom.Height  := ClientHeight - CurrentTop - 12;
+  PnlBottom.Anchors := [ akLeft, akTop, akRight, akBottom ];
   PnlBottom.BevelOuter := bvNone;
-  PnlBottom.Caption    := '';
+  PnlBottom.Caption := '';
 
   // Log panel (at the bottom, alBottom)
-  var PnlLog := TPanel.Create( Self );
+  var PnlLog        := TPanel.Create( Self );
   PnlLog.Parent     := PnlBottom;
   PnlLog.Align      := alBottom;
   PnlLog.Height     := 200;
   PnlLog.BevelOuter := bvNone;
   PnlLog.Caption    := '';
 
-  var LblLog := TLabel.Create( Self );
+  var LblLog        := TLabel.Create( Self );
   LblLog.Parent     := PnlLog;
   LblLog.Align      := alTop;
   LblLog.Caption    := 'Log';
   LblLog.Font.Style := [ fsBold ];
 
-  FMmoLog := TMemo.Create( Self );
-  FMmoLog.Parent     := PnlLog;
-  FMmoLog.Align      := alClient;
-  FMmoLog.ReadOnly   := True;
+  FMmoLog           := TMemo.Create( Self );
+  FMmoLog.Parent    := PnlLog;
+  FMmoLog.Align     := alClient;
+  FMmoLog.ReadOnly  := True;
   FMmoLog.ScrollBars := ssBoth;
-  FMmoLog.Font.Name  := 'Consolas';
-  FMmoLog.Font.Size  := 9;
+  FMmoLog.Font.Name := 'Consolas';
+  FMmoLog.Font.Size := 9;
 
   // Horizontal splitter between results and log
-  var SplitterH := TSplitter.Create( Self );
-  SplitterH.Parent := PnlBottom;
-  SplitterH.Align  := alBottom;
-  SplitterH.Height := 5;
-  SplitterH.Top    := PnlLog.Top - 1;
+  var SplitterH     := TSplitter.Create( Self );
+  SplitterH.Parent  := PnlBottom;
+  SplitterH.Align   := alBottom;
+  SplitterH.Height  := 5;
+  SplitterH.Top     := PnlLog.Top - 1;
 
   // Results panel (fills remaining space, alClient)
-  FPnlResults := TPanel.Create( Self );
-  FPnlResults.Parent     := PnlBottom;
-  FPnlResults.Align      := alClient;
+  FPnlResults       := TPanel.Create( Self );
+  FPnlResults.Parent := PnlBottom;
+  FPnlResults.Align := alClient;
   FPnlResults.BevelOuter := bvLowered;
-  FPnlResults.Caption    := '';
+  FPnlResults.Caption := '';
 
-  FPnlSummary := TPanel.Create( Self );
-  FPnlSummary.Parent     := FPnlResults;
-  FPnlSummary.Align      := alLeft;
-  FPnlSummary.Width      := 420;
+  FPnlSummary       := TPanel.Create( Self );
+  FPnlSummary.Parent := FPnlResults;
+  FPnlSummary.Align := alLeft;
+  FPnlSummary.Width := 420;
   FPnlSummary.BevelOuter := bvNone;
-  FPnlSummary.Caption    := '';
+  FPnlSummary.Caption := '';
 
-  FMmoSummary := TMemo.Create( Self );
-  FMmoSummary.Parent     := FPnlSummary;
-  FMmoSummary.Align      := alClient;
-  FMmoSummary.ReadOnly   := True;
+  FMmoSummary       := TMemo.Create( Self );
+  FMmoSummary.Parent := FPnlSummary;
+  FMmoSummary.Align := alClient;
+  FMmoSummary.ReadOnly := True;
   FMmoSummary.ScrollBars := ssVertical;
-  FMmoSummary.Font.Name  := 'Consolas';
-  FMmoSummary.Font.Size  := 9;
+  FMmoSummary.Font.Name := 'Consolas';
+  FMmoSummary.Font.Size := 9;
 
-  FSplitter := TSplitter.Create( Self );
-  FSplitter.Parent := FPnlResults;
-  FSplitter.Left   := FPnlSummary.Width;
-  FSplitter.Align  := alLeft;
-  FSplitter.Width  := 5;
+  FSplitter         := TSplitter.Create( Self );
+  FSplitter.Parent  := FPnlResults;
+  FSplitter.Left    := FPnlSummary.Width;
+  FSplitter.Align   := alLeft;
+  FSplitter.Width   := 5;
 
-  FPnlDiscovery := TPanel.Create( Self );
-  FPnlDiscovery.Parent     := FPnlResults;
-  FPnlDiscovery.Align      := alClient;
+  FPnlDiscovery     := TPanel.Create( Self );
+  FPnlDiscovery.Parent := FPnlResults;
+  FPnlDiscovery.Align := alClient;
   FPnlDiscovery.BevelOuter := bvNone;
-  FPnlDiscovery.Caption    := '';
+  FPnlDiscovery.Caption := '';
 
-  var LblDiscovery := TLabel.Create( Self );
-  LblDiscovery.Parent     := FPnlDiscovery;
-  LblDiscovery.Align      := alTop;
-  LblDiscovery.Caption    := '  Discovered Libraries / Unclassified Units';
+  var LblDiscovery  := TLabel.Create( Self );
+  LblDiscovery.Parent := FPnlDiscovery;
+  LblDiscovery.Align := alTop;
+  LblDiscovery.Caption := '  Discovered Libraries / Unclassified Units';
   LblDiscovery.Font.Style := [ fsBold ];
 
   // Button grid at bottom of discovery area — 3 equal columns, auto-sized
-  var GridButtons := TGridPanel.Create( Self );
-  GridButtons.Parent     := FPnlDiscovery;
-  GridButtons.Align      := alBottom;
-  GridButtons.Height     := 30;
+  var GridButtons   := TGridPanel.Create( Self );
+  GridButtons.Parent := FPnlDiscovery;
+  GridButtons.Align := alBottom;
+  GridButtons.Height := 30;
   GridButtons.BevelOuter := bvNone;
-  GridButtons.Caption    := '';
+  GridButtons.Caption := '';
   GridButtons.ColumnCollection.BeginUpdate;
   try
     GridButtons.ColumnCollection.Clear;
 
-    var Col1 := GridButtons.ColumnCollection.Add;
-    Col1.SizeStyle := ssPercent;
-    Col1.Value     := 33.33;
+    var Col1        := GridButtons.ColumnCollection.Add;
+    Col1.SizeStyle  := ssPercent;
+    Col1.Value      := 33.33;
 
-    var Col2 := GridButtons.ColumnCollection.Add;
-    Col2.SizeStyle := ssPercent;
-    Col2.Value     := 33.34;
+    var Col2        := GridButtons.ColumnCollection.Add;
+    Col2.SizeStyle  := ssPercent;
+    Col2.Value      := 33.34;
 
-    var Col3 := GridButtons.ColumnCollection.Add;
-    Col3.SizeStyle := ssPercent;
-    Col3.Value     := 33.33;
+    var Col3        := GridButtons.ColumnCollection.Add;
+    Col3.SizeStyle  := ssPercent;
+    Col3.Value      := 33.33;
   finally
     GridButtons.ColumnCollection.EndUpdate;
   end;
@@ -554,53 +577,53 @@ begin
   try
     GridButtons.RowCollection.Clear;
 
-    var Row1 := GridButtons.RowCollection.Add;
-    Row1.SizeStyle := ssPercent;
-    Row1.Value     := 100;
+    var Row1        := GridButtons.RowCollection.Add;
+    Row1.SizeStyle  := ssPercent;
+    Row1.Value      := 100;
   finally
     GridButtons.RowCollection.EndUpdate;
   end;
 
-  FBtnSaveRegen := TButton.Create( Self );
-  FBtnSaveRegen.Parent  := GridButtons;
-  FBtnSaveRegen.Align   := alClient;
+  FBtnSaveRegen     := TButton.Create( Self );
+  FBtnSaveRegen.Parent := GridButtons;
+  FBtnSaveRegen.Align := alClient;
   FBtnSaveRegen.Caption := 'Save && Regenerate';
-  FBtnSaveRegen.Hint    := 'Save discovered libraries to components.json and regenerate the SBOM';
+  FBtnSaveRegen.Hint := 'Save discovered libraries to components.json and regenerate the SBOM';
   FBtnSaveRegen.OnClick := BtnSaveRegenClick;
   FBtnSaveRegen.Enabled := False;
 
   FBtnEditLibraries := TButton.Create( Self );
-  FBtnEditLibraries.Parent  := GridButtons;
-  FBtnEditLibraries.Align   := alClient;
+  FBtnEditLibraries.Parent := GridButtons;
+  FBtnEditLibraries.Align := alClient;
   FBtnEditLibraries.Caption := 'Edit...';
-  FBtnEditLibraries.Hint    := 'Edit discovered library names, versions, vendors, and licences before saving';
+  FBtnEditLibraries.Hint := 'Edit discovered library names, versions, vendors, and licences before saving';
   FBtnEditLibraries.OnClick := BtnEditLibrariesClick;
   FBtnEditLibraries.Enabled := False;
 
-  FBtnMarkOwnCode := TButton.Create( Self );
-  FBtnMarkOwnCode.Parent  := GridButtons;
-  FBtnMarkOwnCode.Align   := alClient;
+  FBtnMarkOwnCode   := TButton.Create( Self );
+  FBtnMarkOwnCode.Parent := GridButtons;
+  FBtnMarkOwnCode.Align := alClient;
   FBtnMarkOwnCode.Caption := 'Mark as Own Code';
-  FBtnMarkOwnCode.Hint    := 'Mark unresolved units as your own code in components.json';
+  FBtnMarkOwnCode.Hint := 'Mark unresolved units as your own code in components.json';
   FBtnMarkOwnCode.OnClick := BtnMarkOwnCodeClick;
   FBtnMarkOwnCode.Enabled := False;
 
-  FMmoDiscovery := TMemo.Create( Self );
-  FMmoDiscovery.Parent     := FPnlDiscovery;
-  FMmoDiscovery.Align      := alClient;
-  FMmoDiscovery.ReadOnly   := True;
+  FMmoDiscovery     := TMemo.Create( Self );
+  FMmoDiscovery.Parent := FPnlDiscovery;
+  FMmoDiscovery.Align := alClient;
+  FMmoDiscovery.ReadOnly := True;
   FMmoDiscovery.ScrollBars := ssVertical;
-  FMmoDiscovery.Font.Name  := 'Consolas';
-  FMmoDiscovery.Font.Size  := 9;
+  FMmoDiscovery.Font.Name := 'Consolas';
+  FMmoDiscovery.Font.Size := 9;
 
   // Dialogs
-  FDlgOpenProject := TOpenDialog.Create( Self );
-  FDlgOpenProject.Filter := 'Delphi Projects (*.dpr;*.dproj)|*.dpr;*.dproj|All Files (*.*)|*.*';
-  FDlgOpenProject.Title  := 'Select Delphi Project';
+  FDlgOpenProject   := TOpenDialog.Create( Self );
+  FDlgOpenProject.Filter := 'Delphi Projects (*.dpr;*.dpk;*.dproj)|*.dpr;*.dpk;*.dproj|All Files (*.*)|*.*';
+  FDlgOpenProject.Title := 'Select Delphi Project';
 
-  FDlgOpenManifest := TOpenDialog.Create( Self );
+  FDlgOpenManifest  := TOpenDialog.Create( Self );
   FDlgOpenManifest.Filter := 'JSON Files (*.json)|*.json|All Files (*.*)|*.*';
-  FDlgOpenManifest.Title  := 'Select components.json';
+  FDlgOpenManifest.Title := 'Select components.json';
 
 end;
 
@@ -609,28 +632,28 @@ procedure TMainForm.CreateInputRow( var ATop: Integer; const ACaption: string;
   AOnClick: TNotifyEvent );
 begin
 
-  ALabel := TLabel.Create( Self );
-  ALabel.Parent  := Self;
-  ALabel.Left    := 12;
-  ALabel.Top     := ATop + 4;
-  ALabel.Width   := 100;
-  ALabel.Caption := ACaption;
+  ALabel            := TLabel.Create( Self );
+  ALabel.Parent     := Self;
+  ALabel.Left       := 12;
+  ALabel.Top        := ATop + 4;
+  ALabel.Width      := 100;
+  ALabel.Caption    := ACaption;
 
-  AEdit := TEdit.Create( Self );
-  AEdit.Parent  := Self;
-  AEdit.Left    := 120;
-  AEdit.Top     := ATop;
-  AEdit.Width   := ClientWidth - 120 - 90 - 24;
-  AEdit.Anchors := [ akLeft, akTop, akRight ];
+  AEdit             := TEdit.Create( Self );
+  AEdit.Parent      := Self;
+  AEdit.Left        := 120;
+  AEdit.Top         := ATop;
+  AEdit.Width       := ClientWidth - 120 - 90 - 24;
+  AEdit.Anchors     := [ akLeft, akTop, akRight ];
 
-  AButton := TButton.Create( Self );
-  AButton.Parent  := Self;
-  AButton.Left    := ClientWidth - 90 - 12;
-  AButton.Top     := ATop;
-  AButton.Width   := 90;
-  AButton.Caption := 'Browse...';
-  AButton.Anchors := [ akTop, akRight ];
-  AButton.OnClick := AOnClick;
+  AButton           := TButton.Create( Self );
+  AButton.Parent    := Self;
+  AButton.Left      := ClientWidth - 90 - 12;
+  AButton.Top       := ATop;
+  AButton.Width     := 90;
+  AButton.Caption   := 'Browse...';
+  AButton.Anchors   := [ akTop, akRight ];
+  AButton.OnClick   := AOnClick;
 
   Inc( ATop, 30 );
 
@@ -646,7 +669,7 @@ begin
   if FDlgOpenProject.Execute then
   begin
     FEdtProject.Text := FDlgOpenProject.FileName;
-    AutoPopulateDefaults;
+    ApplyProjectSettings;
   end;
 
 end;
@@ -662,7 +685,7 @@ end;
 procedure TMainForm.BtnOutputDirClick( Sender: TObject );
 begin
 
-  var Dir: string := FEdtOutputDir.Text;
+  var Dir: string   := FEdtOutputDir.Text;
 
   if Vcl.FileCtrl.SelectDirectory( 'Select Output Directory', '', Dir ) then
     FEdtOutputDir.Text := Dir;
@@ -672,7 +695,7 @@ end;
 procedure TMainForm.BtnDelphiPathClick( Sender: TObject );
 begin
 
-  var Dir: string := FEdtDelphiPath.Text;
+  var Dir: string   := FEdtDelphiPath.Text;
 
   if Vcl.FileCtrl.SelectDirectory( 'Select Delphi Installation Directory', '', Dir ) then
     FEdtDelphiPath.Text := Dir;
@@ -682,10 +705,10 @@ end;
 procedure TMainForm.BtnDXComplyClick( Sender: TObject );
 begin
 
-  var Dlg := TOpenDialog.Create( nil );
+  var Dlg           := TOpenDialog.Create( nil );
   try
-    Dlg.Filter := 'JSON Files (*.json)|*.json|All Files (*.*)|*.*';
-    Dlg.Title  := 'Select DX.Comply SBOM File';
+    Dlg.Filter      := 'JSON Files (*.json)|*.json|All Files (*.*)|*.*';
+    Dlg.Title       := 'Select DX.Comply SBOM File';
 
     if Dlg.Execute then
       FEdtDXComply.Text := Dlg.FileName;
@@ -702,6 +725,18 @@ end;
 procedure TMainForm.BtnGenerateClick( Sender: TObject );
 begin
 
+  if FLibrariesEdited and
+    ( MessageDlg( 'Your edits to the discovered libraries have not been saved to components.json.' + sLineBreak +
+      'Generate anyway and discard them?', mtConfirmation, [ mbYes, mbNo ], 0 ) <> mrYes ) then
+    Exit;
+
+  StartGenerate( True );
+
+end;
+
+procedure TMainForm.StartGenerate( AClearLog: Boolean );
+begin
+
   if FProcessing then Exit;
 
   if Trim( FEdtProject.Text ) = '' then
@@ -710,21 +745,26 @@ begin
     Exit;
   end;
 
+  // A project path typed by hand: make sure its own settings are in the fields
+  if ( not SameText( Trim( FEdtProject.Text ), FFieldsProject ) ) then
+    ApplyProjectSettings;
+
   SetProcessing( True );
-  FMmoLog.Clear;
+
+  if AClearLog then
+    FMmoLog.Clear;
+
   FMmoSummary.Clear;
   FMmoDiscovery.Clear;
-  FBtnSaveRegen.Enabled     := False;
-  FBtnEditLibraries.Enabled := False;
-  FBtnMarkOwnCode.Enabled   := False;
+  FLibrariesEdited  := False;
 
   var Options: TSBOMOptions;
-  Options.ProjectFile     := Trim( FEdtProject.Text );
-  Options.ManifestFile    := Trim( FEdtManifest.Text );
-  Options.OutputDir       := Trim( FEdtOutputDir.Text );
-  Options.DelphiPath      := Trim( FEdtDelphiPath.Text );
+  Options.ProjectFile := Trim( FEdtProject.Text );
+  Options.ManifestFile := Trim( FEdtManifest.Text );
+  Options.OutputDir := Trim( FEdtOutputDir.Text );
+  Options.DelphiPath := Trim( FEdtDelphiPath.Text );
   Options.VersionOverride := Trim( FEdtVersion.Text );
-  Options.DXComplyFile    := Trim( FEdtDXComply.Text );
+  Options.DXComplyFile := Trim( FEdtDXComply.Text );
 
   TSBOMGenerateThread.Create( Self, Options ).Start;
 
@@ -735,12 +775,12 @@ begin
 
   if FProcessing then Exit;
 
-  var ManifestPath := Trim( FEdtManifest.Text );
+  var ManifestPath  := Trim( FEdtManifest.Text );
 
   if ManifestPath = '' then
   begin
     if Trim( FEdtProject.Text ) <> '' then
-      ManifestPath := TPath.Combine( ExtractFilePath( FEdtProject.Text ), 'components.json' );
+      ManifestPath  := TPath.Combine( ExtractFilePath( FEdtProject.Text ), 'components.json' );
   end;
 
   if ( ManifestPath = '' ) or ( not FileExists( ManifestPath ) ) then
@@ -763,26 +803,54 @@ end;
 procedure TMainForm.SetProcessing( AValue: Boolean );
 begin
 
-  FProcessing := AValue;
+  FProcessing       := AValue;
 
   if AValue then
-    Screen.Cursor := crHourGlass
+    Screen.Cursor   := crHourGlass
   else
-    Screen.Cursor := crDefault;
+    Screen.Cursor   := crDefault;
 
-  FBtnGenerate.Enabled   := not AValue;
-  FBtnValidate.Enabled   := not AValue;
-  FBtnProject.Enabled    := not AValue;
-  FBtnManifest.Enabled   := not AValue;
-  FBtnOutputDir.Enabled  := not AValue;
+  FBtnGenerate.Enabled := not AValue;
+  FBtnValidate.Enabled := not AValue;
+  FBtnProject.Enabled := not AValue;
+  FBtnManifest.Enabled := not AValue;
+  FBtnOutputDir.Enabled := not AValue;
   FBtnDelphiPath.Enabled := not AValue;
-  FEdtProject.Enabled    := not AValue;
-  FEdtManifest.Enabled   := not AValue;
-  FEdtOutputDir.Enabled  := not AValue;
+  FEdtProject.Enabled := not AValue;
+  FEdtManifest.Enabled := not AValue;
+  FEdtOutputDir.Enabled := not AValue;
   FEdtDelphiPath.Enabled := not AValue;
-  FEdtVersion.Enabled    := not AValue;
-  FEdtDXComply.Enabled   := not AValue;
-  FBtnDXComply.Enabled   := not AValue;
+  FEdtVersion.Enabled := not AValue;
+  FEdtDXComply.Enabled := not AValue;
+  FBtnDXComply.Enabled := not AValue;
+
+  // The result buttons write components.json or read the SBOM file — never while a run is using them
+  UpdateActionButtons;
+
+end;
+
+procedure TMainForm.UpdateActionButtons;
+begin
+
+  var HasLibraries  := Length( FDiscoveredLibraries ) > 0;
+
+  FBtnSaveRegen.Enabled := ( not FProcessing ) and HasLibraries;
+  FBtnEditLibraries.Enabled := ( not FProcessing ) and HasLibraries;
+  FBtnMarkOwnCode.Enabled := ( not FProcessing ) and ( Length( GetUnresolvedUnits ) > 0 );
+  FBtnViewSBOM.Enabled := ( not FProcessing ) and FLastResult.Success and
+    ( FLastResult.OutputFile <> '' ) and FileExists( FLastResult.OutputFile );
+
+end;
+
+procedure TMainForm.ClearResults;
+begin
+
+  FLastResult       := Default( TSBOMResult );
+  FDiscoveredLibraries := nil;
+  FLibrariesEdited  := False;
+  FMmoSummary.Clear;
+  FMmoDiscovery.Clear;
+  UpdateActionButtons;
 
 end;
 
@@ -798,11 +866,9 @@ begin
 
   FMmoSummary.Clear;
   FMmoDiscovery.Clear;
-  FBtnSaveRegen.Enabled     := False;
-  FBtnEditLibraries.Enabled := False;
-  FBtnMarkOwnCode.Enabled   := False;
-  FBtnViewSBOM.Enabled      := False;
-  FLastResult := AResult;
+  FLastResult       := AResult;
+  FDiscoveredLibraries := nil;
+  FLibrariesEdited  := False;
 
   if ( not AResult.Success ) then
   begin
@@ -811,10 +877,9 @@ begin
     if AResult.ErrorMessage <> '' then
       FMmoSummary.Lines.Add( 'Error: ' + AResult.ErrorMessage );
 
+    UpdateActionButtons;
     Exit;
   end;
-
-  FBtnViewSBOM.Enabled := ( AResult.OutputFile <> '' ) and FileExists( AResult.OutputFile );
 
   // Save to MRU on successful generation
   SaveToMRU;
@@ -866,12 +931,12 @@ begin
       FMmoDiscovery.Lines.Add( 'DISCOVERED LIBRARIES' );
       FMmoDiscovery.Lines.Add( '====================' );
       FMmoDiscovery.Lines.Add( 'The following libraries were found on disk.' );
-      FMmoDiscovery.Lines.Add( 'Click "Save Libraries & Regenerate SBOM" to add them to components.json.' );
+      FMmoDiscovery.Lines.Add( 'Click "Edit..." to review them, then "Save & Regenerate" to add them to components.json.' );
       FMmoDiscovery.Lines.Add( '' );
 
       for var I := 0 to High( FDiscoveredLibraries ) do
       begin
-        var Lib := FDiscoveredLibraries[ I ];
+        var Lib     := FDiscoveredLibraries[ I ];
 
         FMmoDiscovery.Lines.Add( Format( '-- %s --', [ Lib.Name ] ) );
         FMmoDiscovery.Lines.Add( Format( '  Directory: %s', [ Lib.Directory ] ) );
@@ -895,9 +960,6 @@ begin
 
         FMmoDiscovery.Lines.Add( '' );
       end;
-
-      FBtnSaveRegen.Enabled     := True;
-      FBtnEditLibraries.Enabled := True;
     end;
 
     // Show remaining unclassified units (not found on disk)
@@ -907,7 +969,7 @@ begin
       begin
         if CU.Classification <> ucUnclassified then Continue;
 
-        var Found := False;
+        var Found   := False;
 
         for var Lib in FDiscoveredLibraries do
         begin
@@ -929,13 +991,11 @@ begin
       begin
         FMmoDiscovery.Lines.Add( 'UNRESOLVED UNITS' );
         FMmoDiscovery.Lines.Add( '================' );
-        FMmoDiscovery.Lines.Add( 'No .pas files found. Click "Mark Unresolved as Own Code"' );
+        FMmoDiscovery.Lines.Add( 'No .pas files found. Click "Mark as Own Code"' );
         FMmoDiscovery.Lines.Add( 'if these are your own project files:' );
 
         for var U in UnfoundUnits do
           FMmoDiscovery.Lines.Add( '  ' + U );
-
-        FBtnMarkOwnCode.Enabled := True;
       end;
     finally
       UnfoundUnits.Free;
@@ -945,14 +1005,17 @@ begin
     FMmoDiscovery.Lines.EndUpdate;
   end;
 
+  UpdateActionButtons;
+
 end;
 
 procedure TMainForm.BtnSaveRegenClick( Sender: TObject );
 begin
 
-  if Length( FDiscoveredLibraries ) = 0 then Exit;
+  if ( Length( FDiscoveredLibraries ) = 0 ) or FProcessing then Exit;
 
-  var ManifestPath := Trim( FEdtManifest.Text );
+  // The manifest the results came from — not whatever the field says now
+  var ManifestPath  := FLastResult.ManifestFile;
 
   if ManifestPath = '' then
   begin
@@ -960,21 +1023,34 @@ begin
     Exit;
   end;
 
+  FMmoLog.Clear;
+
   // Save confirmed libraries to components.json
-  var Loader := TManifestLoader.Create(
-    procedure ( ALevel: TLogLevel; AMsg: string )
+  var Loader        := TManifestLoader.Create(
+    procedure( ALevel: TLogLevel; AMsg: string )
     begin
       LogMessage( ALevel, AMsg );
     end );
   try
-    Loader.SaveDiscoveredLibraries( ManifestPath, FDiscoveredLibraries );
+    try
+      Loader.SaveDiscoveredLibraries( ManifestPath, FDiscoveredLibraries );
+    except
+      on E: EManifestError do
+      begin
+        LogMessage( llError, E.Message );
+        ShowMessage( E.Message );
+        Exit;
+      end;
+    end;
   finally
     Loader.Free;
   end;
 
-  // Re-run generation
+  FLibrariesEdited  := False;
+
+  // Re-run generation, keeping the save messages in the log
   LogMessage( llInfo, 'Regenerating SBOM with updated manifest...' );
-  BtnGenerateClick( Self );
+  StartGenerate( False );
 
 end;
 
@@ -986,9 +1062,10 @@ begin
   if TLibraryEditorForm.Execute( FDiscoveredLibraries ) then
   begin
     // Refresh the discovery memo with edited values
+    FLibrariesEdited := True;
     FMmoDiscovery.Clear;
     DisplayDiscoveredLibraries;
-    LogMessage( llInfo, 'Library metadata updated from editor' );
+    LogMessage( llInfo, 'Library metadata updated from editor — click "Save & Regenerate" to write it to components.json' );
   end;
 
 end;
@@ -1002,28 +1079,28 @@ begin
     Exit;
   end;
 
-  var ViewForm := TForm.Create( Self );
+  var ViewForm      := TForm.Create( Self );
   try
-    ViewForm.Caption    := 'SBOM - ' + ExtractFileName( FLastResult.OutputFile );
-    ViewForm.Width      := 800;
-    ViewForm.Height     := 600;
-    ViewForm.Position   := poMainFormCenter;
+    ViewForm.Caption := 'SBOM - ' + ExtractFileName( FLastResult.OutputFile );
+    ViewForm.Width  := 800;
+    ViewForm.Height := 600;
+    ViewForm.Position := poMainFormCenter;
 
-    {$IFDEF USE_SYNEDIT}
-    var Editor := TSynEdit.Create( ViewForm );
-    Editor.Parent     := ViewForm;
-    Editor.Align      := alClient;
-    Editor.ReadOnly   := True;
-    Editor.Font.Name  := 'Consolas';
-    Editor.Font.Size  := 10;
+{$IFDEF USE_SYNEDIT}
+    var Editor      := TSynEdit.Create( ViewForm );
+    Editor.Parent   := ViewForm;
+    Editor.Align    := alClient;
+    Editor.ReadOnly := True;
+    Editor.Font.Name := 'Consolas';
+    Editor.Font.Size := 10;
     Editor.Gutter.ShowLineNumbers := True;
 
     var Highlighter := TSynJSONSyn.Create( ViewForm );
     Editor.Highlighter := Highlighter;
 
     Editor.Lines.LoadFromFile( FLastResult.OutputFile, TEncoding.UTF8 );
-    {$ELSE}
-    var Memo := TMemo.Create( ViewForm );
+{$ELSE}
+    var Memo        := TMemo.Create( ViewForm );
     Memo.Parent     := ViewForm;
     Memo.Align      := alClient;
     Memo.ReadOnly   := True;
@@ -1031,13 +1108,13 @@ begin
     Memo.Font.Name  := 'Consolas';
     Memo.Font.Size  := 10;
     Memo.Lines.LoadFromFile( FLastResult.OutputFile, TEncoding.UTF8 );
-    {$ENDIF}
+{$ENDIF}
 
-    var BtnClose := TButton.Create( ViewForm );
-    BtnClose.Parent      := ViewForm;
-    BtnClose.Align       := alBottom;
-    BtnClose.Height      := 35;
-    BtnClose.Caption     := 'Close';
+    var BtnClose    := TButton.Create( ViewForm );
+    BtnClose.Parent := ViewForm;
+    BtnClose.Align  := alBottom;
+    BtnClose.Height := 35;
+    BtnClose.Caption := 'Close';
     BtnClose.ModalResult := mrOK;
 
     ViewForm.ShowModal;
@@ -1052,9 +1129,10 @@ begin
 
   var UnresolvedUnits := GetUnresolvedUnits;
 
-  if Length( UnresolvedUnits ) = 0 then Exit;
+  if ( Length( UnresolvedUnits ) = 0 ) or FProcessing then Exit;
 
-  var ManifestPath := Trim( FEdtManifest.Text );
+  // The manifest the results came from — not whatever the field says now
+  var ManifestPath  := FLastResult.ManifestFile;
 
   if ManifestPath = '' then
   begin
@@ -1062,39 +1140,50 @@ begin
     Exit;
   end;
 
-  var Loader := TManifestLoader.Create(
-    procedure ( ALevel: TLogLevel; AMsg: string )
+  FMmoLog.Clear;
+
+  var Loader        := TManifestLoader.Create(
+    procedure( ALevel: TLogLevel; AMsg: string )
     begin
       LogMessage( ALevel, AMsg );
     end );
   try
-    Loader.SaveOwnCodeUnits( ManifestPath, UnresolvedUnits );
+    try
+      Loader.SaveOwnCodeUnits( ManifestPath, UnresolvedUnits );
+    except
+      on E: EManifestError do
+      begin
+        LogMessage( llError, E.Message );
+        ShowMessage( E.Message );
+        Exit;
+      end;
+    end;
   finally
     Loader.Free;
   end;
 
   LogMessage( llInfo, 'Regenerating SBOM with own-code units marked...' );
-  BtnGenerateClick( Self );
+  StartGenerate( False );
 
 end;
 
 function TMainForm.GetUnresolvedUnits: TArray<string>;
 begin
 
-  var Unfound := TList<string>.Create;
+  var Unfound       := TList<string>.Create;
   try
     for var CU in FLastResult.ClassifiedUnits do
     begin
       if CU.Classification <> ucUnclassified then Continue;
 
-      var Found := False;
+      var Found     := False;
 
       for var Lib in FDiscoveredLibraries do
       begin
         for var U in Lib.Units do
           if SameText( U, CU.OriginalName ) then
           begin
-            Found := True;
+            Found   := True;
             Break;
           end;
 
@@ -1105,7 +1194,7 @@ begin
         Unfound.Add( CU.OriginalName );
     end;
 
-    Result := Unfound.ToArray;
+    Result          := Unfound.ToArray;
   finally
     Unfound.Free;
   end;
@@ -1140,11 +1229,11 @@ procedure TMainForm.SaveToMRU;
 begin
 
   var Entry: TMRUEntry;
-  Entry.ProjectFile    := Trim( FEdtProject.Text );
-  Entry.ManifestFile   := Trim( FEdtManifest.Text );
-  Entry.OutputDir      := Trim( FEdtOutputDir.Text );
+  Entry.ProjectFile := Trim( FEdtProject.Text );
+  Entry.ManifestFile := Trim( FEdtManifest.Text );
+  Entry.OutputDir   := Trim( FEdtOutputDir.Text );
   Entry.VersionOverride := Trim( FEdtVersion.Text );
-  Entry.DXComplyFile   := Trim( FEdtDXComply.Text );
+  Entry.DXComplyFile := Trim( FEdtDXComply.Text );
 
   if Entry.ProjectFile = '' then Exit;
 
@@ -1158,20 +1247,67 @@ begin
   end;
 
   // Refresh dropdown items
-  var CurrentText := FEdtProject.Text;
+  var CurrentText   := FEdtProject.Text;
   FEdtProject.Items.Clear;
 
   for var MRUEntry in FMRUManager.GetEntries do
     FEdtProject.Items.Add( MRUEntry.ProjectFile );
 
-  FEdtProject.Text := CurrentText;
+  FEdtProject.Text  := CurrentText;
 
 end;
 
-procedure TMainForm.RestoreProjectSettings( const AProjectFile: string );
+procedure TMainForm.CboProjectSelect( Sender: TObject );
 begin
 
-  var Entry := FMRUManager.FindEntry( AProjectFile );
+  if FEdtProject.ItemIndex < 0 then Exit;
+
+  ApplyProjectSettings;
+
+end;
+
+procedure TMainForm.EdtProjectExit( Sender: TObject );
+begin
+
+  // A path typed or pasted by hand: switch the per-project fields once the user leaves the box
+  if ( Trim( FEdtProject.Text ) <> '' ) and ( not SameText( Trim( FEdtProject.Text ), FFieldsProject ) ) then
+    ApplyProjectSettings;
+
+end;
+
+// ---------------------------------------------------------------------------
+//  Per-project defaults
+// ---------------------------------------------------------------------------
+
+procedure TMainForm.ApplyProjectSettings;
+begin
+
+  var ProjectFile   := Trim( FEdtProject.Text );
+  FFieldsProject    := ProjectFile;
+
+  // Results belong to the previous project
+  ClearResults;
+
+  // Defaults first, so nothing from the previous project survives. The manifest is not created
+  // here: it is written only when the user saves libraries or own-code units.
+  var ProjectDir    := ExcludeTrailingPathDelimiter( ExtractFilePath( ProjectFile ) );
+
+  if ProjectDir <> '' then
+  begin
+    FEdtManifest.Text := TPath.Combine( ProjectDir, 'components.json' );
+    FEdtOutputDir.Text := ProjectDir;
+  end
+  else
+  begin
+    FEdtManifest.Text := '';
+    FEdtOutputDir.Text := '';
+  end;
+
+  FEdtVersion.Text  := '';
+  FEdtDXComply.Text := '';
+
+  // Then the project's remembered settings
+  var Entry         := FMRUManager.FindEntry( ProjectFile );
 
   if Entry.ProjectFile = '' then Exit;
 
@@ -1181,119 +1317,10 @@ begin
   if Entry.OutputDir <> '' then
     FEdtOutputDir.Text := Entry.OutputDir;
 
-  FEdtVersion.Text := Entry.VersionOverride;
-
-  if Entry.DXComplyFile <> '' then
-    FEdtDXComply.Text := Entry.DXComplyFile;
-
-end;
-
-procedure TMainForm.CboProjectSelect( Sender: TObject );
-begin
-
-  if FEdtProject.ItemIndex < 0 then Exit;
-
-  AutoPopulateDefaults;
-  RestoreProjectSettings( FEdtProject.Text );
-
-end;
-
-// ---------------------------------------------------------------------------
-//  Defaults and detection
-// ---------------------------------------------------------------------------
-
-procedure TMainForm.AutoPopulateDefaults;
-begin
-
-  if FEdtProject.Text = '' then Exit;
-
-  var ProjectDir := ExtractFilePath( FEdtProject.Text );
-
-  if ( ProjectDir = '' ) or ( not TDirectory.Exists( ProjectDir ) ) then Exit;
-
-  var DefaultManifest := TPath.Combine( ProjectDir, 'components.json' );
-
-  if ( not FileExists( DefaultManifest ) ) then
-  begin
-    try
-      CreateDefaultManifest( DefaultManifest );
-      LogMessage( llInfo, Format( 'Created default components.json in %s', [ ProjectDir ] ) );
-    except
-      on E: Exception do
-        LogMessage( llWarning, 'Could not create default manifest: ' + E.Message );
-    end;
-  end;
-
-  if FEdtManifest.Text = '' then
-    FEdtManifest.Text := DefaultManifest;
-
-  FEdtOutputDir.Text := ExcludeTrailingPathDelimiter( ProjectDir );
-
-end;
-
-procedure TMainForm.CreateDefaultManifest( const APath: string );
-begin
-
-  var Json :=
-    '{' + sLineBreak +
-    '  "schema_version": "1.0",' + sLineBreak +
-    '  "last_updated": "' + FormatDateTime( 'yyyy-mm-dd', Now ) + '",' + sLineBreak +
-    '  "supplier": {' + sLineBreak +
-    '    "name": "",' + sLineBreak +
-    '    "url": ""' + sLineBreak +
-    '  },' + sLineBreak +
-    '  "components": []' + sLineBreak +
-    '}' + sLineBreak;
-
-  TFile.WriteAllText( APath, Json, TEncoding.UTF8 );
-
-end;
-
-procedure TMainForm.DetectDelphiPath;
-begin
-
-  var Reg := TRegistry.Create( KEY_READ );
-  try
-    Reg.RootKey := HKEY_CURRENT_USER;
-
-    if Reg.OpenKeyReadOnly( 'Software\Embarcadero\BDS' ) then
-    begin
-      var SubKeys := TStringList.Create;
-      try
-        Reg.GetKeyNames( SubKeys );
-        Reg.CloseKey;
-
-        var HighestVer        := '';
-        var HighestVal: Double := 0.0;
-        var FmtSettings       := TFormatSettings.Create( 'en-US' );
-
-        for var I := 0 to SubKeys.Count - 1 do
-        begin
-          var NumVal: Double := 0.0;
-
-          if TryStrToFloat( SubKeys[ I ], NumVal, FmtSettings ) then
-            if NumVal > HighestVal then
-            begin
-              HighestVal := NumVal;
-              HighestVer := SubKeys[ I ];
-            end;
-        end;
-
-        if ( HighestVer <> '' ) and Reg.OpenKeyReadOnly( 'Software\Embarcadero\BDS\' + HighestVer ) then
-        begin
-          if Reg.ValueExists( 'RootDir' ) then
-            FEdtDelphiPath.Text := ExcludeTrailingPathDelimiter( Reg.ReadString( 'RootDir' ) );
-
-          Reg.CloseKey;
-        end;
-      finally
-        SubKeys.Free;
-      end;
-    end;
-  finally
-    Reg.Free;
-  end;
+  FEdtVersion.Text  := Entry.VersionOverride;
+  FEdtDXComply.Text := Entry.DXComplyFile;
 
 end;
 
 end.
+
