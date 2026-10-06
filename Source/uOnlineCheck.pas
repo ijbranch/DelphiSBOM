@@ -54,6 +54,7 @@ type
     FApiBase: string;
     FStopped: Boolean;
     FStopReason: string;
+    FRealHttp: Boolean;
 
     procedure Log( ALevel: TLogLevel; const AMessage: string );
     function Fetch( const APath: string; out AStatus: Integer ): string;
@@ -110,11 +111,41 @@ function TagToVersion( const ATag: string ): string;
 function VersionsMatch( const AVersion, ATagVersion: string ): Boolean;
 
 /// <summary>
-///   An HTTP GET with THTTPClient: GitHub's JSON media type, a User-Agent, timeouts, and the
-///   GITHUB_TOKEN environment variable as a bearer token when set.
+///   An HTTP GET with THTTPClient: GitHub's JSON media type, a User-Agent, timeouts, and AToken as a
+///   bearer token when not empty.
 /// </summary>
+/// <param name="AToken">The GitHub token to send, or '' for anonymous requests.</param>
 /// <returns>The fetch function.</returns>
-function DefaultHttpGet: THttpGet;
+function DefaultHttpGet( const AToken: string = '' ): THttpGet;
+
+/// <summary>
+///   The GitHub token for the online check, and where it came from: the GITHUB_TOKEN environment value
+///   when set; otherwise, only when requests go to https://api.github.com, the github.com credential from
+///   ACredential (Git Credential Manager); otherwise none. A credential is never looked up for another API
+///   address, so it cannot be sent to a server other than GitHub's.
+/// </summary>
+/// <param name="AApiBase">The API root requests go to.</param>
+/// <param name="AEnvToken">The GITHUB_TOKEN environment value ('' when unset).</param>
+/// <param name="ACredential">Returns the stored github.com credential, or ''; may be nil.</param>
+/// <param name="ASource">Where the token came from, for the log: 'GITHUB_TOKEN', 'Git Credential Manager' or 'none'.</param>
+/// <returns>The token, or '' for anonymous requests.</returns>
+function ResolveGitHubToken( const AApiBase, AEnvToken: string; const ACredential: TFunc<string>; out ASource: string ): string;
+
+/// <summary>
+///   The password from the output of "git credential fill" (its password= line), or '' when there is none.
+/// </summary>
+/// <param name="AOutput">The command's standard output.</param>
+/// <returns>The password (for GitHub, the token).</returns>
+function ParseCredentialOutput( const AOutput: string ): string;
+
+/// <summary>
+///   Asks Git Credential Manager for the stored github.com credential by running "git credential fill"
+///   without a window and non-interactively (GCM_INTERACTIVE=never, GIT_TERMINAL_PROMPT=0), so a missing
+///   credential gives '' rather than a sign-in prompt. '' as well when git is not installed or takes longer
+///   than ten seconds.
+/// </summary>
+/// <returns>The token, or ''.</returns>
+function GitCredentialToken: string;
 
 var
   /// <summary>
@@ -123,10 +154,17 @@ var
   /// </summary>
   OnlineHttpOverride: THttpGet;
 
+  /// <summary>
+  ///   Where a checker without its own fetch gets the stored github.com credential: GitCredentialToken by
+  ///   default. Test seam: tests replace it so no real credential is read.
+  /// </summary>
+  OnlineCredentialSource: TFunc<string>;
+
 implementation
 
 uses
-  System.JSON, System.RegularExpressions, System.Net.HttpClient, System.Net.URLClient, System.NetConsts;
+  Winapi.Windows, System.Classes, System.JSON, System.RegularExpressions, System.Net.HttpClient, System.Net.URLClient,
+  System.NetConsts;
 
 function ParseGitHubRepo( const AUrl: string; out AOwner, ARepo: string ): Boolean;
 begin
@@ -167,8 +205,175 @@ begin
 
 end;
 
-function DefaultHttpGet: THttpGet;
+function ResolveGitHubToken( const AApiBase, AEnvToken: string; const ACredential: TFunc<string>; out ASource: string ): string;
 begin
+
+  if AEnvToken <> '' then
+  begin
+    ASource         := 'GITHUB_TOKEN';
+    Exit( AEnvToken );
+  end;
+
+  ASource           := 'none';
+  Result            := '';
+
+  // The stored credential is the user's GitHub token: it goes to GitHub's own API and nowhere else
+  if ( not SameText( TrimRight( AApiBase ).TrimRight( [ '/' ] ), 'https://api.github.com' ) ) or ( not Assigned( ACredential ) ) then Exit;
+
+  Result            := Trim( ACredential() );
+
+  if Result <> '' then
+    ASource         := 'Git Credential Manager';
+
+end;
+
+function ParseCredentialOutput( const AOutput: string ): string;
+begin
+
+  Result            := '';
+
+  for var Line in AOutput.Split( [ #10 ] ) do
+  begin
+    var Clean       := Line.TrimRight( [ #13 ] );
+
+    if Clean.StartsWith( 'password=' ) then
+      Exit( Clean.Substring( Length( 'password=' ) ) );
+  end;
+
+end;
+
+/// <summary>
+///   This process's environment as a Unicode environment block, with AOverrides (NAME=value) replacing
+///   any variable of the same name.
+/// </summary>
+function EnvironmentWith( const AOverrides: array of string ): string;
+begin
+
+  var Names         := TStringList.Create;
+  try
+    for var O in AOverrides do
+      Names.Add( UpperCase( Copy( O, 1, Pos( '=', O ) ) ) );
+
+    var Builder     := TStringBuilder.Create;
+    try
+      var Block     := GetEnvironmentStrings;
+      try
+        var P       := Block;
+
+        while P^ <> #0 do
+        begin
+          var Entry := string( P );
+
+          if Names.IndexOf( UpperCase( Copy( Entry, 1, Pos( '=', Entry ) ) ) ) < 0 then
+            Builder.Append( Entry ).Append( #0 );
+
+          Inc( P, Length( Entry ) + 1 );
+        end;
+      finally
+        FreeEnvironmentStrings( Block );
+      end;
+
+      for var O in AOverrides do
+        Builder.Append( O ).Append( #0 );
+
+      Builder.Append( #0 );
+      Result        := Builder.ToString;
+    finally
+      Builder.Free;
+    end;
+  finally
+    Names.Free;
+  end;
+
+end;
+
+function GitCredentialToken: string;
+begin
+
+  Result            := '';
+
+  var Security: TSecurityAttributes;
+  Security.nLength  := SizeOf( Security );
+  Security.lpSecurityDescriptor := nil;
+  Security.bInheritHandle := True;
+
+  var InRead, InWrite, OutRead, OutWrite: THandle;
+
+  if ( not CreatePipe( InRead, InWrite, @Security, 0 ) ) then Exit;
+  try
+    if ( not CreatePipe( OutRead, OutWrite, @Security, 0 ) ) then Exit;
+    try
+      // Only the child's ends are inherited
+      SetHandleInformation( InWrite, HANDLE_FLAG_INHERIT, 0 );
+      SetHandleInformation( OutRead, HANDLE_FLAG_INHERIT, 0 );
+
+      var Startup   := Default( TStartupInfo );
+      Startup.cb    := SizeOf( Startup );
+      Startup.dwFlags := STARTF_USESTDHANDLES or STARTF_USESHOWWINDOW;
+      Startup.wShowWindow := SW_HIDE;
+      Startup.hStdInput := InRead;
+      Startup.hStdOutput := OutWrite;
+      Startup.hStdError := OutWrite;
+
+      // Never a sign-in window or a terminal prompt: a missing credential must give '', not a dialog
+      var Environment := EnvironmentWith( [ 'GCM_INTERACTIVE=never', 'GIT_TERMINAL_PROMPT=0' ] );
+      var Command   := 'git credential fill';
+      UniqueString( Command );
+
+      var Process: TProcessInformation;
+
+      if ( not CreateProcess( nil, PChar( Command ), nil, nil, True, CREATE_NO_WINDOW or CREATE_UNICODE_ENVIRONMENT,
+        PChar( Environment ), nil, Startup, Process ) ) then Exit;
+      try
+        CloseHandle( InRead );
+        InRead      := 0;
+        CloseHandle( OutWrite );
+        OutWrite    := 0;
+
+        var Request := UTF8Encode( 'protocol=https' + #10 + 'host=github.com' + #10 + #10 );
+        var Written: DWORD;
+        WriteFile( InWrite, Request[ 1 ], Length( Request ), Written, nil );
+        CloseHandle( InWrite );
+        InWrite     := 0;
+
+        // The answer is far smaller than the pipe buffer, so the child never blocks writing it
+        if WaitForSingleObject( Process.hProcess, 10000 ) <> WAIT_OBJECT_0 then
+        begin
+          TerminateProcess( Process.hProcess, 1 );
+          Exit;
+        end;
+
+        var Bytes: TBytes := nil;
+        var Buffer: array[ 0..4095 ] of Byte;
+        var Read: DWORD;
+
+        while ReadFile( OutRead, Buffer, SizeOf( Buffer ), Read, nil ) and ( Read > 0 ) do
+        begin
+          var Used  := Length( Bytes );
+          SetLength( Bytes, Used + Integer( Read ) );
+          Move( Buffer[ 0 ], Bytes[ Used ], Read );
+        end;
+
+        Result      := ParseCredentialOutput( TEncoding.UTF8.GetString( Bytes ) );
+      finally
+        CloseHandle( Process.hThread );
+        CloseHandle( Process.hProcess );
+      end;
+    finally
+      if OutRead <> 0 then CloseHandle( OutRead );
+      if OutWrite <> 0 then CloseHandle( OutWrite );
+    end;
+  finally
+    if InRead <> 0 then CloseHandle( InRead );
+    if InWrite <> 0 then CloseHandle( InWrite );
+  end;
+
+end;
+
+function DefaultHttpGet( const AToken: string ): THttpGet;
+begin
+
+  var Token         := AToken;
 
   Result            :=
     function( const AUrl: string; out AStatus: Integer ): string
@@ -181,7 +386,6 @@ begin
         Client.ResponseTimeout := 20000;
 
         var Headers: TNetHeaders := nil;
-        var Token   := GetEnvironmentVariable( 'GITHUB_TOKEN' );
 
         if Token <> '' then
           Headers   := [ TNameValuePair.Create( 'Authorization', 'Bearer ' + Token ) ];
@@ -229,8 +433,8 @@ begin
   if ( not Assigned( FGet ) ) then
     FGet            := OnlineHttpOverride;
 
-  if ( not Assigned( FGet ) ) then
-    FGet            := DefaultHttpGet();
+  // Without an injected fetch, Check builds the real one: the token depends on ApiBase, set after creation
+  FRealHttp         := not Assigned( FGet );
 
   FApiBase          := GetEnvironmentVariable( 'DELPHISBOM_GITHUB_API' );
 
@@ -411,6 +615,19 @@ begin
   FStopped          := False;
   FStopReason       := '';
 
+  if FRealHttp then
+  begin
+    var Source      := '';
+    var Token       := ResolveGitHubToken( FApiBase, GetEnvironmentVariable( 'GITHUB_TOKEN' ), OnlineCredentialSource, Source );
+    FGet            := DefaultHttpGet( Token );
+
+    if Token = '' then
+      Log( llInfo, 'Online check: anonymous GitHub requests (60 an hour) — set GITHUB_TOKEN, or store a github.com credential ' +
+        'in Git Credential Manager, for more' )
+    else
+      Log( llInfo, 'Online check: authenticated with the GitHub token from ' + Source );
+  end;
+
   var Findings      := TList<TOnlineFinding>.Create;
   try
     for var Entry in AManifest.Components do
@@ -430,5 +647,9 @@ begin
   Log( llInfo, Format( 'Online check: %d components, %d findings, %d to review', [ Length( AManifest.Components ), Length( Result ), Warnings ] ) );
 
 end;
+
+initialization
+
+  OnlineCredentialSource := GitCredentialToken;
 
 end.
