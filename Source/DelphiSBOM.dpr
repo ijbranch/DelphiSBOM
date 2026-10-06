@@ -1,4 +1,4 @@
-program DelphiSBOM;
+﻿program DelphiSBOM;
 
 uses
   Vcl.Forms,
@@ -13,7 +13,9 @@ uses
   uLibraryDiscovery in 'uLibraryDiscovery.pas',
   uSettings in 'uSettings.pas',
   uLibraryEditor in 'uLibraryEditor.pas',
-  uEvidenceMerger in 'uEvidenceMerger.pas';
+  uEvidenceMerger in 'uEvidenceMerger.pas',
+  uTextFiles in 'uTextFiles.pas',
+  uDelphiInstall in 'uDelphiInstall.pas';
 
 {$R *.res}
 

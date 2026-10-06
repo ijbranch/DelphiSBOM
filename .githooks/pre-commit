@@ -1,0 +1,13 @@
+#!/bin/sh
+# Blocks a commit whose staged .dproj defines USE_SYNEDIT directly.
+# SynEdit is optional: enable it locally through the DELPHISBOM_DEFINES environment variable
+# (see README.md), never in the committed .dproj, so a clean Delphi install can always build.
+
+status=0
+for f in $(git diff --cached --name-only --diff-filter=ACM -- "*.dproj"); do
+  if git show ":$f" | grep -q "<DCC_Define>[^<]*USE_SYNEDIT"; then
+    echo "pre-commit: $f defines USE_SYNEDIT. Remove it in Project Options and set DELPHISBOM_DEFINES=USE_SYNEDIT instead." >&2
+    status=1
+  fi
+done
+exit $status
