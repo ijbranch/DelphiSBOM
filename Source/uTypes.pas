@@ -107,7 +107,18 @@ type
     SuggestedPrefix: string; // Computed common prefix for unit matching
     Units: TArray<string>; // Unit names found in this directory
     Confirmed: Boolean; // User has confirmed this entry
+    BinaryOnly: Boolean; // Found only as .dcu files: no source under the library root
   end;
+
+  /// <summary>
+  ///   A companion report written beside the SBOM.
+  /// </summary>
+  TReportFormat = ( rfMarkdown, rfHtml );
+
+  /// <summary>
+  ///   The companion reports to write; empty writes none.
+  /// </summary>
+  TReportFormats = set of TReportFormat;
 
   /// <summary>
   ///   Binary evidence for a single unit, imported from DX.Comply SBOM output.
@@ -135,6 +146,10 @@ type
     DiscoveredLibraries: TArray<TDiscoveredLibrary>; // Libraries found by file system scan
     AutoOwnCodeUnits: TArray<string>; // Units found in the project dir or sibling own-code dirs (auto own-code)
     Evidence: TArray<TUnitEvidence>; // Binary evidence from DX.Comply (optional)
+    ProductVersion: string; // The application version written to the SBOM
+    UnitSource: string; // Where the unit list came from: the uses clause or a MAP file
+    ValidationErrors: TArray<string>; // Problems the post-write check found in the SBOM (empty = passed)
+    ReportFiles: TArray<string>; // Companion reports written
     ErrorMessage: string; // Populated only on failure
   end;
 
@@ -148,6 +163,8 @@ type
     DelphiPath: string; // Delphi install path (empty = the project's Delphi version, from the registry)
     VersionOverride: string; // Version string override (empty = read from .dproj)
     DXComplyFile: string; // Path to DX.Comply bom.json (empty = no evidence merge)
+    MapFile: string; // Path to a detailed .map file (empty = units from the uses clause)
+    ReportFormats: TReportFormats; // Companion reports to write beside the SBOM
   end;
 
 const
@@ -225,6 +242,15 @@ function FormatLogMessage( ALevel: TLogLevel; const AMessage: string ): string;
 /// <param name="AResolve">Returns the replacement for a reference name.</param>
 /// <returns>The expanded text.</returns>
 function ExpandMacroReferences( const AValue: string; const AResolve: TFunc<string, string> ): string;
+
+/// <summary>
+///   The version the SBOM gives the application: the override when set, else the project's
+///   version, else 0.0.0.0.
+/// </summary>
+/// <param name="AOverride">The user's version override (may be empty).</param>
+/// <param name="AProjectVersion">The version read from the .dproj (may be empty).</param>
+/// <returns>The version to emit.</returns>
+function EffectiveProductVersion( const AOverride, AProjectVersion: string ): string;
 
 type
   /// <summary>
@@ -330,6 +356,19 @@ begin
   finally
     Builder.Free;
   end;
+
+end;
+
+function EffectiveProductVersion( const AOverride, AProjectVersion: string ): string;
+begin
+
+  Result            := AOverride;
+
+  if Result = '' then
+    Result          := AProjectVersion;
+
+  if Result = '' then
+    Result          := '0.0.0.0';
 
 end;
 
