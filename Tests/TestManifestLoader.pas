@@ -90,6 +90,14 @@ type
     /// </summary>
     [Test]
     procedure SetComponentFieldsChangesOnlyThatComponent;
+
+    /// <summary>
+    ///   Proves the standard licence names Commercial and Proprietary load without a warning, in any
+    ///   casing, while a value that looks like a mistyped SPDX id ("MPL 1.1") is still warned about.
+    ///   Proprietary was warned about although it is as standard a name as Commercial.
+    /// </summary>
+    [Test]
+    procedure StandardLicenceNamesAreNotWarnedAbout;
   end;
 
 implementation
@@ -297,6 +305,38 @@ begin
     begin
       FLoader.SetComponentFields( FileName, 'Missing', [ TPair<string, string>.Create( 'licence', 'MIT' ) ] );
     end, EManifestError );
+
+end;
+
+procedure TManifestLoaderTests.StandardLicenceNamesAreNotWarnedAbout;
+begin
+
+  var FileName := FScratch.PathOf( 'components.json' );
+  WriteUtf8File( FileName, '{ "schema_version": "1.0", "last_updated": "2026-10-07", "supplier": { "name": "Me" }, "components": [ ' +
+    '{ "name": "A", "version": "1", "vendor": "V", "licence": "Commercial", "units_exact": [ "UA" ] }, ' +
+    '{ "name": "B", "version": "1", "vendor": "V", "licence": "Proprietary", "units_exact": [ "UB" ] }, ' +
+    '{ "name": "C", "version": "1", "vendor": "V", "licence": "proprietary", "units_exact": [ "UC" ] }, ' +
+    '{ "name": "D", "version": "1", "vendor": "V", "licence": "MPL 1.1", "units_exact": [ "UD" ] } ] }' );
+
+  var Warnings := TList<string>.Create;
+  try
+    var Loader := TManifestLoader.Create(
+      procedure( ALevel: TLogLevel; AMessage: string )
+      begin
+        if ALevel = llWarning then
+          Warnings.Add( AMessage );
+      end );
+    try
+      Loader.Load( FileName );
+    finally
+      Loader.Free;
+    end;
+
+    Assert.AreEqual<Integer>( 1, Warnings.Count, string.Join( ' / ', Warnings.ToArray ) );
+    Assert.Contains( Warnings[ 0 ], 'MPL 1.1' );
+  finally
+    Warnings.Free;
+  end;
 
 end;
 
