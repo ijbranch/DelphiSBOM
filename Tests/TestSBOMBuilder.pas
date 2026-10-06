@@ -62,6 +62,14 @@ type
     procedure DuplicateComponentsGetDistinctRefs;
 
     /// <summary>
+    ///   Proves a manifest purl replaces the generated pkg:delphi one, as the purl and as the bom-ref the
+    ///   dependency graph names, so a library can be identified by its registered package type
+    ///   (pkg:github/...); components without one keep the generated purl.
+    /// </summary>
+    [Test]
+    procedure ManifestPurlOverridesTheGeneratedOne;
+
+    /// <summary>
     ///   Proves a recognised SPDX licence is emitted as license.id in canonical case.
     /// </summary>
     [Test]
@@ -338,6 +346,25 @@ begin
     Assert.AreEqual( 'library', Component( Root, 1 ).GetValue<string>( 'type' ), False );
     Assert.AreEqual( 'library', Component( Root, 2 ).GetValue<string>( 'type' ), False );
     Assert.AreEqual( 'framework', Component( Root, 3 ).GetValue<string>( 'type' ), False );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.ManifestPurlOverridesTheGeneratedOne;
+begin
+
+  FManifest.Components[ 0 ].Purl := 'pkg:github/tmssoftware/vcl-ui-pack@v13.0';
+
+  var Root := BuildJson( nil );
+  try
+    Assert.AreEqual( 'pkg:github/tmssoftware/vcl-ui-pack@v13.0', Component( Root, 1 ).GetValue<string>( 'purl' ) );
+    Assert.AreEqual( 'pkg:github/tmssoftware/vcl-ui-pack@v13.0', BomRef( Component( Root, 1 ) ) );
+    Assert.AreEqual( 'pkg:delphi/Closed@1', Component( Root, 2 ).GetValue<string>( 'purl' ), 'Others keep the generated purl' );
+
+    var DependsOn := Root.GetValue<TJSONArray>( 'dependencies' ).Items[ 0 ].GetValue<TJSONArray>( 'dependsOn' );
+    Assert.AreEqual( 'pkg:github/tmssoftware/vcl-ui-pack@v13.0', DependsOn.Items[ 1 ].Value, 'Dependency graph names the override' );
   finally
     Root.Free;
   end;

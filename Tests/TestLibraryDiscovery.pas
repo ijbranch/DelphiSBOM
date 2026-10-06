@@ -220,6 +220,14 @@ type
     /// </summary>
     [Test]
     procedure HolderBeforeTheWordIsRead;
+
+    /// <summary>
+    ///   Proves a BSD licence whose third clause says "The name of ... may not be used to endorse or promote"
+    ///   is BSD-3-Clause, not BSD-2-Clause: OmniThreadLibrary's licence was reported as BSD-2-Clause because
+    ///   only the wording "Neither the name" was recognised. A genuine two-clause text stays BSD-2-Clause.
+    /// </summary>
+    [Test]
+    procedure BsdEndorsementClauseMeansThreeClause;
   end;
 
 implementation
@@ -412,6 +420,19 @@ begin
     '(*' + sLineBreak + '  Jane le Doe, copyright 2004 - 2026, all rights reserved' + sLineBreak + sLineBreak + 'Sponsored by:' + sLineBreak +
     '  acme-soft AG' + sLineBreak + '*)' + sLineBreak ) );
 
+  // BSD texts: OmniThreadLibrary's three-clause wording, and a genuine two-clause one
+  var BsdHead := 'Redistribution and use in source and binary forms, with or without modification, are permitted provided ' +
+    'that the following conditions are met:' + sLineBreak +
+    '- Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.' + sLineBreak +
+    '- Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following ' +
+    'disclaimer in the documentation and/or other materials provided with the distribution.' + sLineBreak;
+  WriteUtf8File( FScratch.PathOf( 'Libs\Bsd3Lib\LICENSE.txt' ), 'This software is distributed under the BSD license.' + sLineBreak +
+    BsdHead + '- The name of the Jane Doe may not be used to endorse or promote products derived from this software without ' +
+    'specific prior written permission.' + sLineBreak + 'THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS "AS IS"' );
+  WriteUtf8File( FScratch.PathOf( 'Libs\Bsd3Lib\' + FTag + 'Bsd3.pas' ), Unit_( 'Bsd3', '' ) );
+  WriteUtf8File( FScratch.PathOf( 'Libs\Bsd2Lib\LICENSE' ), BsdHead + 'THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS "AS IS"' );
+  WriteUtf8File( FScratch.PathOf( 'Libs\Bsd2Lib\' + FTag + 'Bsd2.pas' ), Unit_( 'Bsd2', '' ) );
+
   // One contributor's file sorts first; the other three carry the publisher's banner
   WriteUtf8File( FScratch.PathOf( 'Libs\VoteLib\' + FTag + 'Vote0.pas' ), Unit_( 'Vote0',
     '// Copyright (c) 2003 Jane Contributor' + sLineBreak ) );
@@ -429,10 +450,11 @@ begin
     var AutoOwn: TArray<string>;
     FLibraries := Discovery.Discover(
       [ FTag + 'Stray', FTag + 'Rb', FTag + 'Rtl', FTag + 'Id', FTag + 'Pkg', FTag + 'Info', FTag + 'Art', FTag + 'Block1',
-        FTag + 'Block2', FTag + 'Vote0', FTag + 'Holder' ],
+        FTag + 'Block2', FTag + 'Vote0', FTag + 'Holder', FTag + 'Bsd3', FTag + 'Bsd2' ],
       [ StrayDcuDir, RbDcuDir, RtlDcuDir, FScratch.PathOf( 'Libs\IdLib' ), FScratch.PathOf( 'Libs\PkgLib' ),
         FScratch.PathOf( 'Libs\InfoThing\source\windows' ), FScratch.PathOf( 'Libs\ArtLib' ), FScratch.PathOf( 'Libs\BlockLib' ),
-        FScratch.PathOf( 'Libs\VoteLib' ), FScratch.PathOf( 'Libs\HolderLib' ) ],
+        FScratch.PathOf( 'Libs\VoteLib' ), FScratch.PathOf( 'Libs\HolderLib' ), FScratch.PathOf( 'Libs\Bsd3Lib' ),
+        FScratch.PathOf( 'Libs\Bsd2Lib' ) ],
       FScratch.PathOf( 'Work\App' ), FScratch.PathOf( 'Studio' ), '', 'Win64', AutoOwn );
   finally
     Discovery.Free;
@@ -534,6 +556,14 @@ procedure TDiscoveryCaseTests.HolderBeforeTheWordIsRead;
 begin
 
   Assert.AreEqual( 'Jane le Doe', LibraryOf( 'Holder' ).Vendor );
+
+end;
+
+procedure TDiscoveryCaseTests.BsdEndorsementClauseMeansThreeClause;
+begin
+
+  Assert.AreEqual( 'BSD-3-Clause', LibraryOf( 'Bsd3' ).Licence );
+  Assert.AreEqual( 'BSD-2-Clause', LibraryOf( 'Bsd2' ).Licence );
 
 end;
 

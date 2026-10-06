@@ -98,6 +98,13 @@ type
     /// </summary>
     [Test]
     procedure StandardLicenceNamesAreNotWarnedAbout;
+
+    /// <summary>
+    ///   Proves a component's optional purl is read, and that a value which is not a package URL
+    ///   (pkg:type/name) is warned about, as the SBOM would then be invalid.
+    /// </summary>
+    [Test]
+    procedure PurlOverrideIsReadAndChecked;
   end;
 
 implementation
@@ -334,6 +341,38 @@ begin
 
     Assert.AreEqual<Integer>( 1, Warnings.Count, string.Join( ' / ', Warnings.ToArray ) );
     Assert.Contains( Warnings[ 0 ], 'MPL 1.1' );
+  finally
+    Warnings.Free;
+  end;
+
+end;
+
+procedure TManifestLoaderTests.PurlOverrideIsReadAndChecked;
+begin
+
+  var FileName := FScratch.PathOf( 'components.json' );
+  WriteUtf8File( FileName, '{ "schema_version": "1.0", "last_updated": "2026-10-07", "supplier": { "name": "Me" }, "components": [ ' +
+    '{ "name": "A", "version": "1", "vendor": "V", "licence": "MIT", "purl": "pkg:github/acme/a@v1", "units_exact": [ "UA" ] }, ' +
+    '{ "name": "B", "version": "1", "vendor": "V", "licence": "MIT", "purl": "https://github.com/acme/b", "units_exact": [ "UB" ] } ] }' );
+
+  var Warnings := TList<string>.Create;
+  try
+    var Loader := TManifestLoader.Create(
+      procedure( ALevel: TLogLevel; AMessage: string )
+      begin
+        if ALevel = llWarning then
+          Warnings.Add( AMessage );
+      end );
+    try
+      var Manifest := Loader.Load( FileName );
+      Assert.AreEqual( 'pkg:github/acme/a@v1', Manifest.Components[ 0 ].Purl );
+      Assert.AreEqual( 'https://github.com/acme/b', Manifest.Components[ 1 ].Purl, 'Kept as written, for the warning and the check' );
+    finally
+      Loader.Free;
+    end;
+
+    Assert.AreEqual<Integer>( 1, Warnings.Count, string.Join( ' / ', Warnings.ToArray ) );
+    Assert.Contains( Warnings[ 0 ], 'https://github.com/acme/b' );
   finally
     Warnings.Free;
   end;
