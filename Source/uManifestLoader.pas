@@ -10,7 +10,7 @@ unit uManifestLoader;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.JSON,
+  System.SysUtils, System.Classes, System.JSON, System.Generics.Collections,
   uTypes;
 
 type
@@ -73,6 +73,16 @@ type
       const AUnitNames: TArray<string> );
 
     /// <summary>
+    ///   Sets string fields of one component in components.json (adding a field that is missing) and
+    ///   saves the file, keeping everything else. Used to apply accepted online-check suggestions.
+    /// </summary>
+    /// <param name="AManifestFile">Full path of components.json.</param>
+    /// <param name="AComponentName">The component's name (case-insensitive; the first match).</param>
+    /// <param name="AFields">The keys and values to set, e.g. ('licence', 'GPL-3.0-only').</param>
+    /// <exception cref="EManifestError">The file is not valid JSON, or has no component of that name.</exception>
+    procedure SetComponentFields( const AManifestFile, AComponentName: string; const AFields: TArray<TPair<string, string>> );
+
+    /// <summary>
     ///   Returns the default components.json skeleton text (pretty-printed JSON).
     /// </summary>
     /// <returns>The skeleton, with schema_version, last_updated, an empty supplier and no components.</returns>
@@ -82,7 +92,7 @@ type
 implementation
 
 uses
-  System.IOUtils, System.Generics.Collections,
+  System.IOUtils,
   uTextFiles;
 
 /// <summary>
@@ -519,6 +529,46 @@ begin
     WriteTextFileAtomic( AManifestFile, Root.Format );
 
     Log( llInfo, Format( 'Manifest saved to %s (%d components added)', [ AManifestFile, Added ] ) );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TManifestLoader.SetComponentFields( const AManifestFile, AComponentName: string; const AFields: TArray<TPair<string, string>> );
+begin
+
+  var Root          := LoadRootForUpdate( AManifestFile );
+  try
+    var CompArray   := GetOrAddArray( Root, 'components' );
+    var Target: TJSONObject := nil;
+
+    for var I := 0 to CompArray.Count - 1 do
+      if ( CompArray.Items[ I ] is TJSONObject ) and
+        SameText( ReadString( TJSONObject( CompArray.Items[ I ] ), 'name', '', 'Component' ), AComponentName ) then
+      begin
+        Target      := TJSONObject( CompArray.Items[ I ] );
+        Break;
+      end;
+
+    if ( not Assigned( Target ) ) then
+      raise EManifestError.CreateFmt( '%s has no component named "%s"', [ AManifestFile, AComponentName ] );
+
+    // Replace in place, so the key keeps its position; add a missing key at the end
+    for var Field in AFields do
+    begin
+      var Pair      := Target.Get( Field.Key );
+
+      if Assigned( Pair ) then
+        Pair.JsonValue := TJSONString.Create( Field.Value )
+      else
+        Target.AddPair( Field.Key, Field.Value );
+
+      Log( llInfo, Format( 'components.json: %s %s set to "%s"', [ AComponentName, Field.Key, Field.Value ] ) );
+    end;
+
+    SetLastUpdated( Root );
+    WriteTextFileAtomic( AManifestFile, Root.Format );
   finally
     Root.Free;
   end;
