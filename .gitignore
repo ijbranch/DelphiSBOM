@@ -40,3 +40,6 @@ Thumbs.db
 # Backup files
 *.bak
 *.bak1
+
+# DUnitX results
+dunitx-results.xml
