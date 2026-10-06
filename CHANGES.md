@@ -2,6 +2,18 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-06 — Scripted GUI Checks [Added]
+
+- `Tests/GuiChecks.ps1`: 30 PASS/FAIL checks against the Release exe, driven by window messages
+  to its controls (no coordinates, no forced focus). Covers project switching, the recent-projects
+  list (including a Cyrillic path across a restart), result buttons during a run, the library
+  editor (Space toggle, missing-name warning, discard prompt) and Save & Regenerate. All 30 pass.
+  It backs up and restores the user's INI and removes its scratch projects.
+- Docs: README "GUI checks" section with its environment caveat; `CLAUDE.md` testing rules for the
+  script; Help and User's Guide now explain that discovery searches only the project search paths,
+  the IDE library path and the fixed roots, so a library beside the project is found only through a
+  search path — `README.md`, `CLAUDE.md`, `Docs/Help.md`, `Docs/UsersGuide.md`
+
 ## 2026-10-06 — DUnitX Test Suite [Added]
 
 - DUnitX console suite over the non-VCL units: 64 tests in 9 fixtures, ported from the

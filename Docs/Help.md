@@ -113,6 +113,19 @@ as text. Units inside every `{$IFDEF}` branch are included, and units listed in
 `{$I}` include files are not read. Review the SBOM if your uses clause depends
 on conditional compilation.
 
+### A library next to my project is not discovered
+
+Discovery looks for `.pas` files only in the project's unit search paths (from
+the `.dproj`), the IDE library path for the project's Delphi version, the
+top-level folders of `D:\`, and the Program Files folders — each with its parent
+and one level of subfolders. A library checked out beside your project (e.g.
+`C:\Dev\MyLib` next to `C:\Dev\MyApp`) is found only when one of those points at
+it. A plain `.dpr` with no `.dproj` has no search paths.
+
+**Fix:** add the library folder to the project's search path (Project > Options >
+Building > Delphi Compiler > Search path) or to the IDE library path, then
+Generate again.
+
 ### A project directory is incorrectly identified as a library
 
 The discovery scanner excludes directories containing `.dpr` or `.dproj` files. If a directory is still being misidentified:

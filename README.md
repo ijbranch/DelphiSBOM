@@ -158,6 +158,25 @@ Files folders (its unit names are unique, so nothing found there can match).
 Each test writes only to its own `%TEMP%\DelphiSBOMTests-<guid>` folder and
 deletes it afterwards.
 
+### GUI checks
+
+`Tests/GuiChecks.ps1` drives the built application (`Source\Win64\Release\DelphiSBOM.exe`)
+through window messages to its controls — no screen coordinates, no stealing
+focus — and reports PASS/FAIL for 30 checks: switching projects resets the
+per-project fields, the recent-projects list restores them (including a path
+with Cyrillic characters, across a restart), result buttons are disabled while
+a run is in progress, the library editor's Space toggle, missing-name warning
+and discard prompt, and Save & Regenerate writing the manifest.
+
+```
+pwsh -File Tests\GuiChecks.ps1
+```
+
+It needs PowerShell 7. Your `%APPDATA%\DelphiSBOM\DelphiSBOM.ini` is backed up
+first and restored afterwards; the exit code is non-zero when a check fails.
+**Environment caveat:** run only on Windows 11 with Delphi 13; it assumes the
+application's default layout (the app is DPI-unaware).
+
 ## Licence
 
 MIT — see [LICENCE](LICENCE).

@@ -106,6 +106,9 @@ Click **Generate SBOM**. The app runs the following pipeline in the background
    - Searches your project's search paths (from the `.dproj`, with `$(BDS)`-style
      macros expanded) and the IDE library path
    - Searches common library locations (`D:\`, `C:\Program Files`)
+   - Nothing else: a library folder is found only if one of these points at it,
+     so a library checked out beside your project needs to be on the project's
+     search path or the IDE library path
    - Groups found `.pas` files by directory (one directory = one library)
    - Extracts metadata: library name from directory name, vendor from source
      file headers, licence from LICENSE files

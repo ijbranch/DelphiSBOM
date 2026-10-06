@@ -129,6 +129,13 @@ This repository will become public. The following rules apply now:
   `.dproj` call `CoInitializeEx` in setup (MSXML).
 - New behaviour gets a test whose `<summary>` says what it proves; mutation-check it (reintroduce
   the defect, see the test fail) before relying on it.
+- `Tests/GuiChecks.ps1` (pwsh 7) drives the Release exe by window messages — `WM_SETTEXT`,
+  `BM_CLICK`, `WM_CHAR`, `CB_SETCURSEL` + `CBN_SELCHANGE` — never screen coordinates or forced
+  focus. Run it after UI changes in `uMainForm`/`uLibraryEditor`; extend it when a UI behaviour is
+  added. It backs up and restores the user's INI. Dialogs are found by class (`TMessageForm`,
+  `#32770`) only: other windows in the process (e.g. a monitor utility's helper) must be ignored.
+  Detect run completion from the log text, not from the Generate button (a fast run can start and
+  finish between two polls).
 - **Environment caveat:** the suite runs only on Delphi 13 Win64. `TestSBOMEngine` also scans
   the machine's library roots and `TestDelphiInstall` reads the registry — both are written to
   hold on any machine, but have only been run on one.
@@ -151,4 +158,5 @@ This repository will become public. The following rules apply now:
 | `Docs/CYCLONEDX-NOTES.md` | CycloneDX 1.5 compliance notes and known limitations |
 | `Samples/components.sample.json` | Example manifest for onboarding (every field and licence form) |
 | `Tests/DelphiSBOMTests.dproj` | DUnitX suite |
+| `Tests/GuiChecks.ps1` | Scripted GUI checks against the Release exe |
 | `Docs/AUDIT-2026-10-06.md` | Audit findings and their status |
