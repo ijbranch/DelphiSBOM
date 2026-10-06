@@ -364,7 +364,9 @@ begin
   begin
     var Normalised  := '';
 
-    if ( ClassifyLicence( AComp.Licence, Normalised ) = lkName ) and ( not SameText( AComp.Licence, 'Commercial' ) ) then
+    // Commercial and Proprietary are the standard names for licences that have no SPDX identifier
+    if ( ClassifyLicence( AComp.Licence, Normalised ) = lkName ) and ( not SameText( Normalised, 'Commercial' ) ) and
+      ( not SameText( Normalised, 'Proprietary' ) ) then
       Log( llWarning, Format( '%s: licence "%s" is not a recognised SPDX identifier — it will be written as a licence name',
           [ Prefix, AComp.Licence ] ) );
   end;
