@@ -193,10 +193,19 @@ begin
 
   Log( llInfo, Format( 'Loading manifest from %s', [ ExtractFileName( AManifestFile ) ] ) );
 
-  var JsonVal       := TJSONObject.ParseJSONValue( ReadTextFile( AManifestFile ) );
+  var Content       := ReadTextFile( AManifestFile );
+  var JsonVal: TJSONValue;
+
+  // The parser's own message says where: "... Path 'components', line 4, position 3"
+  try
+    JsonVal         := TJSONObject.ParseJSONValue( Content, False, True );
+  except
+    on E: EJSONParseException do
+      raise EManifestError.CreateFmt( '%s is not valid JSON: %s', [ AManifestFile, E.Message ] );
+  end;
 
   if ( not Assigned( JsonVal ) ) then
-    raise EManifestError.Create( 'Invalid JSON in manifest file' );
+    raise EManifestError.CreateFmt( '%s is not valid JSON', [ AManifestFile ] );
 
   try
     if ( not ( JsonVal is TJSONObject ) ) then
