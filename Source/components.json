@@ -3,7 +3,7 @@
   "last_updated": "2026-03-26",
   "supplier": {
     "name": "DelphiSBOM Contributors",
-    "url": "https://codeberg.org/DelphiSBOM"
+    "url": "https://github.com/ijbranch/DelphiSBOM"
   },
   "components": []
 }
