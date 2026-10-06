@@ -32,11 +32,13 @@ type
       FLog          : TProc<TLogLevel, string>;
       FMacros       : TDictionary<string, string>;
       FRootSources  : TObjectDictionary<string, TDictionary<string, string>>; // library root → .pas file name → path
+      FScanRoots    : TArray<string>;
 
     procedure BuildMacroTable( const ADelphiPath, ABDSVersion, APlatform: string );
     function ExpandMacros( const AValue: string ): string;
-    function BuildUnitFileIndex( const ASearchPaths: TArray<string> ): TDictionary<string, TIndexEntry>;
-    function FindUnitFile( const AUnitName: string; AIndex: TDictionary<string, TIndexEntry> ): string;
+    function BuildUnitFileIndex( const ASearchPaths: TArray<string>; ACompilerPathCount: Integer;
+      out AScanOrderStart: Integer ): TDictionary<string, TIndexEntry>;
+    function FindUnitFile( const AUnitName: string; AIndex: TDictionary<string, TIndexEntry>; out AOrder: Integer ): string;
     function BuildDcuIndex( const ADirectories: TArray<string> ): TDictionary<string, string>;
     function FindDcuFile( const AUnitName: string; AIndex: TDictionary<string, string> ): string;
     function FindSourceUnderRoot( const ARoot, AUnitName: string ): string;
@@ -78,6 +80,13 @@ type
       const ABDSVersion: string;
       const APlatform: string;
       out AAutoOwnCodeUnits: TArray<string> ): TArray<TDiscoveredLibrary>;
+
+    /// <summary>
+    ///   The folders whose top-level subfolders are scanned for .pas files after the project, search and
+    ///   library paths: D:\ and the two Program Files folders by default. A .pas found only there is a
+    ///   guess — the compiler never looks there — so it gives way to a .dcu on the search or library path.
+    /// </summary>
+    property ScanRoots: TArray<string> read FScanRoots write FScanRoots;
   end;
 
 /// <summary>
@@ -93,7 +102,8 @@ function LibraryParentDirectory( const ADirectory: string ): string;
 /// <summary>
 ///   Returns the root of the library that owns a folder of compiled units, by walking up past
 ///   build-output folder names: platforms (Win64), configurations (Release), compiler versions
-///   (37.0, D13, Delphi13, Studio37), and lib / dcu / bin. D:\Acme\37.0\Win64\Release gives D:\Acme.
+///   (37.0, D13, Delphi13, "Delphi 13 Florence", Studio37), and lib / library / packages / dcu / bin.
+///   D:\Acme\37.0\Win64\Release gives D:\Acme.
 ///   Returns ADcuDirectory itself when every ancestor up to the root is such a name.
 /// </summary>
 /// <param name="ADcuDirectory">A folder containing .dcu files.</param>
@@ -157,9 +167,22 @@ function IsBuildOutputFolderName( const AName: string ): Boolean;
 begin
 
   Result            := TRegEx.IsMatch( AName,
-    '^(win32|win64|release|debug|lib|libs|dcu|dcus|bin|obj|out|output|' +
-    'd\d+(_\d+)?|delphi\s*\d+(\.\d+)?|studio\s*\d+(\.\d+)?|bds\s*\d+(\.\d+)?|xe\d*|rx\d+|\d+(\.\d+)*|' +
+    '^(win32|win64|release|debug|lib|libs|library|dcu|dcus|bin|obj|out|output|packages|package|' +
+    'd\d+(_\d+)?|delphi\s*\d+(\.\d+)?(\s+[a-z]+)?|studio\s*\d+(\.\d+)?|bds\s*\d+(\.\d+)?|xe\d*|rx\d+|\d+(\.\d+)*|' +
     'rio|sydney|alexandria|athens|florence)$', [ roIgnoreCase ] );
+
+end;
+
+/// <summary>
+///   True for a folder under the Delphi installation's own lib folder: its units are the RTL's (classified
+///   by the RTL scan), never a library. Products installed elsewhere in the Delphi folder
+///   ($(BDS)\RBuilder\Lib\Win64) are libraries like any other.
+/// </summary>
+function IsDelphiLibFolder( const ADirectory, ADelphiPath: string ): Boolean;
+begin
+
+  Result            := ( ADelphiPath <> '' ) and StartsText( IncludeTrailingPathDelimiter( TPath.Combine( ADelphiPath, 'lib' ) ),
+    IncludeTrailingPathDelimiter( ADirectory ) );
 
 end;
 
@@ -235,6 +258,9 @@ begin
   FMacros           := TDictionary<string, string>.Create( TIStringComparer.Ordinal );
   FRootSources      := TObjectDictionary<string, TDictionary<string, string>>.Create( [ doOwnsValues ] );
 
+  // D:\ top-level directories (a common location for Delphi libraries) and the Program Files folders
+  FScanRoots        := [ 'D:\', 'C:\Program Files', 'C:\Program Files (x86)' ];
+
 end;
 
 destructor TLibraryDiscovery.Destroy;
@@ -294,7 +320,9 @@ begin
         if TDirectory.Exists( Expanded ) then
         begin
           AllPaths.Add( Expanded );
-          DcuPaths.Add( Expanded );
+
+          if ( not IsDelphiLibFolder( Expanded, ADelphiPath ) ) then
+            DcuPaths.Add( Expanded );
         end
         else
           Log( llInfo, Format( 'Search path not found, skipped: %s', [ Expanded ] ) );
@@ -310,12 +338,13 @@ begin
       begin
         AllPaths.Add( IP );
 
-        // The installation's own folders hold the RTL and bundled libraries, classified by the RTL scan
-        if ( ADelphiPath = '' ) or ( not IP.StartsWith( IncludeTrailingPathDelimiter( ADelphiPath ), True ) ) then
+        if ( not IsDelphiLibFolder( IP, ADelphiPath ) ) then
           DcuPaths.Add( IP );
       end;
 
-    // Common root directories
+    // Common root directories — not where the compiler looks, so a .pas found only there is a guess
+    var CompilerPathCount := AllPaths.Count;
+
     for var RD in GetCommonRootDirs do
       if ( not AllPaths.Contains( RD ) ) then
         AllPaths.Add( RD );
@@ -327,12 +356,24 @@ begin
     var UnitToActualDir := TDictionary<string, string>.Create; // unit name → directory as found on disk
     var UnitToDcuDir := TDictionary<string, string>.Create; // DCU-only unit → the folder holding its .dcu
     var ViaLibraryPath := TDictionary<string, Boolean>.Create; // Units reached through a DCU on the search or library path
-    var FileIndex   := BuildUnitFileIndex( AllPaths.ToArray );
+    var ScanOrderStart: Integer;
+    var FileIndex   := BuildUnitFileIndex( AllPaths.ToArray, CompilerPathCount, ScanOrderStart );
     var DcuIndex    := BuildDcuIndex( DcuPaths.ToArray );
     try
+      var GuessesSkipped := 0;
+
       for var UnitName in AUnclassifiedUnits do
       begin
-        var FoundFile := FindUnitFile( UnitName, FileIndex );
+        var FoundOrder: Integer;
+        var FoundFile := FindUnitFile( UnitName, FileIndex, FoundOrder );
+
+        // Found only by scanning the drive, while the compiler reads its DCU from the search or library
+        // path: the copy found is a stray (D:\USB Temp\daSQL.pas), so follow the DCU instead
+        if ( FoundFile <> '' ) and ( FoundOrder >= ScanOrderStart ) and ( FindDcuFile( UnitName, DcuIndex ) <> '' ) then
+        begin
+          Inc( GuessesSkipped );
+          FoundFile := '';
+        end;
 
         if FoundFile <> '' then
         begin
@@ -344,6 +385,10 @@ begin
 
       Log( llInfo, Format( 'Found .pas files for %d of %d unclassified units',
           [ UnitToDir.Count, Length( AUnclassifiedUnits ) ] ) );
+
+      if GuessesSkipped > 0 then
+        Log( llInfo, Format( '%d .pas files found only by the drive scan were passed over for the DCU on the search or library path',
+            [ GuessesSkipped ] ) );
 
       // Phase 1b: a unit with no source on the search tree may be compiled from a DCU folder on the
       // library path. Its library is the folder above the build-output folders; its source, when the
@@ -812,7 +857,7 @@ begin
   var GenericNames: TArray<string> := [
     'source', 'src', 'lib', 'code', 'extras', 'delphi', 'pascal',
     'common', 'shared', 'include', 'units', 'packages', 'components',
-    'dev', 'bin', 'release', 'debug', 'pas'
+    'dev', 'bin', 'release', 'debug', 'pas', 'sources', 'windows', 'win32', 'win64', 'vcl', 'fmx'
     ];
 
   for var GN in GenericNames do
@@ -845,11 +890,13 @@ end;
 //  File search — one index over the search tree, built once per run
 // ---------------------------------------------------------------------------
 
-function TLibraryDiscovery.BuildUnitFileIndex( const ASearchPaths: TArray<string> ): TDictionary<string, TIndexEntry>;
+function TLibraryDiscovery.BuildUnitFileIndex( const ASearchPaths: TArray<string>; ACompilerPathCount: Integer;
+  out AScanOrderStart: Integer ): TDictionary<string, TIndexEntry>;
 begin
 
   var Index         := TDictionary<string, TIndexEntry>.Create;
   var Order         := 0;
+  AScanOrderStart   := MaxInt;
   var Visited       := TDictionary<string, Boolean>.Create;
   try
     // Each search directory, then its parent, then one level of subdirectories — the same
@@ -886,8 +933,14 @@ begin
         Inc( Order );
       end;
 
-    for var SearchDir in ASearchPaths do
+    for var I := 0 to High( ASearchPaths ) do
     begin
+      var SearchDir := ASearchPaths[ I ];
+
+      // Entries from here on were found by the drive scan, not on a path the compiler searches
+      if I = ACompilerPathCount then
+        AScanOrderStart := Order;
+
       AddDirectory( SearchDir );
       AddDirectory( ParentDirectory( SearchDir ) );
 
@@ -910,10 +963,11 @@ begin
 
 end;
 
-function TLibraryDiscovery.FindUnitFile( const AUnitName: string; AIndex: TDictionary<string, TIndexEntry> ): string;
+function TLibraryDiscovery.FindUnitFile( const AUnitName: string; AIndex: TDictionary<string, TIndexEntry>; out AOrder: Integer ): string;
 begin
 
   Result            := '';
+  AOrder            := MaxInt;
 
   // Try both the original name (Vcl.StyledTaskDialog.pas) and the scope-stripped name (StyledTaskDialog.pas);
   // when both exist, the one found earlier in the search order wins
@@ -934,6 +988,8 @@ begin
       Result        := Entry.Path;
     end;
   end;
+
+  AOrder            := BestOrder;
 
 end;
 
@@ -1003,14 +1059,7 @@ begin
 
   var Dirs          := TList<string>.Create;
   try
-    // D:\ top-level directories (a common location for Delphi libraries) and the Program Files folders
-    var RootDirs: TArray<string> := [
-      'D:\',
-      'C:\Program Files',
-      'C:\Program Files (x86)'
-      ];
-
-    for var RD in RootDirs do
+    for var RD in FScanRoots do
     begin
       if ( not TDirectory.Exists( RD ) ) then Continue;
 
@@ -1064,8 +1113,9 @@ begin
         begin
           var DpkName := TPath.GetFileNameWithoutExtension( DpkFile );
 
-          // Skip design-time packages (dcl prefix)
+          // Skip design-time packages: the dcl prefix, or {$DESIGNONLY} whatever the name
           if DpkName.StartsWith( 'dcl', True ) then Continue;
+          if Pos( '{$DESIGNONLY', UpperCase( ReadTextFileHead( DpkFile, 8192 ) ) ) > 0 then Continue;
 
           var CleanName := CleanPackageName( DpkName );
 
@@ -1075,6 +1125,8 @@ begin
     except
       on E: EInOutError do
         Log( llWarning, Format( 'Could not read directory %s: %s', [ SearchDir, E.Message ] ) );
+      on E: EStreamError do
+        Log( llWarning, Format( 'Could not read a package in %s: %s', [ SearchDir, E.Message ] ) );
     end;
   end;
 
@@ -1301,7 +1353,7 @@ begin
   Result            := Trim( Result );
 
   // A closing bracket goes only when unmatched: "Jane Doe (Acme Software)" keeps its own
-  while ( Result.Length > 0 ) and ( CharInSet( Result[ Result.Length ], [ '.', ',', ';', ' ' ] ) or
+  while ( Result.Length > 0 ) and ( CharInSet( Result[ Result.Length ], [ '.', ',', ';', ' ', '-' ] ) or ( Result[ Result.Length ] = #$2013 ) or
     ( ( Result[ Result.Length ] = ')' ) and ( CharCount( Result, ')' ) > CharCount( Result, '(' ) ) ) ) do
     Delete( Result, Result.Length, 1 );
 
@@ -1323,17 +1375,34 @@ begin
     begin
       var Line      := Trim( Lines[ I ] );
 
-      // "Copyright (c) YYYY Name", "COPYRIGHT YYYY Name", or "© YYYY Name"
-      var CopyrightPos := Pos( 'COPYRIGHT', UpperCase( Line ) );
+      // "Copyright (c) YYYY Name", "COPYRIGHT YYYY Name", "Copyright:" with the holder on the next line, or
+      // "© YYYY Name". The whole word, so the identifier FlblCopyRight is not a copyright line; and either
+      // opening the comment or followed by (c), ©, a year or a colon, so the history line "Updated
+      // copyright to say 2003" is not one either
+      var Copyright := TRegEx.Match( Line, '^[\s{(*/\-|#;!]*copyright\b|\bcopyright\b(?=\s*(\(c\)|\x{00A9}|\d{4}|:))', [ roIgnoreCase ] );
+      var Holder    := '';
+      var Found     := Copyright.Success;
 
-      if CopyrightPos > 0 then
-        Result      := CleanCopyrightHolder( Copy( Line, CopyrightPos + 9, Length( Line ) ) )
+      if Found then
+        Holder      := Copy( Line, Copyright.Index + Copyright.Length, Length( Line ) )
       else
       begin
         var SymbolPos := Pos( #$00A9, Line );
+        Found       := SymbolPos > 0;
 
-        if SymbolPos > 0 then
-          Result    := CleanCopyrightHolder( Copy( Line, SymbolPos + 1, Length( Line ) ) );
+        if Found then
+          Holder    := Copy( Line, SymbolPos + 1, Length( Line ) );
+      end;
+
+      if Found then
+      begin
+        // The holder ends at a wide gap: what follows is layout, such as the letters of an ASCII-art header
+        Holder      := TRegEx.Replace( TrimLeft( Holder ), '\s{3,}.*$', '' );
+        Result      := CleanCopyrightHolder( Holder );
+
+        // "Copyright:" alone: the holder is on the next line
+        if ( Result = '' ) and ( Trim( StringReplace( Holder, ':', '', [ ] ) ) = '' ) and ( I < High( Lines ) ) then
+          Result    := CleanCopyrightHolder( TRegEx.Replace( Trim( Lines[ I + 1 ] ), '\s{3,}.*$', '' ) );
       end;
 
       if Result <> '' then Exit;
