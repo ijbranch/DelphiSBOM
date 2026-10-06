@@ -40,6 +40,28 @@ type
     procedure PurlEncodeFollowsPurlSpec;
 
     /// <summary>
+    ///   Proves the application, the RTL and every library carry a bom-ref, all distinct, so the
+    ///   dependency graph can name them.
+    /// </summary>
+    [Test]
+    procedure EveryComponentHasAUniqueBomRef;
+
+    /// <summary>
+    ///   Proves the dependencies section links the application to the RTL and every library, and
+    ///   declares the RTL with no dependencies; libraries' own dependencies are unknown, so they are
+    ///   left out rather than declared empty (an empty list would claim they have none).
+    /// </summary>
+    [Test]
+    procedure DependenciesLinkApplicationToEveryComponent;
+
+    /// <summary>
+    ///   Proves two manifest rows with the same name and version still get distinct bom-refs: a
+    ///   duplicate bom-ref makes the SBOM invalid.
+    /// </summary>
+    [Test]
+    procedure DuplicateComponentsGetDistinctRefs;
+
+    /// <summary>
     ///   Proves a recognised SPDX licence is emitted as license.id in canonical case.
     /// </summary>
     [Test]
@@ -169,6 +191,103 @@ begin
   Assert.AreEqual( 'a%2Bb%2Fc%40d', PurlEncode( 'a+b/c@d' ), False );
   Assert.AreEqual( 'Abc-1.2_x~', PurlEncode( 'Abc-1.2_x~' ), False );
   Assert.AreEqual( 'M%C3%BCller', PurlEncode( 'M' + #$00FC + 'ller' ), False );
+
+end;
+
+/// <summary>The bom-ref of a component object, or '' when it has none.</summary>
+function BomRef( AObject: TJSONObject ): string;
+begin
+
+  Result := '';
+
+  if Assigned( AObject ) then
+    AObject.TryGetValue<string>( 'bom-ref', Result );
+
+end;
+
+procedure TSBOMBuilderTests.EveryComponentHasAUniqueBomRef;
+begin
+
+  var Root := BuildJson( nil );
+  try
+    var Refs := TList<string>.Create;
+    try
+      Refs.Add( BomRef( Root.GetValue<TJSONObject>( 'metadata.component' ) ) );
+
+      for var I := 0 to Root.GetValue<TJSONArray>( 'components' ).Count - 1 do
+        Refs.Add( BomRef( Component( Root, I ) ) );
+
+      Assert.AreEqual<Integer>( 5, Refs.Count, 'Application, RTL and three libraries' );
+
+      for var I := 0 to Refs.Count - 1 do
+      begin
+        Assert.AreNotEqual( '', Refs[ I ], Format( 'Component %d has no bom-ref', [ I ] ) );
+
+        for var J := I + 1 to Refs.Count - 1 do
+          Assert.AreNotEqual( Refs[ I ], Refs[ J ], 'Duplicate bom-ref' );
+      end;
+    finally
+      Refs.Free;
+    end;
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.DependenciesLinkApplicationToEveryComponent;
+begin
+
+  var Root := BuildJson( nil );
+  try
+    var AppRef := BomRef( Root.GetValue<TJSONObject>( 'metadata.component' ) );
+    var Deps   := Root.GetValue<TJSONArray>( 'dependencies' );
+    Assert.IsNotNull( Deps, 'No dependencies section' );
+
+    var AppEntry: TJSONObject := nil;
+    var RTLEntry: TJSONObject := nil;
+    var RTLRef := BomRef( Component( Root, 0 ) );
+
+    for var D in Deps do
+    begin
+      var Entry := D as TJSONObject;
+
+      if Entry.GetValue<string>( 'ref' ) = AppRef then
+        AppEntry := Entry
+      else if Entry.GetValue<string>( 'ref' ) = RTLRef then
+        RTLEntry := Entry
+      else
+        Assert.Fail( 'Unexpected dependency entry for ' + Entry.GetValue<string>( 'ref' ) );
+    end;
+
+    Assert.IsNotNull( AppEntry, 'No entry for the application' );
+    var DependsOn := AppEntry.GetValue<TJSONArray>( 'dependsOn' );
+    Assert.AreEqual<Integer>( 4, DependsOn.Count, 'The application depends on the RTL and three libraries' );
+
+    for var I := 0 to 3 do
+      Assert.AreEqual( BomRef( Component( Root, I ) ), DependsOn.Items[ I ].Value );
+
+    Assert.IsNotNull( RTLEntry, 'No entry for the RTL' );
+    Assert.AreEqual<Integer>( 0, RTLEntry.GetValue<TJSONArray>( 'dependsOn' ).Count, 'The RTL depends on nothing' );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.DuplicateComponentsGetDistinctRefs;
+begin
+
+  FManifest.Components[ 1 ].Name    := FManifest.Components[ 0 ].Name;
+  FManifest.Components[ 1 ].Version := FManifest.Components[ 0 ].Version;
+
+  var Root := BuildJson( nil );
+  try
+    Assert.AreNotEqual( '', BomRef( Component( Root, 1 ) ) );
+    Assert.AreNotEqual( BomRef( Component( Root, 1 ) ), BomRef( Component( Root, 2 ) ) );
+  finally
+    Root.Free;
+  end;
 
 end;
 

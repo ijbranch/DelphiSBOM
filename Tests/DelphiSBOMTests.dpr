@@ -29,7 +29,15 @@ uses
   TestEvidenceMerger in 'TestEvidenceMerger.pas',
   TestSBOMEngine in 'TestSBOMEngine.pas',
   TestDelphiInstall in 'TestDelphiInstall.pas',
-  TestLibraryDiscovery in 'TestLibraryDiscovery.pas';
+  TestLibraryDiscovery in 'TestLibraryDiscovery.pas',
+  uMapFile in '..\Source\uMapFile.pas',
+  TestMapFile in 'TestMapFile.pas',
+  uSBOMValidator in '..\Source\uSBOMValidator.pas',
+  TestSBOMValidator in 'TestSBOMValidator.pas',
+  uReportWriter in '..\Source\uReportWriter.pas',
+  TestReportWriter in 'TestReportWriter.pas',
+  uCommandLine in '..\Source\uCommandLine.pas',
+  TestCommandLine in 'TestCommandLine.pas';
 
 begin
 

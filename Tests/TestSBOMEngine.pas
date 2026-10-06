@@ -60,6 +60,42 @@ type
     /// </summary>
     [Test]
     procedure WrittenSBOMIsSchemaShaped;
+
+    /// <summary>
+    ///   Proves the post-write check runs on a normal run and finds nothing, and the version written
+    ///   to the SBOM is recorded for the reports.
+    /// </summary>
+    [Test]
+    procedure CleanRunPassesTheCheck;
+
+    /// <summary>
+    ///   Proves the requested reports are written beside the SBOM and describe this run.
+    /// </summary>
+    [Test]
+    procedure ReportsAreWrittenBesideTheSBOM;
+  end;
+
+  /// <summary>
+  ///   A run whose manifest has a row with no name, which the builder writes as an empty component name.
+  /// </summary>
+  [TestFixture]
+  TSBOMEngineCheckTests = class
+  private
+    FScratch: TScratchDir;
+    FComInitialised: Boolean;
+    FResult: TSBOMResult;
+  public
+    [SetupFixture]
+    procedure SetupFixture;
+    [TearDownFixture]
+    procedure TearDownFixture;
+
+    /// <summary>
+    ///   Proves the check reports the invalid component in the written file, while the run still
+    ///   succeeds and keeps the file so it can be inspected.
+    /// </summary>
+    [Test]
+    procedure InvalidOutputIsReportedNotDiscarded;
   end;
 
 implementation
@@ -105,6 +141,7 @@ begin
   var Options := Default( TSBOMOptions );
   Options.ProjectFile  := TPath.Combine( Work, 'App\App.dproj' );
   Options.ManifestFile := FManifestFile;
+  Options.ReportFormats := [ rfMarkdown, rfHtml ];
 
   var Engine := TSBOMEngine.Create( NoLog() );
   try
@@ -191,6 +228,75 @@ begin
   finally
     Root.Free;
   end;
+
+end;
+
+procedure TSBOMEngineTests.CleanRunPassesTheCheck;
+begin
+
+  Assert.AreEqual<Integer>( 0, Length( FResult.ValidationErrors ), string.Join( ' / ', FResult.ValidationErrors ) );
+  Assert.AreEqual( '3.0.0.0', FResult.ProductVersion );
+
+end;
+
+procedure TSBOMEngineTests.ReportsAreWrittenBesideTheSBOM;
+begin
+
+  Assert.AreEqual<Integer>( 2, Length( FResult.ReportFiles ) );
+
+  for var F in FResult.ReportFiles do
+  begin
+    Assert.AreEqual( ExtractFilePath( FResult.OutputFile ), ExtractFilePath( F ), 'Report not beside the SBOM' );
+    Assert.Contains( ReadTextFile( F ), 'TMS VCL UI Pack', 'Report does not describe the run: ' + F );
+  end;
+
+end;
+
+{ TSBOMEngineCheckTests }
+
+procedure TSBOMEngineCheckTests.SetupFixture;
+begin
+
+  FScratch := TScratchDir.Create;
+  FComInitialised := Succeeded( CoInitializeEx( nil, COINIT_APARTMENTTHREADED ) );
+
+  var Tag := 'Dsbc' + Copy( StringReplace( TGUID.NewGuid.ToString, '-', '', [ rfReplaceAll ] ), 2, 8 );
+
+  WriteUtf8File( FScratch.PathOf( 'App\App.dpr' ),
+    'program App;' + sLineBreak + 'uses' + sLineBreak + '  ' + Tag + 'Thing;' + sLineBreak + 'begin end.' );
+  WriteUtf8File( FScratch.PathOf( 'App\components.json' ),
+    '{ "schema_version": "1.0", "components": [ { "name": "", "version": "1", "licence": "MIT", ' +
+    '"units_exact": [ "' + Tag + 'Thing" ] } ] }' );
+
+  var Options := Default( TSBOMOptions );
+  Options.ProjectFile := FScratch.PathOf( 'App\App.dpr' );
+
+  var Engine := TSBOMEngine.Create( NoLog() );
+  try
+    FResult := Engine.Execute( Options );
+  finally
+    Engine.Free;
+  end;
+
+end;
+
+procedure TSBOMEngineCheckTests.TearDownFixture;
+begin
+
+  if FComInitialised then
+    CoUninitialize;
+
+  FScratch.Free;
+
+end;
+
+procedure TSBOMEngineCheckTests.InvalidOutputIsReportedNotDiscarded;
+begin
+
+  Assert.IsTrue( FResult.Success, 'Run failed: ' + FResult.ErrorMessage );
+  Assert.IsTrue( FileExists( FResult.OutputFile ), 'SBOM discarded' );
+  Assert.AreEqual<Integer>( 1, Length( FResult.ValidationErrors ), string.Join( ' / ', FResult.ValidationErrors ) );
+  Assert.Contains( FResult.ValidationErrors[ 0 ], 'components[1].name' );
 
 end;
 

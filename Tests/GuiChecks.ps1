@@ -1,6 +1,7 @@
 # GUI checks for DelphiSBOM, driven by window messages to named controls (no coordinates, no forced focus).
 # Covers: project switching (H3), result-button states during a run (M10), no manifest on select (M13),
-# MRU restore, library-editor Space toggle + close validation + discard prompt (L15), MRU UTF-8 round trip (M20).
+# MRU restore, library-editor Space toggle + close validation + discard prompt (L15), MRU UTF-8 round trip (M20),
+# MAP-file unit list, reports checkbox and the summary's unit source and SBOM check lines.
 #
 # Usage (PowerShell 7, Windows):  pwsh -File Tests\GuiChecks.ps1 [-Exe <path to DelphiSBOM.exe>]
 # Builds nothing: build Source\DelphiSBOM.dproj (Release, Win64) first. Your %APPDATA%\DelphiSBOM\DelphiSBOM.ini
@@ -77,6 +78,12 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText("$LibDir\ZzqLibUtils.pas", "unit ZzqLibUtils; interface implementation end.", $utf8)
 [IO.File]::WriteAllText("$LibDir\LICENSE", "MIT License`r`nPermission is hereby granted, free of charge, to any person obtaining a copy", $utf8)
 [IO.File]::WriteAllText("$ProjB\ProjB.dpr", "program ProjB;`r`nuses`r`n  System.SysUtils;`r`nbegin end.", $utf8)
+# A detailed map for project A: ZzqIndirect is linked but not in the uses clause, ZzqMissing is in it but not linked
+[IO.File]::WriteAllText("$LibDir\ZzqIndirect.pas", "unit ZzqIndirect; interface implementation end.", $utf8)
+$MapA = "$ProjA\ProjA.map"
+[IO.File]::WriteAllText($MapA, "Detailed map of segments`r`n" + ((
+  'System', 'System.SysUtils', 'UnitA', 'ZzqLibMain', 'ZzqLibUtils', 'ZzqIndirect', 'ProjA' | ForEach-Object {
+    " 0001:00000000 00000010 C=CODE     S=.text    G=(none)   M=$_ ALIGN=4" }) -join "`r`n"), $utf8)
 $Bom = Join-Path $Scratch 'bom.json'
 [IO.File]::WriteAllText($Bom, '{ "bomFormat": "CycloneDX", "components": [] }', $utf8)
 
@@ -95,7 +102,8 @@ try {
     $kids = [W]::Children($script:main)
     $script:combo = $kids | Where-Object { [W]::Cls($_) -eq 'TComboBox' } | Select-Object -First 1
     $edits = $kids | Where-Object { [W]::Cls($_) -eq 'TEdit' } | Sort-Object { (Top $_).T }
-    $script:edManifest, $script:edOutput, $script:edDelphi, $script:edVersion, $script:edDX = $edits
+    $script:edManifest, $script:edOutput, $script:edDelphi, $script:edVersion, $script:edDX, $script:edMap = $edits
+    $script:chkReports = $kids | Where-Object { [W]::Cls($_) -eq 'TCheckBox' } | Select-Object -First 1
     $btn = @{}; foreach ($k in $kids | Where-Object { [W]::Cls($_) -eq 'TButton' }) { $btn[[W]::Text($k)] = $k }
     $script:btn = $btn
     $memos = $kids | Where-Object { [W]::Cls($_) -eq 'TMemo' } | Sort-Object { (Top $_).B }, { (Top $_).L }
@@ -152,13 +160,24 @@ try {
 
   SetText $edVersion '9.9.9'
   SetText $edDX $Bom
+  SetText $edMap $MapA
+  Click $chkReports
+  Start-Sleep -Milliseconds 200
   Generate   # saves A's settings to the MRU
+  Check ([W]::Text($mmLog) -match 'MAP file ProjA\.map lists 6 linked units') 'MAP file supplies the unit list' (([W]::Text($mmLog) -split "`r`n" | Select-String 'MAP file') -join ' ')
+  Check ([W]::Text($mmSummary) -match 'Units from:\s+MAP file ProjA\.map') 'Summary names the unit source'
+  Check ([W]::Text($mmSummary) -match 'SBOM check:\s+passed') 'Summary shows the SBOM check result'
+  Check ((Test-Path "$ProjA\ProjA.sbom-report.html") -and (Test-Path "$ProjA\ProjA.sbom-report.md")) 'Reports checkbox writes both reports'
+  Check ([W]::Text($mmDiscovery) -match 'ZzqIndirect') 'Indirectly used unit from the MAP is discovered'
 
   # ---- Project B (Cyrillic path): A's fields must not carry over -------------------------------------------
   SetText $combo "$ProjB\ProjB.dpr"
   Generate
   Check ([W]::Text($edVersion) -eq '') 'H3 Version Override cleared on switching project' ([W]::Text($edVersion))
   Check ([W]::Text($edDX) -eq '') 'H3 DX.Comply cleared on switching project' ([W]::Text($edDX))
+  Check ([W]::Text($edMap) -eq '') 'MAP file cleared on switching project' ([W]::Text($edMap))
+  Check ([int][W]::SendMessage($chkReports, 0x00F0, [IntPtr]::Zero, [IntPtr]::Zero) -eq 0) 'Reports checkbox cleared on switching project'
+  Check (-not (Test-Path "$ProjB\ProjB.sbom-report.html")) 'No report for project B'
   Check ([W]::Text($edManifest) -eq "$ProjB\components.json") 'H3 Manifest points at project B' ([W]::Text($edManifest))
   Check ([W]::Text($edOutput) -eq $ProjB) 'H3 Output Dir points at project B' ([W]::Text($edOutput))
   Check (Test-Path "$ProjB\ProjB.cdx.json") 'Project B SBOM written into the Cyrillic folder'
@@ -176,6 +195,8 @@ try {
   [void][W]::SendMessage($main, $WM_COMMAND, $wparam, $combo)
   Check ([W]::Text($edVersion) -eq '9.9.9') 'MRU restores Version Override for A' ([W]::Text($edVersion))
   Check ([W]::Text($edDX) -eq $Bom) 'MRU restores DX.Comply for A' ([W]::Text($edDX))
+  Check ([W]::Text($edMap) -eq $MapA) 'MRU restores the MAP file for A' ([W]::Text($edMap))
+  Check ([int][W]::SendMessage($chkReports, 0x00F0, [IntPtr]::Zero, [IntPtr]::Zero) -eq 1) 'MRU restores the reports checkbox for A'
   Check (-not [W]::IsWindowEnabled($btn['Edit...'])) 'Switching project clears the previous results'
 
   Generate
