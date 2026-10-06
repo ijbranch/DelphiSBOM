@@ -28,7 +28,8 @@ uses
   uSBOMValidator in '..\Source\uSBOMValidator.pas',
   uReportWriter in '..\Source\uReportWriter.pas',
   uSBOMEngine in '..\Source\uSBOMEngine.pas',
-  uCommandLine in '..\Source\uCommandLine.pas';
+  uCommandLine in '..\Source\uCommandLine.pas',
+  uOnlineCheck in '..\Source\uOnlineCheck.pas';
 
 begin
 

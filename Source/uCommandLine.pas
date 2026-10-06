@@ -41,7 +41,8 @@ type
   /// <summary>
   ///   A setting that can come from either the command line or the config file.
   /// </summary>
-  TCLISetting = ( csManifest, csOutput, csDelphi, csProductVersion, csDXComply, csMap, csReports, csFailOnUnclassified );
+  TCLISetting = ( csManifest, csOutput, csDelphi, csProductVersion, csDXComply, csMap, csReports, csFailOnUnclassified,
+    csCheckOnline );
 
   /// <summary>
   ///   The settings given explicitly on the command line; the config file never overrides these.
@@ -58,6 +59,7 @@ type
     Explicit: TCLISettings; // Settings given on the command line
     FailOnUnclassified: Boolean; // Exit 3 when units are missing from the SBOM
     ValidateManifestOnly: Boolean; // --validate-manifest: check components.json and stop
+    CheckOnline: Boolean; // --check-online: compare components.json with the libraries' GitHub repositories
     Quiet: Boolean; // Show warnings and errors only
     ShowHelp: Boolean;
     ShowVersion: Boolean;
@@ -105,7 +107,7 @@ implementation
 
 uses
   System.Classes, System.IOUtils, System.JSON, Winapi.ActiveX,
-  uSBOMEngine, uTextFiles;
+  uSBOMEngine, uTextFiles, uManifestLoader, uOnlineCheck;
 
 /// <summary>Parses a report setting: md, html, both or none.</summary>
 function TryParseReports( const AValue: string; out AFormats: TReportFormats ): Boolean;
@@ -179,7 +181,7 @@ begin
 
     // Flags take no value
     if ( Name = 'version' ) or ( Name = 'quiet' ) or ( Name = 'no-config' ) or ( Name = 'fail-on-unclassified' ) or
-      ( Name = 'validate-manifest' ) then
+      ( Name = 'validate-manifest' ) or ( Name = 'check-online' ) then
     begin
       if HasValue then
       begin
@@ -195,6 +197,11 @@ begin
         AOptions.NoConfig := True
       else if Name = 'validate-manifest' then
         AOptions.ValidateManifestOnly := True
+      else if Name = 'check-online' then
+      begin
+        AOptions.CheckOnline := True;
+        Include( AOptions.Explicit, csCheckOnline );
+      end
       else
       begin
         AOptions.FailOnUnclassified := True;
@@ -340,6 +347,14 @@ begin
         if ( not ( csFailOnUnclassified in AOptions.Explicit ) ) then
           AOptions.FailOnUnclassified := TJSONBool( Pair.JsonValue ).AsBoolean;
       end
+      else if Key = 'checkOnline' then
+      begin
+        if ( not ( Pair.JsonValue is TJSONBool ) ) then
+          raise ECommandLineConfig.CreateFmt( '%s: "checkOnline" must be true or false', [ AConfigFile ] );
+
+        if ( not ( csCheckOnline in AOptions.Explicit ) ) then
+          AOptions.CheckOnline := TJSONBool( Pair.JsonValue ).AsBoolean;
+      end
       else if Assigned( AWarn ) then
         AWarn( Format( '%s: unknown key "%s" ignored', [ ExtractFileName( AConfigFile ), Key ] ) );
     end;
@@ -367,6 +382,8 @@ begin
     '  --report=md|html|both|none  Write <Project>.sbom-report.md / .html beside the SBOM',
     '  --fail-on-unclassified    Exit 3 when any unit is missing from the SBOM',
     '  --validate-manifest       Check components.json only, then stop',
+    '  --check-online            Also compare components.json with each GitHub vendor_url (licence,',
+    '                            latest release, archived). Advice only: the exit code is unchanged',
     '  --config=<file>           Project config to use (default: ' + ConfigFileName + ' beside the project)',
     '  --no-config               Ignore any project config file',
     '  --quiet                   Show warnings and errors only',
@@ -376,7 +393,7 @@ begin
     'Project config (' + ConfigFileName + '), every key optional; command-line options win:',
     '  { "manifest": "components.json", "output": "sbom", "map": "Win64\\Release\\App.map",',
     '    "dxcomply": "bom.json", "delphi": "C:\\...\\Studio\\37.0", "productVersion": "1.2.3",',
-    '    "report": "both", "failOnUnclassified": true }',
+    '    "report": "both", "failOnUnclassified": true, "checkOnline": false }',
     '  Relative paths are resolved from the config file''s folder.',
     '',
     'Exit codes:',
@@ -385,6 +402,32 @@ begin
     '  2  File or parse error (project, manifest, config or MAP file)',
     '  3  Validation error (SBOM check, invalid manifest, or --fail-on-unclassified)'
     ] );
+
+end;
+
+/// <summary>Runs the online check on a manifest and prints one line per finding.</summary>
+procedure ReportOnlineCheck( const AManifest: TManifest; const ALog: TProc<TLogLevel, string>; const AOut: TProc<string>; AQuiet: Boolean );
+begin
+
+  var Checker       := TOnlineChecker.Create( ALog );
+  try
+    for var F in Checker.Check( AManifest ) do
+    begin
+      if AQuiet and ( F.Kind = ofkInfo ) then Continue;
+
+      var Line      := Format( 'online: %s: %s', [ F.Component, F.Message ] );
+
+      if F.Field <> '' then
+        Line        := Line + Format( ' (suggested %s: %s)', [ F.Field, F.Suggested ] );
+
+      if F.Kind = ofkWarning then
+        AOut( FormatLogMessage( llWarning, Line ) )
+      else
+        AOut( FormatLogMessage( llInfo, Line ) );
+    end;
+  finally
+    Checker.Free;
+  end;
 
 end;
 
@@ -497,10 +540,20 @@ begin
           Exit( ExitFileError );
         end;
 
-        if Engine.ValidateManifest( ManifestFile ) then
-          Exit( ExitOK );
+        if ( not Engine.ValidateManifest( ManifestFile ) ) then
+          Exit( ExitValidationError );
 
-        Exit( ExitValidationError );
+        if CLI.CheckOnline then
+        begin
+          var Loader := TManifestLoader.Create( LogProc );
+          try
+            ReportOnlineCheck( Loader.Load( ManifestFile ), LogProc, AOut, Quiet );
+          finally
+            Loader.Free;
+          end;
+        end;
+
+        Exit( ExitOK );
       end;
 
       var SBOM: TSBOMResult;
@@ -517,6 +570,10 @@ begin
 
       AOut( Format( 'SBOM: %s (RTL %d, third-party %d, own code %d, unclassified %d units)', [ SBOM.OutputFile,
         SBOM.Summary.RTLCount, SBOM.Summary.ThirdPartyCount, SBOM.Summary.OwnCodeCount, SBOM.Summary.UnclassifiedCount ] ) );
+
+      // Advice only: it never changes the exit code
+      if CLI.CheckOnline then
+        ReportOnlineCheck( SBOM.Manifest, LogProc, AOut, Quiet );
 
       if Length( SBOM.ValidationErrors ) > 0 then
         Exit( ExitValidationError );

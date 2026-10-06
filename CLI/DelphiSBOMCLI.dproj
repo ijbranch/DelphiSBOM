@@ -115,8 +115,8 @@
   <PropertyGroup Condition="'$(Cfg_1_Win64)'!=''">
     <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
     <VerInfo_Locale>1033</VerInfo_Locale>
-    <VerInfo_Build>10</VerInfo_Build>
-    <VerInfo_Keys>CompanyName=;FileDescription=DelphiSBOMCLI;FileVersion=1.0.0.10;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.DelphiSBOMCLI;ProductName=DelphiSBOMCLI;ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
+    <VerInfo_Build>13</VerInfo_Build>
+    <VerInfo_Keys>CompanyName=;FileDescription=DelphiSBOMCLI;FileVersion=1.0.0.13;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.DelphiSBOMCLI;ProductName=DelphiSBOMCLI;ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Cfg_2)'!=''">
     <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
@@ -157,6 +157,7 @@
     <DCCReference Include="..\Source\uReportWriter.pas" />
     <DCCReference Include="..\Source\uSBOMEngine.pas" />
     <DCCReference Include="..\Source\uCommandLine.pas" />
+    <DCCReference Include="..\Source\uOnlineCheck.pas" />
     <BuildConfiguration Include="Base">
       <Key>Base</Key>
     </BuildConfiguration>
