@@ -13,7 +13,7 @@
 
 ## Next Action
 
-Run a generated SBOM from a real project through a CycloneDX 1.5 validator (e.g. `cyclonedx validate`). Run `Tests\Win64\Debug\DelphiSBOMTests.exe` after any change to the pipeline units. DX.Comply author replied to (2026-10-06) on the manifest-format differences in https://github.com/omonien/DX.Comply/issues/20#issuecomment-6012347502 — await his response. Decide on the `LICENCE` copyright line (audit L21). Olaf asked (2026-10-06) for a sample components.json — the extended `Samples/components.sample.json` covers every field. Then Phase 2 items: cancellation (audit M21), report writer, cancel button, CLI mode, DUnitX tests, v1.0.0 release tag. Future enhancement: capture DX.Comply confidence/evidence-type properties in TUnitEvidence.
+Run a generated SBOM from a real project through a CycloneDX 1.5 validator (e.g. `cyclonedx validate`). Run `Tests\Win64\Debug\DelphiSBOMTests.exe` after any change to the pipeline units. DX.Comply: Olaf's draft PR #56 (stacked on #53/#55) reads components.json as is via `--manifest`; answered his two questions (dependency graph is fine; units_exact > own_code_units > units_prefix) on 2026-10-07 in https://github.com/omonien/DX.Comply/issues/20#issuecomment-6020132977 — once #56 merges, run it against our manifests. Decide on the `LICENCE` copyright line (audit L21). Olaf asked (2026-10-06) for a sample components.json — the extended `Samples/components.sample.json` covers every field. Then Phase 2 items: cancellation (audit M21), report writer, cancel button, CLI mode, DUnitX tests, v1.0.0 release tag. Future enhancement: capture DX.Comply confidence/evidence-type properties in TUnitEvidence.
 
 ## Blockers / Questions for Ian
 
