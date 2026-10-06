@@ -7,7 +7,7 @@ CycloneDX 1.5 Software Bill of Materials (SBOM) files from Delphi projects.
 It parses `.dpr`/`.dproj` files, classifies units (RTL, third-party, own code),
 and outputs a standards-compliant JSON SBOM.
 
-**Repository:** Codeberg (public)
+**Repository:** GitHub (public) — https://github.com/ijbranch/DelphiSBOM
 **Licence:** MIT
 
 ## Session Protocol
@@ -22,16 +22,24 @@ and describe the partial state in the Next Action line.
 
 ## Build Requirements
 
-- **Delphi 10.3 Rio or later** (minimum), Win32/Win64, VCL application. Developed and tested on Delphi 13 Florence
+- **Delphi 10.3 Rio or later** (language floor: inline variables), Win32/Win64, VCL application
+- **Environment caveat:** developed, built and tested ONLY on Delphi 13 Florence, Win64.
+  Rio and Win32 are not tested — say so whenever compatibility is claimed, and avoid
+  APIs newer than Rio where an older equivalent exists (e.g. `TFormatSettings.Create( 'en-US' )`
+  rather than `TFormatSettings.Invariant`; `TFile.ReadAllText` without an encoding is NOT
+  equivalent across versions — use `uTextFiles.ReadTextFile`)
 - **No mandatory third-party dependencies** — the project must compile with
   a clean Delphi installation and nothing else
 - **Optional dependency:** [SynEdit](https://github.com/SynEdit/SynEdit)
   (MPL-1.1 licence) for syntax-highlighted SBOM viewer. Guarded by
   `USE_SYNEDIT` conditional define. All SynEdit-dependent code must be inside
   `{$IFDEF USE_SYNEDIT}` blocks with a `TMemo` fallback. The project must
-  always compile cleanly without SynEdit installed. `USE_SYNEDIT` is NOT
-  enabled in the committed `.dproj` — developers add it locally if they
-  have SynEdit on their library path
+  always compile cleanly without SynEdit installed.
+  - The committed `.dproj` passes `$(DELPHISBOM_DEFINES)` to `DCC_Define`; developers
+    with SynEdit set the environment variable `DELPHISBOM_DEFINES=USE_SYNEDIT`.
+  - NEVER add `USE_SYNEDIT` to Project Options: the IDE saves it into the shared
+    `.dproj` (this happened twice). `.githooks/pre-commit` rejects such a `.dproj`
+    (enable once per clone: `git config core.hooksPath .githooks`)
 - Allowed RTL units: `System.JSON`, `Xml.XMLDoc`, `Xml.XMLIntf`,
   `System.Win.Registry`, `System.Threading`, and standard RTL/VCL units
 - After any code edit to `.pas`, `.dfm`, or `.dproj` files, prompt the user
@@ -41,30 +49,43 @@ and describe the partial state in the Next Action line.
 
 ```
   uMainForm  →  uSBOMEngine  →  uProjectParser
-             →  uSettings       →  uRTLScanner
+             →  uSettings       →  uDelphiInstall
+             →  uLibraryEditor  →  uRTLScanner
                               →  uManifestLoader
                               →  uUnitClassifier
+                              →  uLibraryDiscovery
+                              →  uEvidenceMerger
                               →  uSBOMBuilder
+  shared: uTypes (records, SPDX/hash helpers), uTextFiles (encoding-safe read, atomic UTF-8 write)
 ```
 
 - **`uSBOMEngine`** is the UI-independent pipeline orchestrator. It has zero
-  VCL/form dependencies and accepts a `TProc<string>` logging callback.
-- **`uSettings`** manages MRU persistence to `%APPDATA%\DelphiSBOM\DelphiSBOM.ini`.
+  VCL/form dependencies and accepts a `TProc<TLogLevel, string>` logging callback.
+  It resolves the Delphi installation from the project's `ProjectVersion`
+  (`uDelphiInstall`) and passes it to the RTL scanner and library discovery.
+- **`uSettings`** manages MRU persistence to `%APPDATA%\DelphiSBOM\DelphiSBOM.ini` (UTF-8).
   No VCL dependencies.
-- **`uMainForm`** handles all UI concerns. It calls `uSBOMEngine` via
-  `TTask.Run` and marshals results back via `TThread.Queue`.
+- **`uMainForm`** handles all UI concerns. It runs `uSBOMEngine` on a `TThread`
+  descendant and marshals log lines and results back via `Synchronize`.
 - All other units are pure logic — no UI coupling.
+- All file reads go through `uTextFiles.ReadTextFile`/`ReadTextFileHead` (BOM, then
+  UTF-8, then ANSI); all JSON writes through `WriteTextFileAtomic` (UTF-8, no BOM).
 
 ## Threading Model
 
-- All processing runs inside `TTask.Run` (`System.Threading`)
-- Log updates marshalled to UI thread via `TThread.Queue`
-- The entire pipeline inside `TTask.Run` must be wrapped in `try/except` —
-  exceptions inside `TTask.Run` are silently swallowed if not caught
-- On error: log via callback as `[ERROR]`, signal completion, re-enable controls
-- Form controls (inputs + buttons) disabled during processing, re-enabled on
-  completion or error
-- Cancellation via `ICancellationToken` is a Phase 2 enhancement
+- Processing runs on `TSBOMGenerateThread` / `TSBOMValidateThread` (`TThread`
+  descendants, `FreeOnTerminate`). `TTask.Run` with nested anonymous methods failed on
+  Win64, so it is not used.
+- The generate thread calls `CoInitializeEx` / `CoUninitialize`: the `.dproj` is read
+  with `TXMLDocument` (MSXML, COM).
+- Log updates marshalled to the UI thread via `Synchronize`; the main thread never
+  waits on a worker, so there is no `Synchronize` deadlock path.
+- The engine call inside `Execute` is wrapped in `try/except`; on error log `[ERROR]`,
+  then always `Synchronize( SyncComplete )`. `SyncComplete` re-enables the form in a
+  `finally`, so an exception while displaying results cannot strand it.
+- Form controls (inputs, action and result buttons) disabled during processing,
+  re-enabled on completion or error. Close is refused while a run is in progress.
+- Cancellation is a Phase 2 enhancement.
 
 ## Coding Standards
 

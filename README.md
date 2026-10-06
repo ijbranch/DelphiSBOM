@@ -51,12 +51,12 @@ that have no awareness of the Delphi ecosystem.
 
 ## Quick Start
 
-1. Run DelphiSBOM and browse to your `.dpr` or `.dproj` file (or select a
+1. Run DelphiSBOM and browse to your `.dpr`, `.dpk` or `.dproj` file (or select a
    recent project from the dropdown)
 2. Click **Generate SBOM**
 3. Review the results — discovered third-party libraries are shown with
-   auto-detected names, vendors, and licences
-4. Click **Save Libraries & Regenerate SBOM** to confirm and save
+   auto-detected names, vendors, and licences (click **Edit...** to correct them)
+4. Click **Save & Regenerate** to confirm and save
 5. Find your `<ProjectName>.cdx.json` in the project directory
 
 No manual JSON editing required. DelphiSBOM creates and maintains
@@ -65,8 +65,10 @@ No manual JSON editing required. DelphiSBOM creates and maintains
 ## The `components.json` Manifest
 
 DelphiSBOM uses a `components.json` file to track your project's third-party
-libraries. This file is created automatically when you first scan a project,
-and updated when you confirm discovered libraries.
+libraries. It is created the first time you save discovered libraries or
+own-code units — selecting a project never writes into your repository — and
+updated each time you confirm more. If an existing `components.json` is not
+valid JSON, DelphiSBOM refuses to save rather than overwrite it.
 
 You can also edit it manually for fine-tuning. See
 `Samples/components.sample.json` for a fully commented example, and
@@ -82,18 +84,18 @@ write are:
 
 | What | Where | Purpose |
 |------|-------|---------|
-| `.dpr` / `.dproj` | Your project directory | Parses unit list, version info, search paths, target platform |
+| `.dpr` / `.dpk` / `.dproj` | Your project directory | Parses unit list, version info, search paths, target platform (the `.dproj` is evaluated for Release on the target platform) |
 | `.dcu` files | `<Delphi Install>\lib\<Platform>\release\` | Enumerates RTL/VCL unit names for classification |
 | `components.json` | Your project directory | Reads third-party library definitions and own-code unit lists |
-| Windows Registry | `HKCU\Software\Embarcadero\BDS\*` | **Read-only.** Detects installed Delphi versions and their installation paths. Also reads IDE environment variables for library path resolution |
+| Windows Registry | `HKCU\Software\Embarcadero\BDS\*`, `HKLM\SOFTWARE\WOW6432Node\Embarcadero\BDS\*` | **Read-only.** Detects installed Delphi versions and their installation paths — the version matching the project's `ProjectVersion` is preferred. Also reads IDE environment variables and the IDE library path |
 
 ### Files Written
 
 | What | Where | Purpose |
 |------|-------|---------|
-| `<Project>.cdx.json` | Output directory (defaults to project dir) | The generated CycloneDX 1.5 SBOM — this is the deliverable |
-| `components.json` | Your project directory | Updated when you click "Save Libraries" or "Mark Own Code" to persist discovered libraries and own-code units |
-| `DelphiSBOM.ini` | `%APPDATA%\DelphiSBOM\` | Application settings: MRU project list (up to 10) with per-project manifest path, output directory, and version override. Created on first successful SBOM generation |
+| `<Project>.cdx.json` | Output directory (defaults to project dir) | The generated CycloneDX 1.5 SBOM — this is the deliverable. UTF-8 without a BOM, written atomically |
+| `components.json` | Your project directory | Written when you click "Save & Regenerate" or "Mark as Own Code", and after a successful run that auto-detected own-code units |
+| `DelphiSBOM.ini` | `%APPDATA%\DelphiSBOM\` | Application settings (UTF-8): MRU project list (up to 10) with per-project manifest path, output directory, version override and DX.Comply file. Created on first successful SBOM generation |
 
 DelphiSBOM does **not** write to the Windows Registry.
 
@@ -110,12 +112,27 @@ Open `Source/DelphiSBOM.dproj` in Delphi and compile. The project compiles
 with only the Delphi RTL — no third-party libraries are required for the
 core functionality.
 
-**Minimum compiler version:** Delphi 10.3 Rio (uses inline variable
-declarations and other 10.3+ language features). Tested and developed
-on Delphi 13 Florence.
+**Development and test environment:** DelphiSBOM is developed, built and
+tested **only on Delphi 13 Florence, Win64, VCL**. Delphi 10.3 Rio is the
+language floor (inline variable declarations), not a tested configuration:
+earlier compilers are untested and may need small changes. Win32 builds are
+declared in the project but not routinely tested. Reports from other versions
+are welcome.
 
-**Optional:** Add [SynEdit](https://github.com/SynEdit/SynEdit) and define
-`USE_SYNEDIT` for syntax-highlighted JSON viewing in the SBOM viewer.
+**Optional:** Add [SynEdit](https://github.com/SynEdit/SynEdit) to your
+library path for syntax-highlighted JSON viewing in the SBOM viewer, then
+enable it **locally** — do not add `USE_SYNEDIT` to the committed `.dproj`:
+
+```
+setx DELPHISBOM_DEFINES USE_SYNEDIT
+```
+
+(or add `DELPHISBOM_DEFINES=USE_SYNEDIT` under Tools > Options > Environment
+Variables in the IDE), then restart the IDE. The `.dproj` passes
+`$(DELPHISBOM_DEFINES)` to the compiler, so a machine without the variable
+builds the plain `TMemo` viewer. A pre-commit hook in `.githooks/` rejects a
+`.dproj` that defines `USE_SYNEDIT` directly; enable it once per clone with
+`git config core.hooksPath .githooks`.
 
 ## Licence
 

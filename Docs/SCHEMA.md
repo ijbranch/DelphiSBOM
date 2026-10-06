@@ -44,11 +44,17 @@ Place `components.json` in the same directory as your `.dpr` / `.dproj` file.
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `schema_version` | Yes | Must be `"1.0"` |
+| `schema_version` | Yes | Must be `"1.0"` (any other value is warned about and read as 1.0) |
 | `last_updated` | Yes | ISO date (`YYYY-MM-DD`) of last manifest update |
 | `supplier` | Yes | Object with `name` (required) and `url` (optional) identifying the application's publisher |
-| `own_code_units` | No | Array of unit names that are your own project code (not third-party). These are classified as own code and excluded from the SBOM components list. Auto-populated by the app for units in sibling project directories, and via the "Mark as Own Code" button |
-| `own_code_prefixes` | No | Array of unit name prefixes that classify as own code (case-insensitive). Any unit whose name starts with a listed prefix is treated as own code. Useful for internal shared libraries (e.g. `"gll"` matches `gllFunctions`, `gllDateTimeHelpers`, etc.) |
+| `own_code_units` | No | Array of unit names that are your own project code (not third-party). These are classified as own code and excluded from the SBOM components list. An exact name listed here beats any `units_prefix` rule. Auto-populated by the app for units in the project directory and in sibling directories that do not look like a library, and via the "Mark as Own Code" button |
+| `own_code_prefixes` | No | Array of unit name prefixes that classify as own code (case-insensitive). Any unit whose name starts with a listed prefix is treated as own code. Useful for internal shared libraries (e.g. `"gll"` matches `gllFunctions`, `gllDateTimeHelpers`, etc.). Applied after `units_prefix`; prefixes shorter than 3 characters are warned about |
+
+Missing required fields are reported as warnings, not errors, so an incomplete
+manifest still produces an SBOM. Empty strings and non-string entries in any
+array are ignored with a warning (an empty prefix would otherwise match every
+unit). Numeric values such as `"version": 3.7` are read as text; `null` is
+treated as missing.
 
 ### Component Fields
 
@@ -58,9 +64,9 @@ Place `components.json` in the same directory as your `.dpr` / `.dproj` file.
 | `version` | Yes | Version string (e.g. `"3.7.8"`, `"2.x"`) |
 | `vendor` | Yes | Library author or vendor name |
 | `vendor_url` | No | URL to the library's home page or repository |
-| `licence` | Yes | SPDX licence identifier (e.g. `"MIT"`, `"BSD-3-Clause"`) or `"Commercial"` |
-| `licence_url` | No | URL to licence text |
-| `type` | Yes | CycloneDX component type: `"library"`, `"framework"`, or `"application"` |
+| `licence` | Yes | SPDX licence identifier (e.g. `"MIT"`, `"BSD-3-Clause"`), an SPDX expression (e.g. `"MPL-1.1 OR LGPL-2.1-or-later"`), or a plain name such as `"Commercial"`. Recognised identifiers are emitted as `license.id`, expressions as `expression`, anything else as `license.name` (Validate Manifest warns about unrecognised values other than `Commercial`) |
+| `licence_url` | No | URL to licence text (not emitted for an expression, which CycloneDX does not allow a URL on) |
+| `type` | Yes | CycloneDX component type: `"library"`, `"framework"`, or `"application"`. Case-insensitive; emitted lower-case, and an unrecognised value is emitted as `"library"` |
 | `units_prefix` | No | Array of unit name prefixes for matching (case-insensitive) |
 | `units_exact` | No | Array of exact unit names for matching (case-insensitive) |
 | `notes` | No | Freeform notes for documentation purposes |
@@ -81,13 +87,20 @@ wish, but there is no requirement to do so.
 
 ## Unit Matching
 
-DelphiSBOM matches each unit found in a project's `uses` clauses against the
-manifest entries. Matching is performed after stripping Delphi scope prefixes
-(`System.`, `Vcl.`, `Winapi.`, etc.).
+DelphiSBOM matches each unit found in a project's `uses` clause against the
+manifest entries, trying both the name as written and the name with its Delphi
+scope prefix stripped (`System.`, `Vcl.`, `Winapi.`, `Data.`, `Xml.`,
+`Datasnap.`, `FMX.`, `REST.`, `Net.`, `Web.`, `Soap.`, `Bde.`, `IBX.`,
+`FireDAC.`, `Posix.`).
 
-**Priority order** (first match wins):
+**Priority order** (first match wins), after RTL/VCL units:
 1. `units_exact` — exact case-insensitive name match
-2. `units_prefix` — case-insensitive prefix match (unit name starts with prefix)
+2. `own_code_units` — exact case-insensitive name match (own code)
+3. `units_prefix` — case-insensitive prefix match (unit name starts with prefix)
+4. Own code by `in 'file.pas'` reference in the `.dpr`, or by `own_code_prefixes`
+
+A vendored library compiled from source through an `in` reference still
+classifies as third-party when a `units_exact` or `units_prefix` rule matches it.
 
 If a unit matches multiple components, the first match in the `components`
 array wins.

@@ -25,27 +25,37 @@ DelphiSBOM is a standalone Windows application. No installer is required.
 
 ### Building from Source
 
-1. Open `Source/DelphiSBOM.dproj` in Delphi 10.3 Rio or later
-2. Select your target platform (Win32 or Win64)
+1. Open `Source/DelphiSBOM.dproj` in Delphi
+2. Select the Win64 target platform
 3. Build (Ctrl+F9) or Run (F9)
 
 No mandatory third-party libraries are required for core functionality.
 
+**Development and test environment:** DelphiSBOM is developed, built and
+tested only on **Delphi 13 Florence, Win64, VCL**. Delphi 10.3 Rio is the
+language floor (inline variables), not a tested configuration — earlier
+compilers and Win32 builds are untested.
+
 **Optional dependency:** For syntax-highlighted JSON viewing, add
 [SynEdit](https://github.com/SynEdit/SynEdit) (MPL-1.1 licence) to your
-Delphi library path and add `USE_SYNEDIT` to the project's conditional
-defines (Project > Options > Delphi Compiler > Conditional Defines). Without
+Delphi library path and set the environment variable
+`DELPHISBOM_DEFINES=USE_SYNEDIT` (Windows: `setx DELPHISBOM_DEFINES USE_SYNEDIT`,
+or Tools > Options > Environment Variables in the IDE), then restart the IDE.
+Do **not** add `USE_SYNEDIT` to the project's conditional defines: that would
+be saved into the shared `.dproj` and break builds without SynEdit. Without
 SynEdit, the SBOM viewer uses a plain text display.
 
 ## First Run
 
 When you launch DelphiSBOM for the first time:
 
-1. The **Delphi Path** field auto-populates from the Windows registry
-   (`HKCU\Software\Embarcadero\BDS`). If you have multiple Delphi versions
-   installed, the highest version is selected. You can change this by
-   clicking Browse. This is a **read-only** registry access — DelphiSBOM
-   never writes to the registry.
+1. The **Delphi Path** field is blank. Blank means "use the installed Delphi
+   version that matches the project": each run maps the project's
+   `ProjectVersion` to its Delphi version and looks it up in the registry
+   (`HKCU\Software\Embarcadero\BDS`, then the installer's `HKLM` key). If that
+   version is not installed, the newest installed version is used and the log
+   says so. Browse to a path only to force a specific installation. This is a
+   **read-only** registry access — DelphiSBOM never writes to the registry.
 
 2. All other fields start empty, waiting for you to select a project.
 
@@ -59,34 +69,42 @@ in `%APPDATA%\DelphiSBOM\DelphiSBOM.ini`.
 ### Step 1: Select Your Project
 
 Click **Browse** next to the Project File field and select your application's
-`.dpr` or `.dproj` file. Or, if you have used DelphiSBOM before, choose a
+`.dpr`, `.dpk` or `.dproj` file. Or, if you have used DelphiSBOM before, choose a
 recent project from the dropdown list.
 
-When you select a project:
-- The **Output Dir** automatically sets to the project's directory
-- If a `components.json` file exists in that directory, the **Manifest** field
-  populates. If not, a minimal empty one is created automatically
-- The **Version Override** field remains blank (the version will be read from
-  the `.dproj`)
+When you select a project, every per-project field is reset so nothing carries
+over from the previous project:
+- The **Output Dir** is set to the project's directory
+- The **Manifest** is set to `components.json` in the project's directory. The
+  file is not created yet — DelphiSBOM writes it only when you first save
+  libraries or own-code units
+- The **Version Override** and **DX.Comply SBOM** fields are cleared (the
+  version will be read from the `.dproj`)
+- If you have used the project before, its remembered settings are then restored
 
 ### Step 2: Generate
 
 Click **Generate SBOM**. The app runs the following pipeline in the background
 (your UI stays responsive):
 
-1. **Parses** the `.dpr` file to extract all unit names from the `uses` clause
-2. **Reads** the `.dproj` file for project metadata: name, version, target
-   platform, search paths
-3. **Scans** your Delphi installation's `lib` directory to build a list of
-   known RTL/VCL/FMX units
+1. **Reads** the `.dproj` file for project metadata — name, version, target
+   platform, search paths — evaluating it the way MSBuild does for a Release
+   build of the target platform (Win64 when active)
+2. **Parses** the `.dpr` (or the `.dproj`'s `MainSource`; for a package, the
+   `.dpk` `contains` clause) to extract all unit names
+3. **Scans** the `lib` directory of the Delphi installation matching the
+   project's version to build a list of known RTL/VCL/FMX units
 4. **Loads** your `components.json` manifest (if any libraries are defined)
 5. **Classifies** every unit using a priority system:
    - First: is it an RTL/VCL unit? (matched against the Delphi installation scan)
-   - Second: does it match a library in `components.json`? (exact name match,
-     then prefix match)
+   - Second: is it listed by exact name in `components.json` (`units_exact`)?
+   - Third: is it listed in `own_code_units`?
+   - Fourth: does it match a library prefix (`units_prefix`)?
+   - Fifth: is it your own code (an `in 'file.pas'` reference, or `own_code_prefixes`)?
    - Otherwise: unclassified
 6. **Discovers** libraries for unclassified units by searching the file system:
-   - Searches your project's search paths (from the `.dproj`)
+   - Searches your project's search paths (from the `.dproj`, with `$(BDS)`-style
+     macros expanded) and the IDE library path
    - Searches common library locations (`D:\`, `C:\Program Files`)
    - Groups found `.pas` files by directory (one directory = one library)
    - Extracts metadata: library name from directory name, vendor from source
@@ -131,9 +149,15 @@ DISCOVERED LIBRARIES
     mclStringUtils
 ```
 
-Units found in sibling directories (directories sharing the same parent as
-your project, such as a shared code folder) are automatically marked as own
-code and saved to `components.json`. You don't need to do anything for these.
+Units found in the project directory, and in sibling directories (sharing the
+same parent as your project, such as a shared code folder) that do not look
+like a library, are automatically marked as own code. A directory "looks like a
+library" when it, or its parent, has a `LICENSE`/`LICENCE`/`COPYING` file, or a
+`.dpk` package sits in it, its parent or a subdirectory — so a third-party
+library checked out beside your project is not mistaken for your own code.
+Auto-detected own-code units count as own code in the same run, and are saved to
+`components.json` once the SBOM has been written. You don't need to do anything
+for these.
 
 Any remaining units whose `.pas` files could not be found appear under
 **UNRESOLVED UNITS** at the bottom of the panel.
@@ -146,7 +170,9 @@ If the discovery panel shows libraries you want to include in your SBOM:
    pre-populated where possible
 2. *(Optional)* Click **Edit...** to open the library editor and correct any
    auto-detected metadata (Name, Version, Vendor, Licence, Prefix) before
-   saving. Click the Include column to exclude individual libraries.
+   saving. Click the Include column (or press Space on it) to exclude
+   individual libraries. Edits are held until you save — clicking **Generate
+   SBOM** instead asks before discarding them.
 3. Click **Save & Regenerate**
 
 This does two things:
@@ -160,8 +186,13 @@ in `components.json` and appear as third-party components in the SBOM.
 
 If any units remain in the **UNRESOLVED UNITS** list after saving libraries,
 these are typically your own shared project files. Click
-**Mark Unresolved as Own Code** to save them to the `own_code_units` array
+**Mark as Own Code** to save them to the `own_code_units` array
 in `components.json`. The SBOM will regenerate automatically.
+
+Both buttons write to the manifest the results came from, even if you have
+changed the Manifest field since. If that `components.json` is not valid JSON,
+nothing is written and the error is shown — fix the file (Validate Manifest
+helps) and try again.
 
 ### Step 5: View the SBOM
 
@@ -243,9 +274,14 @@ Together, they produce a complete SBOM.
    `bom.json` file
 4. Click **Generate SBOM**
 
-DelphiSBOM merges the SHA-256 hashes from DX.Comply into its own output.
-Each RTL and third-party component gains a nested `components` array listing
-the individual units with their binary hashes. This provides cryptographic
+DelphiSBOM merges the hashes from DX.Comply into its own output — the SHA-256
+hash when DX.Comply lists one, otherwise the first algorithm CycloneDX 1.5
+defines (names such as `SHA256` are normalised to `SHA-256`; algorithms outside
+the CycloneDX enum are skipped). Each RTL and third-party component gains a
+nested `components` array listing the individual units with their binary
+hashes and a `dxcomply:origin` property. Units match by name as written or
+scope-stripped (`SysUtils` matches `System.SysUtils.dcu`), and a unit DX.Comply
+lists twice (`.pas` and `.dcu`) appears once. This provides cryptographic
 evidence that specific compiled units are present in your binary.
 
 ### Match Rate
@@ -280,8 +316,10 @@ The generated `.cdx.json` contains:
 - **Components**: a flat list of all third-party dependencies, each with:
   - Name and version
   - Supplier/vendor
-  - Licence (SPDX identifier)
-  - Package URL (`pkg:delphi/<name>@<version>`)
+  - Licence — an SPDX `id` when the value is a recognised SPDX identifier, an
+    SPDX `expression` when it contains `OR`/`AND`/`WITH`, otherwise a licence
+    `name` (e.g. `Commercial`)
+  - Package URL (`pkg:delphi/<name>@<version>`, percent-encoded, so a space is `%20`)
   - External references (vendor website)
 - **Embarcadero Delphi RTL**: listed as a single framework component with
   the Delphi version number
@@ -300,9 +338,14 @@ The generated `.cdx.json` contains:
 
 DelphiSBOM creates and updates `components.json` automatically:
 
-- **Created** when you first select a project (empty template)
-- **Updated** when you click Save Libraries & Regenerate SBOM (discovered
-  libraries are appended)
+- **Created** the first time something is saved to it — Save & Regenerate,
+  Mark as Own Code, or a successful run that auto-detected own-code units.
+  Selecting a project does not create it
+- **Updated** when you click Save & Regenerate (discovered libraries are
+  appended) or Mark as Own Code (`own_code_units` are appended)
+- **Never overwritten** when it does not parse — fix the JSON first
+- Written as UTF-8 without a BOM, via a temporary file, so a failed save cannot
+  truncate it
 
 ### Manual Editing
 
@@ -477,12 +520,13 @@ no telemetry or data externally.
 | File | Location | Purpose |
 |------|----------|---------|
 | `<Project>.cdx.json` | Output directory | The generated CycloneDX 1.5 SBOM |
-| `components.json` | Project directory | Third-party library manifest (auto-created, updated on Save) |
-| `DelphiSBOM.ini` | `%APPDATA%\DelphiSBOM\` | MRU project list and per-project settings. Safe to delete |
+| `components.json` | Project directory | Third-party library manifest (created on first save, updated on each save) |
+| `DelphiSBOM.ini` | `%APPDATA%\DelphiSBOM\` | MRU project list and per-project settings (UTF-8). Safe to delete |
 
-**Registry access** is read-only: `HKCU\Software\Embarcadero\BDS` is read to
-detect Delphi installations and IDE environment variables. DelphiSBOM never
-writes to the Windows Registry.
+**Registry access** is read-only: `HKCU\Software\Embarcadero\BDS` (and the
+installer's `HKLM\SOFTWARE\WOW6432Node\Embarcadero\BDS`) is read to detect
+Delphi installations, IDE environment variables and the IDE library path.
+DelphiSBOM never writes to the Windows Registry.
 
 **Your source files** (`.dpr`, `.dproj`, `.pas`, `.dfm`) are read but never
 modified.

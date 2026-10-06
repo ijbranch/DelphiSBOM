@@ -22,7 +22,17 @@ pkg:delphi/<component-name>@<version>
 
 Examples:
 - `pkg:delphi/OmniThreadLibrary@3.7.8`
+- `pkg:delphi/TMS%20VCL%20UI%20Pack@13.0`
 - `pkg:delphi/embarcadero-rtl@37.0`
+
+Name and version are percent-encoded as the purl specification requires:
+unreserved characters (`A-Z a-z 0-9 . - _ ~`) are kept and everything else
+becomes `%XX` of its UTF-8 bytes — a space is `%20`, never the form-encoding `+`.
+A component with no name gets no purl; one with no version gets no `@`.
+
+The RTL version is the BDS version of the Delphi release that wrote the
+`.dproj` (`ProjectVersion` 20.4 and later = 37.0, Delphi 13; 20.1–20.3 = 23.0,
+Delphi 12; 19.3–19.5 = 22.0, Delphi 11; and so on), or `unknown`.
 
 This is consistent with how other niche ecosystems handle the gap pending
 formal registration.
@@ -46,17 +56,24 @@ component** rather than listing individual RTL units:
 with no practical compliance value. The RTL is a single distributable unit from
 a supply-chain perspective.
 
-### Commercial Licence Handling
+### Licence Handling
 
-CycloneDX licence entries use SPDX identifiers where available. For commercial
-(non-SPDX) licences, the `name` field is used instead of `id`:
+In the CycloneDX 1.5 schema `license.id` is an enum of SPDX identifiers, so a
+value that is not a valid identifier makes the whole SBOM fail validation.
+DelphiSBOM therefore classifies each `licence` value from `components.json`:
 
-```json
-"licenses": [{ "license": { "name": "Commercial" } }]
-```
+| Value | Emitted as |
+|-------|------------|
+| A recognised SPDX identifier (case-insensitive; emitted in canonical case) | `{ "license": { "id": "MIT" } }` |
+| Contains ` OR `, ` AND ` or ` WITH ` | `{ "expression": "MPL-1.1 OR LGPL-2.1-or-later" }` |
+| Anything else, e.g. `Commercial` | `{ "license": { "name": "Commercial" } }` |
 
-This is valid CycloneDX — the spec allows either `id` (SPDX) or `name`
-(freeform), but not both.
+The recognised list is a practical subset of the SPDX licence list covering the
+Delphi ecosystem (MIT, Apache, BSD, MPL, GPL/LGPL/AGPL in all their forms, BSL,
+ISC, Zlib, Unlicense, EPL, CDDL and others). An identifier outside that subset is
+emitted as a `name` — still valid, just less machine-readable — and Validate
+Manifest warns about it. `licence_url` is added to `id`/`name` entries; CycloneDX
+does not allow a URL on an expression.
 
 ### Own-Code Units
 
@@ -100,7 +117,8 @@ specification allows `components` arrays within components:
     {
       "type": "library",
       "name": "System.SysUtils",
-      "hashes": [{ "alg": "SHA-256", "content": "88de45b3a6f2..." }]
+      "hashes": [{ "alg": "SHA-256", "content": "88de45b3a6f2..." }],
+      "properties": [{ "name": "dxcomply:origin", "value": "Embarcadero RTL" }]
     }
   ]
 }
@@ -112,22 +130,38 @@ treatment — each gains a nested `components` array listing its constituent
 units with hashes.
 
 DX.Comply classifies units by origin (Embarcadero RTL, Embarcadero VCL,
-Third party, Local project). DelphiSBOM matches evidence to its own
-classified units by unit name (case-insensitive). Only RTL and third-party
-units receive evidence in the output — own-code units are excluded by design.
+Third party, Local project); that origin is carried into the
+`dxcomply:origin` property. DelphiSBOM matches evidence to its own
+classified units by unit name (case-insensitive), as written or with the scope
+prefix stripped on both sides. Only RTL and third-party units receive evidence
+in the output — own-code units are excluded by design.
+
+The SHA-256 hash is used when DX.Comply lists one; otherwise the first hash
+whose algorithm is in the CycloneDX 1.5 `hash-alg` enum. Algorithm names are
+normalised (`SHA256` becomes `SHA-256`), and hashes with an algorithm outside the
+enum are dropped with a warning, because they would make the SBOM invalid. A
+unit listed twice by DX.Comply (`.pas` and `.dcu`) is emitted once.
+
+Only units named in the project's own uses clause are classified, so DX.Comply
+entries for units the project uses transitively are not matched; the log
+reports how many entries matched.
 
 ## Known Limitations
 
 ### Multi-Version Delphi Installations
 
-When multiple Delphi versions are installed, the RTL auto-detection scans the
-highest version found in the registry. If a user opens a project built with an
-older Delphi version (e.g. Delphi 12 on a machine with Delphi 13), the RTL
-unit list will come from the newer version.
+With the Delphi Path field left blank, each run uses the installation that
+matches the project's `ProjectVersion` — Delphi 12 for a Delphi 12 project on a
+machine with Delphi 12 and 13 — for both the RTL unit scan and the IDE library
+path. If that version is not installed, the newest installed version is used
+and the log warns about it. The **Delphi Path** field forces a specific
+installation.
 
-In practice, RTL unit names are largely stable between versions, so
-misclassification is unlikely. The **Delphi Path** field on the form allows
-the user to manually point to the correct Delphi installation if needed.
+### Unit List Is Read as Text
+
+The unit list comes from the `.dpr` uses clause (or the `.dpk` contains clause)
+read as text: units in every `{$IFDEF}` branch are included, and units listed in
+`{$I}` include files are not read. The log warns when either is present.
 
 ### No Dependency Graph
 
@@ -138,8 +172,16 @@ complex and deferred to a future version.
 
 ### Scope Prefix Stripping
 
-Unit names are stripped of known Delphi scope prefixes (`System.`, `Vcl.`,
-`Winapi.`, etc.) before classification. This means `components.json` entries
-should use bare unit names, not fully qualified ones. A unit like
+Unit names are matched both as written and with a known Delphi scope prefix
+stripped (`System.`, `Vcl.`, `Winapi.`, `Data.`, `Xml.`, `Datasnap.`, `FMX.`,
+`REST.`, `Net.`, `Web.`, `Soap.`, `Bde.`, `IBX.`, `FireDAC.`, `Posix.`), so
+`components.json` entries may use either form. A unit like
 `System.Generics.Collections` becomes `Generics.Collections` for matching
 purposes — only the first scope segment is stripped.
+
+### Output Encoding
+
+The SBOM is written as UTF-8 **without** a byte-order mark (RFC 8259 forbids a
+BOM in JSON, and common parsers reject one), via a temporary file, so a failed
+write leaves the previous SBOM intact. The `metadata.timestamp` is ISO 8601 UTC
+(`2026-10-06T08:53:54Z`) regardless of the Windows locale.

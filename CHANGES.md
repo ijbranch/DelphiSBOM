@@ -2,9 +2,98 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-06 — Audit Fixes [Fixed / Changed / Added]
+
+Fixes from the full code audit recorded in `Docs/AUDIT-2026-10-06.md` (item IDs in brackets).
+Verified by clean Debug and Release Win64 builds (no hints or warnings) and a 52-check
+scratch harness driving the real units.
+
+**Data loss and cross-project contamination**
+- Saving into a `components.json` that does not parse now raises and leaves the file untouched,
+  instead of replacing it with an empty object [H2]; a non-array `components`/`own_code_units` is
+  refused rather than duplicated [L2] — `uManifestLoader.pas`, `uMainForm.pas`
+- Switching projects resets the Manifest, Output Dir, Version Override and DX.Comply fields to the new
+  project's defaults and its MRU entry, and clears the previous results; a hand-typed path does the
+  same on leaving the box [H3]. Save & Regenerate / Mark as Own Code write to the manifest the
+  results came from [M11] — `uMainForm.pas`, `uTypes.pas`
+- A sibling of the project directory is auto-marked as own code only when it does not look like a
+  library (no licence file, no `.dpk`); a library checked out beside the project stays
+  third-party, and a project directly under a drive root never applies the rule [H1] —
+  `uLibraryDiscovery.pas`
+- Auto-detected own-code units count as own code in the same run and are saved only after the
+  SBOM has been written [M12]; selecting a project no longer creates `components.json` in the
+  user's repository, the file is created on first save from a full skeleton [M13] —
+  `uSBOMEngine.pas`, `uManifestLoader.pas`, `uMainForm.pas`
+
+**SBOM correctness**
+- Licences: recognised SPDX identifiers emit `license.id`, expressions emit `expression`,
+  anything else `license.name` — previously every value went to `id`, a schema enum [H4];
+  component `type` lower-cased with a `library` fallback [M8] — `uSBOMBuilder.pas`, `uTypes.pas`
+- purl name/version percent-encoded per the purl spec (space = `%20`, not `+`); no purl for a
+  nameless component [M5] — `uSBOMBuilder.pas`
+- ProjectVersion maps to the right BDS version (20.1–20.3 is Delphi 12 = 23.0, not 37.0; 19.x is
+  10.4/11, and so on) [H6] — `uProjectParser.pas`
+- The `.dproj` is evaluated like MSBuild for Release on the active platform (Win64 preferred from
+  `<Platforms>`), with a Condition evaluator, so platform, auto-incremented build number and
+  search paths are correct [M14] — `uProjectParser.pas`
+- The SBOM, manifest and settings are written as UTF-8 without a BOM, atomically [M3]; the
+  timestamp no longer depends on the locale's time separator [M4] — `uTextFiles.pas`,
+  `uSBOMBuilder.pas`, `uManifestLoader.pas`
+- DX.Comply evidence matches scope-stripped names, prefers SHA-256, normalises algorithm names
+  and drops ones outside the CycloneDX enum, dedupes `.pas`/`.dcu` entries, and emits the origin
+  as a `dxcomply:origin` property [M9, L12] — `uEvidenceMerger.pas`, `uSBOMBuilder.pas`, `uSBOMEngine.pas`
+
+**Robustness**
+- Files are decoded BOM → UTF-8 → ANSI; an ANSI `.dpr` or `.pas` with one non-ASCII byte no
+  longer reads as empty [H5] — new `uTextFiles.pas`, all readers
+- The generate thread initialises COM for MSXML [M1]; `SyncComplete` always re-enables the form
+  [M2]; result buttons are disabled while a run is in progress [M10] — `uMainForm.pas`
+- The Delphi installation is chosen from the project's version (HKCU, then the installer's HKLM
+  key; versions whose folder is gone are ignored) instead of the highest installed [M17]; the Delphi
+  Path field is blank by default — new `uDelphiInstall.pas`, `uSBOMEngine.pas`, `uRTLScanner.pas`, `uMainForm.pas`
+- `$(BDS)`, `$(BDSCOMMONDIR)`, `$(BDSCatalogRepository)`, IDE environment variables and Windows
+  environment variables are expanded in IDE and `.dproj` search paths [M15]; discovery builds one
+  `.pas` index per run instead of rescanning every root per unit [M16] — `uLibraryDiscovery.pas`
+- Empty/non-string prefixes are ignored (an empty prefix matched every unit); short
+  `own_code_prefixes` are warned about; numeric/null field values are read safely [M6, L9];
+  `schema_version` other than `1.0` is warned about [L8] — `uManifestLoader.pas`, `uUnitClassifier.pas`
+- `own_code_units` now beats `units_prefix`; own-code matching also tries the scope-stripped
+  name; more scope prefixes (`Web.`, `Soap.`, `Bde.`, `IBX.`, `FireDAC.`, `Posix.`) [M7, L10] —
+  `uUnitClassifier.pas`, `uTypes.pas`
+- `.dpr` parsing: whitespace normalised before `in` detection, commas inside quoted paths
+  handled, `<MainSource>` and `.dpk` `contains` supported, warnings for `{$IF...}` and `{$I}` in
+  the source; unterminated `(*` fixed [M19, L18] — `uProjectParser.pas`
+- Library discovery: licence heuristics ordered most-specific first and never guessed (Boost was
+  reported as MIT; unversioned GPL as GPL-3.0) [L2]; vendor parsing case-insensitive and `©Acme`
+  no longer becomes `cme` [L1]; `{$LIBVERSION}`/`{$DESCRIPTION}` version detection replaces the
+  dead `{$ver` search [M18]; drive-root parent paths fixed [L3]; leaks and broad `except` blocks
+  narrowed [L4] — `uLibraryDiscovery.pas`
+- MRU settings stored as UTF-8 so non-ANSI project paths survive [M20] — `uSettings.pas`
+- Library editor: Space toggles Include, an included row must have a name, and Generate asks
+  before discarding unsaved edits [L15]; instruction text names the real buttons [L14]; save
+  messages are no longer cleared by the regenerate [L13] — `uLibraryEditor.pas`, `uMainForm.pas`
+
+**Build**
+- `USE_SYNEDIT` removed from the committed `.dproj` for the second time; `DCC_Define` now takes
+  `$(DELPHISBOM_DEFINES)` from the environment, and `.githooks/pre-commit` rejects a `.dproj` that
+  defines `USE_SYNEDIT` directly [H7]. `DCC_DcuOutput` trailing space and the `WinARM64EC` entry
+  removed [L19] — `Source/DelphiSBOM.dproj`, `.githooks/pre-commit`
+- **Why:** removing the define a second time would not hold — the IDE writes Project Options into
+  the shared `.dproj`, so the local setting has to live outside it.
+
+**Not changed:** cancellation and closing during a run [M21] stay Phase 2; log lines still use a
+blocking `Synchronize` [L17]; concurrent MRU writes from two instances [L16].
+
+## 2026-10-06 — Repository moved to GitHub [Changed]
+
+The repository now lives at https://github.com/ijbranch/DelphiSBOM (previously Codeberg).
+Updated the references in `CLAUDE.md`, `Docs/Help.md`, `PROGRESS.md` and the
+supplier URL in `Source/components.json`. The superseded `Delphi_SBOM_PLAN.md`
+is left as historical record.
+
 ## 2026-03-27 — DX.Comply Evidence Bridge Fixes [Fixed]
 
-First end-to-end test against real DX.Comply output (DBiWhoIsOn project,
+First end-to-end test against real DX.Comply output (a large internal project,
 729 library components). Three fixes applied:
 
 1. `uEvidenceMerger.pas`: Strip `.pas` extension from component names in
@@ -27,7 +116,7 @@ First end-to-end test against real DX.Comply output (DBiWhoIsOn project,
 
 ## 2026-03-27 - Own-Code Prefix Matching
 
-**Problem:** Shared internal libraries (e.g. GITLAKLib with `gll*` units)
+**Problem:** Shared internal libraries (e.g. a company library with `gll*` units)
 had to have each unit listed individually in `own_code_units`. No way to
 classify an entire prefix as own code.
 
