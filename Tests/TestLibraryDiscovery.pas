@@ -54,6 +54,7 @@ type
     [TestCase( 'years and full stop', '(c) 2020-2026 Acme Ltd.|Acme Ltd', '|' )]
     [TestCase( 'whole name bracketed', '(Acme Widgets)|Acme Widgets', '|' )]
     [TestCase( 'trailing dash', '2015 Jane Doe -|Jane Doe', '|' )]
+    [TestCase( 'banner lettering', 'RRRRRR|', '|' )]
     procedure HolderNameKeepsItsBrackets( const AInput, AExpected: string );
 
     /// <summary>
@@ -203,6 +204,22 @@ type
     /// </summary>
     [Test]
     procedure CopyrightBlockBeatsHistoryProse;
+
+    /// <summary>
+    ///   Proves the vendor is the holder most of the library's files name, and a company name on an
+    ///   ASCII-art banner counts when the copyright line itself only has years: ReportBuilder's banner
+    ///   names Digital Metaphors Corporation in 538 of 561 files, yet the first file with any name — one
+    ///   contributor's — made the vendor.
+    /// </summary>
+    [Test]
+    procedure VendorIsWhatMostFilesSay;
+
+    /// <summary>
+    ///   Proves a holder written before the word ("Pierre le Riche, copyright 2004 - 2026") is read, rather
+    ///   than a company on a later line: FastMM5's vendor came out as its sponsor, "gs-soft AG".
+    /// </summary>
+    [Test]
+    procedure HolderBeforeTheWordIsRead;
   end;
 
 implementation
@@ -390,6 +407,21 @@ begin
   WriteUtf8File( FScratch.PathOf( 'Libs\BlockLib\' + FTag + 'Block2.pas' ), Unit_( 'Block2',
     '{ Copyright:' + sLineBreak + '   (c) 1993-2005, Jane Doe and the Acme Crew. All rights reserved. }' + sLineBreak ) );
 
+  // The holder before the word, a sponsor company on a later line
+  WriteUtf8File( FScratch.PathOf( 'Libs\HolderLib\' + FTag + 'Holder.pas' ), Unit_( 'Holder',
+    '(*' + sLineBreak + '  Jane le Doe, copyright 2004 - 2026, all rights reserved' + sLineBreak + sLineBreak + 'Sponsored by:' + sLineBreak +
+    '  acme-soft AG' + sLineBreak + '*)' + sLineBreak ) );
+
+  // One contributor's file sorts first; the other three carry the publisher's banner
+  WriteUtf8File( FScratch.PathOf( 'Libs\VoteLib\' + FTag + 'Vote0.pas' ), Unit_( 'Vote0',
+    '// Copyright (c) 2003 Jane Contributor' + sLineBreak ) );
+
+  for var N := 1 to 3 do
+    WriteUtf8File( FScratch.PathOf( Format( 'Libs\VoteLib\%sVote%d.pas', [ FTag, N ] ) ), Unit_( 'Vote' + IntToStr( N ),
+      '{ RRRRRR                  Acme Report Library                  BBBBB' + sLineBreak +
+      '  RR   RR                 Acme Metaphors Corporation            BB   BB' + sLineBreak +
+      '  RR   RR                   Copyright (c) 1996-2011            BBBBB   }' + sLineBreak ) );
+
   var Discovery := TLibraryDiscovery.Create( NoLog() );
   try
     Discovery.ScanRoots := [ FScratch.PathOf( 'Drive' ) ];
@@ -397,9 +429,10 @@ begin
     var AutoOwn: TArray<string>;
     FLibraries := Discovery.Discover(
       [ FTag + 'Stray', FTag + 'Rb', FTag + 'Rtl', FTag + 'Id', FTag + 'Pkg', FTag + 'Info', FTag + 'Art', FTag + 'Block1',
-        FTag + 'Block2' ],
+        FTag + 'Block2', FTag + 'Vote0', FTag + 'Holder' ],
       [ StrayDcuDir, RbDcuDir, RtlDcuDir, FScratch.PathOf( 'Libs\IdLib' ), FScratch.PathOf( 'Libs\PkgLib' ),
-        FScratch.PathOf( 'Libs\InfoThing\source\windows' ), FScratch.PathOf( 'Libs\ArtLib' ), FScratch.PathOf( 'Libs\BlockLib' ) ],
+        FScratch.PathOf( 'Libs\InfoThing\source\windows' ), FScratch.PathOf( 'Libs\ArtLib' ), FScratch.PathOf( 'Libs\BlockLib' ),
+        FScratch.PathOf( 'Libs\VoteLib' ), FScratch.PathOf( 'Libs\HolderLib' ) ],
       FScratch.PathOf( 'Work\App' ), FScratch.PathOf( 'Studio' ), '', 'Win64', AutoOwn );
   finally
     Discovery.Free;
@@ -487,6 +520,20 @@ procedure TDiscoveryCaseTests.CopyrightBlockBeatsHistoryProse;
 begin
 
   Assert.AreEqual( 'Jane Doe and the Acme Crew', LibraryOf( 'Block2' ).Vendor );
+
+end;
+
+procedure TDiscoveryCaseTests.VendorIsWhatMostFilesSay;
+begin
+
+  Assert.AreEqual( 'Acme Metaphors Corporation', LibraryOf( 'Vote0' ).Vendor );
+
+end;
+
+procedure TDiscoveryCaseTests.HolderBeforeTheWordIsRead;
+begin
+
+  Assert.AreEqual( 'Jane le Doe', LibraryOf( 'Holder' ).Vendor );
 
 end;
 
