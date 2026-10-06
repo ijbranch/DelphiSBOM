@@ -128,6 +128,13 @@ uses
 
 const
   /// <summary>Licence file names looked for in a library directory.</summary>
+  /// <summary>A company name: words ending in a legal-form suffix ("Digital Metaphors Corporation", "Acme GmbH").</summary>
+  CompanyNamePattern = '^[A-Za-z][A-Za-z0-9&.,'' -]*\s(Corporation|Corp\.?|Incorporated|Inc\.?|Limited|Ltd\.?|LLC|GmbH|AG|' +
+    'S\.r\.l\.?|S\.A\.?|B\.V\.?)$';
+
+  /// <summary>How many of a library's source files are read to vote on its vendor.</summary>
+  MaxVendorFiles    = 200;
+
   LicenceFileNames  : array[ 0..7 ] of string = (
     'LICENSE', 'LICENSE.txt', 'LICENSE.md',
     'LICENCE', 'LICENCE.txt', 'LICENCE.md',
@@ -1279,17 +1286,52 @@ begin
 
   Result            := '';
 
-  // Try multiple .pas files in the directory until we find vendor info
+  // The holder most files name wins, so one contributor's header does not name the whole library;
+  // a tie goes to the name seen first
+  var Votes         := TDictionary<string, Integer>.Create;
+  var Spelling      := TDictionary<string, string>.Create;
+  var Order         := TList<string>.Create;
   try
-    for var PasFile in TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly ) do
-    begin
-      Result        := ExtractVendorFromFile( PasFile );
+    try
+      var Read      := 0;
 
-      if Result <> '' then Exit;
+      for var PasFile in TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly ) do
+      begin
+        if Read >= MaxVendorFiles then Break;
+
+        Inc( Read );
+        var Holder  := ExtractVendorFromFile( PasFile );
+
+        if Holder = '' then Continue;
+
+        var Key     := LowerCase( Holder );
+        var Count   := 0;
+
+        if ( not Votes.TryGetValue( Key, Count ) ) then
+        begin
+          Spelling.Add( Key, Holder );
+          Order.Add( Key );
+        end;
+
+        Votes.AddOrSetValue( Key, Count + 1 );
+      end;
+    except
+      on E: EInOutError do
+        Log( llWarning, Format( 'Could not read directory %s: %s', [ ADirectory, E.Message ] ) );
     end;
-  except
-    on E: EInOutError do
-      Log( llWarning, Format( 'Could not read directory %s: %s', [ ADirectory, E.Message ] ) );
+
+    var Best        := 0;
+
+    for var Key in Order do
+      if Votes[ Key ] > Best then
+      begin
+        Best        := Votes[ Key ];
+        Result      := Spelling[ Key ];
+      end;
+  finally
+    Order.Free;
+    Spelling.Free;
+    Votes.Free;
   end;
 
 end;
@@ -1357,8 +1399,9 @@ begin
     ( ( Result[ Result.Length ] = ')' ) and ( CharCount( Result, ')' ) > CharCount( Result, '(' ) ) ) ) do
     Delete( Result, Result.Length, 1 );
 
-  // Must contain a letter to be a name
-  if ( Result.Length <= 2 ) or ( not TRegEx.IsMatch( Result, '[A-Za-z]' ) ) then
+  // Must contain a letter to be a name, and not be one letter repeated (ASCII-art lettering such as BBBBB)
+  if ( Result.Length <= 2 ) or ( not TRegEx.IsMatch( Result, '[A-Za-z]' ) ) or
+    TRegEx.IsMatch( StringReplace( Result, ' ', '', [ rfReplaceAll ] ), '^(.)\1+$' ) then
     Result          := '';
 
 end;
@@ -1370,6 +1413,7 @@ begin
 
   try
     var Lines       := ReadTextFileHead( APasFile, 8192 ).Split( [ #10 ] );
+    var Banner      := '';
 
     for var I := 0 to Min( 29, High( Lines ) ) do
     begin
@@ -1403,6 +1447,15 @@ begin
         // "Copyright:" alone: the holder is on the next line
         if ( Result = '' ) and ( Trim( StringReplace( Holder, ':', '', [ ] ) ) = '' ) and ( I < High( Lines ) ) then
           Result    := CleanCopyrightHolder( TRegEx.Replace( Trim( Lines[ I + 1 ] ), '\s{3,}.*$', '' ) );
+
+        // "Pierre le Riche, copyright 2004 - 2026": the holder before the word (the last segment, past any banner art)
+        if ( Result = '' ) and Copyright.Success and ( Copyright.Index > 1 ) then
+        begin
+          var Before := TRegEx.Split( Trim( Copy( Line, 1, Copyright.Index - 1 ) ), '\s{3,}' );
+
+          if Length( Before ) > 0 then
+            Result  := CleanCopyrightHolder( TRegEx.Replace( Before[ High( Before ) ], '^[^A-Za-z]+|[\s,;:]+$', '' ) );
+        end;
       end;
 
       if Result <> '' then Exit;
@@ -1417,7 +1470,23 @@ begin
         if After.Length > 2 then
           Exit( After );
       end;
+
+      // A company named on a banner line ("RRRRRR    Digital Metaphors Corporation    BB BB"), used when no
+      // copyright line names a holder: banner headers put the name above a "Copyright (c) years" line
+      if Banner = '' then
+        for var Segment in TRegEx.Split( Line, '\s{3,}' ) do
+        begin
+          var Candidate := Trim( TRegEx.Replace( Segment, '^[^A-Za-z]+|[^A-Za-z.]+$', '' ) );
+
+          if TRegEx.IsMatch( Candidate, CompanyNamePattern, [ roIgnoreCase ] ) then
+          begin
+            Banner  := Candidate;
+            Break;
+          end;
+        end;
     end;
+
+    Result          := Banner;
   except
     on E: EInOutError do
       Log( llWarning, Format( 'Could not read %s: %s', [ APasFile, E.Message ] ) );
