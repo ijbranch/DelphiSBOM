@@ -4,7 +4,8 @@
   MIT Licence — see LICENCE file
 
   uSBOMEngine.pas — UI-independent pipeline orchestrator
-  Coordinates: ProjectParser → RTLScanner → ManifestLoader → UnitClassifier → LibraryDiscovery → SBOMBuilder
+  Coordinates: ProjectParser (or MapFile) → RTLScanner → ManifestLoader → UnitClassifier → LibraryDiscovery →
+  SBOMBuilder → SBOMValidator → ReportWriter
 *)
 unit uSBOMEngine;
 
@@ -25,6 +26,7 @@ type
     FLog: TProc<TLogLevel, string>;
 
     procedure Log( ALevel: TLogLevel; const AMessage: string );
+    procedure ApplyMapFile( const AMapFile: string; var AResult: TSBOMResult );
   public
     constructor Create( ALogProc: TProc<TLogLevel, string> );
 
@@ -34,7 +36,8 @@ type
     ///   The caller's thread must have initialised COM (the .dproj is read with MSXML).
     /// </summary>
     /// <param name="AOptions">Input files and overrides.</param>
-    /// <returns>The run's results; Success is True only when the SBOM file was written.</returns>
+    /// <returns>The run's results; Success is True only when the SBOM file was written. Problems the
+    ///   post-write check found are in ValidationErrors and do not clear Success.</returns>
     /// <exception cref="Exception">Any pipeline failure (missing project, invalid manifest, unwritable output).</exception>
     function Execute( const AOptions: TSBOMOptions ): TSBOMResult;
 
@@ -49,8 +52,8 @@ type
 implementation
 
 uses
-  System.IOUtils, System.Generics.Collections,
-  uProjectParser, uRTLScanner, uManifestLoader, uUnitClassifier, uSBOMBuilder, uLibraryDiscovery, uEvidenceMerger,
+  System.IOUtils, System.Generics.Collections, System.Generics.Defaults,
+  uMapFile, uSBOMValidator, uReportWriter, uTextFiles, uProjectParser, uRTLScanner, uManifestLoader, uUnitClassifier, uSBOMBuilder, uLibraryDiscovery, uEvidenceMerger,
   uDelphiInstall;
 
 { TSBOMEngine }
@@ -71,6 +74,70 @@ begin
 
 end;
 
+procedure TSBOMEngine.ApplyMapFile( const AMapFile: string; var AResult: TSBOMResult );
+begin
+
+  var Linked        := ReadMapUnitNames( AMapFile );
+
+  // A map older than the main source may describe a build from before its uses clause last changed. Not the
+  // .dproj: build-number auto-increment rewrites it on every build
+  var MapAge: TDateTime;
+  var SourceAge: TDateTime;
+
+  for var Ext in [ '.dpr', '.dpk' ] do
+  begin
+    var MainSource  := ChangeFileExt( AResult.ProjectInfo.ProjectFile, Ext );
+
+    if FileAge( MainSource, SourceAge ) then
+    begin
+      if FileAge( AMapFile, MapAge ) and ( MapAge < SourceAge ) then
+        Log( llWarning, Format( 'MAP file %s is older than %s — rebuild the project so it lists the current units',
+            [ ExtractFileName( AMapFile ), ExtractFileName( MainSource ) ] ) );
+
+      Break;
+    end;
+  end;
+
+  var InUses        := TDictionary<string, Boolean>.Create( TIStringComparer.Ordinal );
+  var InMap         := TDictionary<string, Boolean>.Create( TIStringComparer.Ordinal );
+  var Units         := TList<string>.Create;
+  try
+    for var U in AResult.ProjectInfo.Units do
+      InUses.AddOrSetValue( U, True );
+
+    // The program (or library / package) itself is linked as a unit of the project's name
+    for var U in Linked do
+      if ( not SameText( U, AResult.ProjectInfo.ProjectName ) ) then
+      begin
+        InMap.AddOrSetValue( U, True );
+        Units.Add( U );
+      end;
+
+    var Indirect    := 0;
+
+    for var U in Units do
+      if ( not InUses.ContainsKey( U ) ) then
+        Inc( Indirect );
+
+    var NotLinked   := 0;
+
+    for var U in AResult.ProjectInfo.Units do
+      if ( not InMap.ContainsKey( U ) ) then
+        Inc( NotLinked );
+
+    AResult.ProjectInfo.Units := Units.ToArray;
+    AResult.UnitSource := 'MAP file ' + ExtractFileName( AMapFile );
+
+    Log( llInfo, Format( 'MAP file %s lists %d linked units: %d not named in the uses clause, %d uses-clause units not linked',
+        [ ExtractFileName( AMapFile ), Units.Count, Indirect, NotLinked ] ) );
+  finally
+    Units.Free;
+    InMap.Free;
+    InUses.Free;
+  end;
+
+end;
+
 function TSBOMEngine.Execute( const AOptions: TSBOMOptions ): TSBOMResult;
 begin
 
@@ -85,6 +152,13 @@ begin
   finally
     Parser.Free;
   end;
+
+  // Step 1b: the units the linker used, when a MAP file is given. It replaces the uses-clause list:
+  // it adds units used only indirectly and drops those left out by {$IFDEF}s
+  Result.UnitSource := 'project uses clause';
+
+  if AOptions.MapFile <> '' then
+    ApplyMapFile( AOptions.MapFile, Result );
 
   // Resolve manifest path once for the entire pipeline
   Result.ManifestFile := AOptions.ManifestFile;
@@ -257,6 +331,30 @@ begin
       );
   finally
     Builder.Free;
+  end;
+
+  Result.ProductVersion := EffectiveProductVersion( AOptions.VersionOverride, Result.ProjectInfo.ProjectVersion );
+
+  // Step 5a: check the file as written. A problem is reported, not fatal: the SBOM is kept so it can be inspected
+  Result.ValidationErrors := CheckSBOM( ReadTextFile( Result.OutputFile ) );
+
+  if Length( Result.ValidationErrors ) = 0 then
+    Log( llInfo, 'SBOM check passed (structure, identifiers, licences, hashes and dependency references)' )
+  else
+  begin
+    for var E in Result.ValidationErrors do
+      Log( llError, 'SBOM check: ' + E );
+
+    Log( llError, Format( 'SBOM check found %d problems in %s', [ Length( Result.ValidationErrors ), ExtractFileName( Result.OutputFile ) ] ) );
+  end;
+
+  // Step 5b: companion reports
+  if AOptions.ReportFormats <> [ ] then
+  begin
+    Result.ReportFiles := WriteReports( Result, AOptions.ReportFormats );
+
+    for var F in Result.ReportFiles do
+      Log( llInfo, Format( 'Report written to %s', [ F ] ) );
   end;
 
   // Step 6: Persist auto-detected own-code units — only once the run has succeeded
