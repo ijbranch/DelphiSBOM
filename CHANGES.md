@@ -2,6 +2,22 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-06 — DUnitX Test Suite [Added]
+
+- DUnitX console suite over the non-VCL units: 64 tests in 9 fixtures, ported from the
+  audit's scratch harness and extended — `Tests/DelphiSBOMTests.dpr`, `Tests/DelphiSBOMTests.dproj`,
+  `Tests/TestSupport.pas`, `Tests/TestTypes.pas`, `Tests/TestTextFiles.pas`, `Tests/TestProjectParser.pas`,
+  `Tests/TestManifestLoader.pas`, `Tests/TestUnitClassifier.pas`, `Tests/TestSBOMBuilder.pas`,
+  `Tests/TestEvidenceMerger.pas`, `Tests/TestSBOMEngine.pas`, `Tests/TestDelphiInstall.pas`
+- The runner makes string assertions case-sensitive and fails any test that asserts nothing. Each
+  test works in its own `%TEMP%` folder. Eight of the audit fixes were mutation-checked: re-introducing
+  the defect turns the matching test red.
+- `Samples/components.sample.json` now shows every field and licence form: an SPDX expression, a
+  `Commercial` licence, `own_code_units` and `own_code_prefixes`. **Why:** the DX.Comply author asked
+  for a sample to check his manifest import against.
+- `.gitignore` ignores `dunitx-results.xml`; README and `CLAUDE.md` describe running the suite and its
+  environment caveat (built and run on Delphi 13 Win64 only).
+
 ## 2026-10-06 — Audit Fixes [Fixed / Changed / Added]
 
 Fixes from the full code audit recorded in `Docs/AUDIT-2026-10-06.md` (item IDs in brackets).

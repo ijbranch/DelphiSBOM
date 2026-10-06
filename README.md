@@ -134,6 +134,30 @@ builds the plain `TMemo` viewer. A pre-commit hook in `.githooks/` rejects a
 `.dproj` that defines `USE_SYNEDIT` directly; enable it once per clone with
 `git config core.hooksPath .githooks`.
 
+## Running the Tests
+
+`Tests/DelphiSBOMTests.dproj` is a [DUnitX](https://github.com/VSoftTechnologies/DUnitX)
+console suite covering the pipeline units (everything except the VCL forms):
+encoding detection, `.dproj` evaluation, unit-list parsing, manifest safety,
+classification precedence, CycloneDX output (licences, purls, timestamp,
+evidence) and an end-to-end engine run. DUnitX must be on your library path.
+
+```
+Tests\Win64\Debug\DelphiSBOMTests.exe --exitbehavior:Continue
+```
+
+The exit code is non-zero when any test fails. String assertions are
+case-sensitive (`Assert.IgnoreCaseDefault := False`), and a test that asserts
+nothing fails.
+
+**Environment caveat (tests):** the suite is built and run only on Delphi 13
+Florence, Win64. Two fixtures read the machine: `TestDelphiInstall` checks
+registry-detection invariants that hold with or without Delphi installed, and
+`TestSBOMEngine` runs library discovery, which also scans `D:\` and the Program
+Files folders (its unit names are unique, so nothing found there can match).
+Each test writes only to its own `%TEMP%\DelphiSBOMTests-<guid>` folder and
+deletes it afterwards.
+
 ## Licence
 
 MIT — see [LICENCE](LICENCE).

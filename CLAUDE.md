@@ -115,6 +115,24 @@ This repository will become public. The following rules apply now:
   Delphi libraries as examples (OmniThreadLibrary, Indy, Spring4D, etc.)
 - The only supplier reference is in `components.json` at runtime — not hardcoded
 
+## Testing
+
+- `Tests/DelphiSBOMTests.dproj` — DUnitX console suite over the non-VCL units (`..\Source`).
+  Build it (Win64 Debug) and run `Tests\Win64\Debug\DelphiSBOMTests.exe --exitbehavior:Continue`
+  after any change to those units; exit code is non-zero on failure.
+- The runner sets `Assert.IgnoreCaseDefault := False` and `FailsOnNoAsserts := True`: pass the
+  third argument only when a comparison is genuinely case-insensitive, and never add a test
+  without an assertion that a real defect would fail.
+- Fixtures are discovered by `[TestFixture]` + RTTI only; do not also call `RegisterTestFixture`
+  (stock DUnitX runs a doubly registered fixture twice).
+- Each test writes only to its own `TScratchDir` (`TestSupport.pas`), and fixtures that read a
+  `.dproj` call `CoInitializeEx` in setup (MSXML).
+- New behaviour gets a test whose `<summary>` says what it proves; mutation-check it (reintroduce
+  the defect, see the test fail) before relying on it.
+- **Environment caveat:** the suite runs only on Delphi 13 Win64. `TestSBOMEngine` also scans
+  the machine's library roots and `TestDelphiInstall` reads the registry — both are written to
+  hold on any machine, but have only been run on one.
+
 ## Commit Conventions
 
 - Use conventional commit prefixes: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`
@@ -131,4 +149,6 @@ This repository will become public. The following rules apply now:
 | `CHANGES.md` | Project change log (reverse chronological) |
 | `Docs/SCHEMA.md` | `components.json` schema reference |
 | `Docs/CYCLONEDX-NOTES.md` | CycloneDX 1.5 compliance notes and known limitations |
-| `Samples/components.sample.json` | Example manifest for onboarding |
+| `Samples/components.sample.json` | Example manifest for onboarding (every field and licence form) |
+| `Tests/DelphiSBOMTests.dproj` | DUnitX suite |
+| `Docs/AUDIT-2026-10-06.md` | Audit findings and their status |
