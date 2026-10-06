@@ -31,17 +31,21 @@ type
     var
       FLog          : TProc<TLogLevel, string>;
       FMacros       : TDictionary<string, string>;
+      FRootSources  : TObjectDictionary<string, TDictionary<string, string>>; // library root → .pas file name → path
 
     procedure BuildMacroTable( const ADelphiPath, ABDSVersion, APlatform: string );
     function ExpandMacros( const AValue: string ): string;
     function BuildUnitFileIndex( const ASearchPaths: TArray<string> ): TDictionary<string, TIndexEntry>;
     function FindUnitFile( const AUnitName: string; AIndex: TDictionary<string, TIndexEntry> ): string;
+    function BuildDcuIndex( const ADirectories: TArray<string> ): TDictionary<string, string>;
+    function FindDcuFile( const AUnitName: string; AIndex: TDictionary<string, string> ): string;
+    function FindSourceUnderRoot( const ARoot, AUnitName: string ): string;
+    function GetUnitNames( const ADirectory, AExtension: string ): TArray<string>;
     function GetCommonRootDirs: TArray<string>;
     function GetDelphiLibraryPaths( const ABDSVersion: string; const APlatform: string ): TArray<string>;
     function IsProjectDirectory( const ADirectory: string ): Boolean;
     function LooksLikeLibrary( const ADirectory: string ): Boolean;
     function IsGenericDirectoryName( const AName: string ): Boolean;
-    function GetAllPasUnitNames( const ADirectory: string ): TArray<string>;
     function DetectLicence( const ADirectory: string; out ALicenceFile: string ): string;
     function DetectVendor( const ADirectory: string ): string;
     function DetectLibraryName( const ADirectory: string ): string;
@@ -85,6 +89,16 @@ type
 /// <param name="ADirectory">The library directory.</param>
 /// <returns>The parent directory, or '' when it must not be searched.</returns>
 function LibraryParentDirectory( const ADirectory: string ): string;
+
+/// <summary>
+///   Returns the root of the library that owns a folder of compiled units, by walking up past
+///   build-output folder names: platforms (Win64), configurations (Release), compiler versions
+///   (37.0, D13, Delphi13, Studio37), and lib / dcu / bin. D:\Acme\37.0\Win64\Release gives D:\Acme.
+///   Returns ADcuDirectory itself when every ancestor up to the root is such a name.
+/// </summary>
+/// <param name="ADcuDirectory">A folder containing .dcu files.</param>
+/// <returns>The library root folder.</returns>
+function DcuLibraryRoot( const ADcuDirectory: string ): string;
 
 /// <summary>
 ///   Cleans the text that follows a copyright marker down to the holder's name:
@@ -132,6 +146,38 @@ begin
 
   if ( Result <> '' ) and SameText( IncludeTrailingPathDelimiter( TPath.GetPathRoot( Result ) ), IncludeTrailingPathDelimiter( Result ) ) then
     Result          := '';
+
+end;
+
+/// <summary>
+///   True for a folder name that build output is sorted into rather than a library's own name:
+///   platforms, configurations, compiler versions and their code names, lib / dcu / bin folders.
+/// </summary>
+function IsBuildOutputFolderName( const AName: string ): Boolean;
+begin
+
+  Result            := TRegEx.IsMatch( AName,
+    '^(win32|win64|release|debug|lib|libs|dcu|dcus|bin|obj|out|output|' +
+    'd\d+(_\d+)?|delphi\s*\d+(\.\d+)?|studio\s*\d+(\.\d+)?|bds\s*\d+(\.\d+)?|xe\d*|rx\d+|\d+(\.\d+)*|' +
+    'rio|sydney|alexandria|athens|florence)$', [ roIgnoreCase ] );
+
+end;
+
+function DcuLibraryRoot( const ADcuDirectory: string ): string;
+begin
+
+  var Start         := ExcludeTrailingPathDelimiter( ADcuDirectory );
+  Result            := Start;
+
+  while IsBuildOutputFolderName( ExtractFileName( Result ) ) do
+  begin
+    // Never climb to a drive root: its other folders are unrelated libraries
+    var Parent      := LibraryParentDirectory( Result );
+
+    if Parent = '' then Exit( Start );
+
+    Result          := Parent;
+  end;
 
 end;
 
@@ -187,12 +233,14 @@ begin
   inherited Create;
   FLog              := ALogProc;
   FMacros           := TDictionary<string, string>.Create( TIStringComparer.Ordinal );
+  FRootSources      := TObjectDictionary<string, TDictionary<string, string>>.Create( [ doOwnsValues ] );
 
 end;
 
 destructor TLibraryDiscovery.Destroy;
 begin
 
+  FRootSources.Free;
   FMacros.Free;
   inherited;
 
@@ -222,7 +270,12 @@ begin
 
   var OwnCodeList   := TList<string>.Create;
   var AllPaths      := TList<string>.Create;
+  var DcuPaths      := TList<string>.Create; // The folders the compiler reads units from: search paths and library path
   try
+    // The project directory first: the compiler always searches it, so a unit there needs no 'in' clause
+    if ( AProjectDir <> '' ) and TDirectory.Exists( AProjectDir ) then
+      AllPaths.Add( ExcludeTrailingPathDelimiter( AProjectDir ) );
+
     // Project search paths, resolved against the project directory
     for var P in ASearchPaths do
     begin
@@ -239,7 +292,10 @@ begin
           Expanded  := TPath.GetFullPath( TPath.Combine( AProjectDir, Expanded ) );
 
         if TDirectory.Exists( Expanded ) then
-          AllPaths.Add( Expanded )
+        begin
+          AllPaths.Add( Expanded );
+          DcuPaths.Add( Expanded );
+        end
         else
           Log( llInfo, Format( 'Search path not found, skipped: %s', [ Expanded ] ) );
       except
@@ -251,7 +307,13 @@ begin
     // Delphi IDE library paths from the registry
     for var IP in GetDelphiLibraryPaths( ABDSVersion, APlatform ) do
       if ( not AllPaths.Contains( IP ) ) and TDirectory.Exists( IP ) then
+      begin
         AllPaths.Add( IP );
+
+        // The installation's own folders hold the RTL and bundled libraries, classified by the RTL scan
+        if ( ADelphiPath = '' ) or ( not IP.StartsWith( IncludeTrailingPathDelimiter( ADelphiPath ), True ) ) then
+          DcuPaths.Add( IP );
+      end;
 
     // Common root directories
     for var RD in GetCommonRootDirs do
@@ -262,8 +324,11 @@ begin
 
     // Phase 1: Find .pas files for each unclassified unit, from a single index of the search tree
     var UnitToDir   := TDictionary<string, string>.Create; // unit name → directory (lower case)
-    var UnitToFile  := TDictionary<string, string>.Create; // unit name → full .pas path
+    var UnitToActualDir := TDictionary<string, string>.Create; // unit name → directory as found on disk
+    var UnitToDcuDir := TDictionary<string, string>.Create; // DCU-only unit → the folder holding its .dcu
+    var ViaLibraryPath := TDictionary<string, Boolean>.Create; // Units reached through a DCU on the search or library path
     var FileIndex   := BuildUnitFileIndex( AllPaths.ToArray );
+    var DcuIndex    := BuildDcuIndex( DcuPaths.ToArray );
     try
       for var UnitName in AUnclassifiedUnits do
       begin
@@ -271,14 +336,55 @@ begin
 
         if FoundFile <> '' then
         begin
-          var Dir   := LowerCase( ExcludeTrailingPathDelimiter( ExtractFilePath( FoundFile ) ) );
-          UnitToDir.AddOrSetValue( UnitName, Dir );
-          UnitToFile.AddOrSetValue( UnitName, FoundFile );
+          var Dir   := ExcludeTrailingPathDelimiter( ExtractFilePath( FoundFile ) );
+          UnitToDir.AddOrSetValue( UnitName, LowerCase( Dir ) );
+          UnitToActualDir.AddOrSetValue( UnitName, Dir );
         end;
       end;
 
       Log( llInfo, Format( 'Found .pas files for %d of %d unclassified units',
           [ UnitToDir.Count, Length( AUnclassifiedUnits ) ] ) );
+
+      // Phase 1b: a unit with no source on the search tree may be compiled from a DCU folder on the
+      // library path. Its library is the folder above the build-output folders; its source, when the
+      // library ships it, is somewhere under that root.
+      var DcuFound  := 0;
+      var DcuWithSource := 0;
+
+      for var UnitName in AUnclassifiedUnits do
+      begin
+        var DcuFile := FindDcuFile( UnitName, DcuIndex );
+
+        if DcuFile = '' then Continue;
+
+        // Its DCU is where the compiler looks, however its source was found
+        ViaLibraryPath.AddOrSetValue( UnitName, True );
+
+        if UnitToDir.ContainsKey( UnitName ) then Continue;
+
+        Inc( DcuFound );
+        var DcuDir  := ExcludeTrailingPathDelimiter( ExtractFilePath( DcuFile ) );
+        var Root    := DcuLibraryRoot( DcuDir );
+        var Source  := FindSourceUnderRoot( Root, UnitName );
+
+        if Source <> '' then
+        begin
+          Inc( DcuWithSource );
+          var Dir   := ExcludeTrailingPathDelimiter( ExtractFilePath( Source ) );
+          UnitToDir.AddOrSetValue( UnitName, LowerCase( Dir ) );
+          UnitToActualDir.AddOrSetValue( UnitName, Dir );
+        end
+        else
+        begin
+          UnitToDir.AddOrSetValue( UnitName, LowerCase( Root ) );
+          UnitToActualDir.AddOrSetValue( UnitName, Root );
+          UnitToDcuDir.AddOrSetValue( UnitName, DcuDir );
+        end;
+      end;
+
+      if DcuFound > 0 then
+        Log( llInfo, Format( 'Found .dcu files for %d more units (%d with source under the library root, %d DCU only)',
+            [ DcuFound, DcuWithSource, DcuFound - DcuWithSource ] ) );
 
       // Phase 2: Group units by directory
       var DirToUnits := TDictionary<string, TList<string>>.Create;
@@ -306,14 +412,23 @@ begin
             // Use the original case from the first file found
             var FirstUnit := DirPair.Value[ 0 ];
 
-            if UnitToFile.ContainsKey( FirstUnit ) then
-              ActualDir := ExcludeTrailingPathDelimiter( ExtractFilePath( UnitToFile[ FirstUnit ] ) );
+            if UnitToActualDir.ContainsKey( FirstUnit ) then
+              ActualDir := UnitToActualDir[ FirstUnit ];
 
             // The project's own directory — its units are own code
             if SameText( ExcludeTrailingPathDelimiter( ActualDir ),
               ExcludeTrailingPathDelimiter( AProjectDir ) ) then
             begin
               Log( llInfo, Format( 'Units in the project directory are own code: %s', [ ActualDir ] ) );
+              OwnCodeList.AddRange( DirPair.Value );
+              Continue;
+            end;
+
+            // A folder inside the project is own code unless it looks like a vendored library
+            if StartsText( IncludeTrailingPathDelimiter( AProjectDir ), IncludeTrailingPathDelimiter( ActualDir ) ) and
+              ( not LooksLikeLibrary( ActualDir ) ) then
+            begin
+              Log( llInfo, Format( 'Units in a project subfolder are own code: %s', [ ActualDir ] ) );
               OwnCodeList.AddRange( DirPair.Value );
               Continue;
             end;
@@ -330,8 +445,10 @@ begin
               Continue;
             end;
 
-            // Skip directories that contain .dpr or .dproj files (other projects, not libraries)
-            if IsProjectDirectory( ActualDir ) then
+            // Skip directories that contain .dpr or .dproj files (other projects, not libraries) — unless the
+            // compiler reaches the units through their DCUs on the library path: then the .dpr is the one that
+            // builds them
+            if IsProjectDirectory( ActualDir ) and ( not ViaLibraryPath.ContainsKey( FirstUnit ) ) then
             begin
               Log( llInfo, Format( 'Skipping project directory (contains .dpr): %s', [ ActualDir ] ) );
               Continue;
@@ -343,8 +460,21 @@ begin
             Lib.Units := DirPair.Value.ToArray;
             Lib.Confirmed := False;
 
-            // Compute prefix from ALL .pas files in the directory, not just unclassified ones
-            var AllUnitNames := GetAllPasUnitNames( ActualDir );
+            // Binary-only when none of its units' source was found
+            Lib.BinaryOnly := True;
+
+            for var U in Lib.Units do
+              if ( not UnitToDcuDir.ContainsKey( U ) ) then
+                Lib.BinaryOnly := False;
+
+            // Compute prefix from ALL units in the folder (the DCU folder for a binary-only library),
+            // not just the unclassified ones
+            var AllUnitNames: TArray<string>;
+
+            if Lib.BinaryOnly then
+              AllUnitNames := GetUnitNames( UnitToDcuDir[ FirstUnit ], '.dcu' )
+            else
+              AllUnitNames := GetUnitNames( ActualDir, '.pas' );
 
             if Length( AllUnitNames ) > 0 then
               Lib.SuggestedPrefix := ComputePrefix( AllUnitNames )
@@ -358,8 +488,12 @@ begin
             Lib.Version := DetectVersion( ActualDir );
             Lib.Vendor := DetectVendor( ActualDir );
 
-            Log( llInfo, Format( 'Discovered library: %s (%d units, dir: %s)',
-                [ Lib.Name, Length( Lib.Units ), Lib.Directory ] ) );
+            if Lib.BinaryOnly then
+              Log( llInfo, Format( 'Discovered library: %s (%d units, DCU only, dir: %s)',
+                  [ Lib.Name, Length( Lib.Units ), Lib.Directory ] ) )
+            else
+              Log( llInfo, Format( 'Discovered library: %s (%d units, dir: %s)',
+                  [ Lib.Name, Length( Lib.Units ), Lib.Directory ] ) );
 
             Libraries.Add( Lib );
           end;
@@ -391,6 +525,7 @@ begin
                   begin
                     // Merge Other into Current
                     Current.Units := Current.Units + Other.Units;
+                    Current.BinaryOnly := Current.BinaryOnly and Other.BinaryOnly;
 
                     // Use the parent (outer) directory
                     if CurrentDir.StartsWith( OtherDir ) then
@@ -443,9 +578,12 @@ begin
         DirToUnits.Free;
       end;
     finally
+      DcuIndex.Free;
       FileIndex.Free;
       UnitToDir.Free;
-      UnitToFile.Free;
+      UnitToActualDir.Free;
+      UnitToDcuDir.Free;
+      ViaLibraryPath.Free;
     end;
 
     AAutoOwnCodeUnits := OwnCodeList.ToArray;
@@ -453,6 +591,7 @@ begin
     if OwnCodeList.Count > 0 then
       Log( llInfo, Format( 'Auto-detected %d own-code units', [ OwnCodeList.Count ] ) );
   finally
+    DcuPaths.Free;
     AllPaths.Free;
     OwnCodeList.Free;
   end;
@@ -684,17 +823,17 @@ begin
 
 end;
 
-function TLibraryDiscovery.GetAllPasUnitNames( const ADirectory: string ): TArray<string>;
+function TLibraryDiscovery.GetUnitNames( const ADirectory, AExtension: string ): TArray<string>;
 begin
 
   Result            := nil;
 
   try
-    var PasFiles    := TDirectory.GetFiles( ADirectory, '*.pas', TSearchOption.soTopDirectoryOnly );
-    SetLength( Result, Length( PasFiles ) );
+    var UnitFiles   := TDirectory.GetFiles( ADirectory, '*' + AExtension, TSearchOption.soTopDirectoryOnly );
+    SetLength( Result, Length( UnitFiles ) );
 
-    for var I := 0 to High( PasFiles ) do
-      Result[ I ]   := TPath.GetFileNameWithoutExtension( PasFiles[ I ] );
+    for var I := 0 to High( UnitFiles ) do
+      Result[ I ]   := TPath.GetFileNameWithoutExtension( UnitFiles[ I ] );
   except
     on E: EInOutError do
       Log( llWarning, Format( 'Could not read directory %s: %s', [ ADirectory, E.Message ] ) );
@@ -795,6 +934,67 @@ begin
       Result        := Entry.Path;
     end;
   end;
+
+end;
+
+function TLibraryDiscovery.BuildDcuIndex( const ADirectories: TArray<string> ): TDictionary<string, string>;
+begin
+
+  // Only the folders themselves, as the compiler reads them: no parents or subfolders
+  Result            := TDictionary<string, string>.Create;
+
+  for var Dir in ADirectories do
+    try
+      for var DcuFile in TDirectory.GetFiles( Dir, '*.dcu', TSearchOption.soTopDirectoryOnly ) do
+        Result.TryAdd( LowerCase( ExtractFileName( DcuFile ) ), DcuFile );
+    except
+      on EInOutError do
+        ; // Access denied or vanished directory — nothing to index
+      on EArgumentException do
+        ; // Invalid characters in a configured path — nothing to index
+    end;
+
+  Log( llInfo, Format( 'Indexed %d .dcu files in %d search and library path folders', [ Result.Count, Length( ADirectories ) ] ) );
+
+end;
+
+function TLibraryDiscovery.FindDcuFile( const AUnitName: string; AIndex: TDictionary<string, string> ): string;
+begin
+
+  if AIndex.TryGetValue( LowerCase( AUnitName + '.dcu' ), Result ) then Exit;
+
+  if ( not AIndex.TryGetValue( LowerCase( StripScopePrefix( AUnitName ) + '.dcu' ), Result ) ) then
+    Result          := '';
+
+end;
+
+function TLibraryDiscovery.FindSourceUnderRoot( const ARoot, AUnitName: string ): string;
+begin
+
+  // Each root's tree is listed once per run, however many of its units are looked up
+  var Sources: TDictionary<string, string>;
+  var Key           := LowerCase( ARoot );
+
+  if ( not FRootSources.TryGetValue( Key, Sources ) ) then
+  begin
+    Sources         := TDictionary<string, string>.Create;
+    FRootSources.Add( Key, Sources );
+
+    try
+      for var PasFile in TDirectory.GetFiles( ARoot, '*.pas', TSearchOption.soAllDirectories ) do
+        Sources.TryAdd( LowerCase( ExtractFileName( PasFile ) ), PasFile );
+    except
+      on E: EInOutError do
+        Log( llWarning, Format( 'Could not search %s for source: %s', [ ARoot, E.Message ] ) );
+      on E: EArgumentException do
+        Log( llWarning, Format( 'Could not search %s for source: %s', [ ARoot, E.Message ] ) );
+    end;
+  end;
+
+  if Sources.TryGetValue( LowerCase( AUnitName + '.pas' ), Result ) then Exit;
+
+  if ( not Sources.TryGetValue( LowerCase( StripScopePrefix( AUnitName ) + '.pas' ), Result ) ) then
+    Result          := '';
 
 end;
 
