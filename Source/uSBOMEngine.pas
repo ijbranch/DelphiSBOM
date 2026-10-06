@@ -53,7 +53,8 @@ implementation
 
 uses
   System.IOUtils, System.Generics.Collections, System.Generics.Defaults,
-  uMapFile, uSBOMValidator, uReportWriter, uTextFiles, uProjectParser, uRTLScanner, uManifestLoader, uUnitClassifier, uSBOMBuilder, uLibraryDiscovery, uEvidenceMerger,
+  uMapFile, uSBOMValidator, uReportWriter, uTextFiles, uProjectParser, uRTLScanner, uManifestLoader, uUnitClassifier, uSBOMBuilder, uLibraryDiscovery,
+    uEvidenceMerger,
   uDelphiInstall;
 
 { TSBOMEngine }

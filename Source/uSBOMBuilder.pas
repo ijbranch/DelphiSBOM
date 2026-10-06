@@ -192,7 +192,7 @@ begin
   var UsedRefs      := TDictionary<string, Boolean>.Create;
   var LibraryRefs   := TList<string>.Create;
 
-  var UniqueRef :=
+  var UniqueRef     :=
     function( const ABase: string ): string
     begin
       Result        := ABase;
