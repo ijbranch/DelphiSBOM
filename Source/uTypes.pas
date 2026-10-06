@@ -37,6 +37,7 @@ type
     Prefixes: TArray<string>;
     ExactUnits: TArray<string>;
     Notes: string;
+    Purl: string; // Package URL override (empty = generated pkg:delphi/<name>@<version>)
   end;
 
   /// <summary>

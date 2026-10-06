@@ -92,7 +92,7 @@ type
 implementation
 
 uses
-  System.IOUtils,
+  System.IOUtils, System.RegularExpressions,
   uTextFiles;
 
 /// <summary>
@@ -279,6 +279,7 @@ begin
           Entry.LicenceURL := ReadString( CompObj, 'licence_url', '', Context );
           Entry.CompType := ReadString( CompObj, 'type', 'library', Context );
           Entry.Notes := ReadString( CompObj, 'notes', '', Context );
+          Entry.Purl := Trim( ReadString( CompObj, 'purl', '', Context ) );
           Entry.Prefixes := ReadStringArray( CompObj, 'units_prefix', Context );
           Entry.ExactUnits := ReadStringArray( CompObj, 'units_exact', Context );
 
@@ -370,6 +371,11 @@ begin
       Log( llWarning, Format( '%s: licence "%s" is not a recognised SPDX identifier — it will be written as a licence name',
           [ Prefix, AComp.Licence ] ) );
   end;
+
+  // A purl override is written as given, so one that is not a package URL would make the SBOM invalid
+  if ( AComp.Purl <> '' ) and ( not TRegEx.IsMatch( AComp.Purl, '^pkg:[a-z][a-z0-9.+-]*/[^/]' ) ) then
+    Log( llWarning, Format( '%s: purl "%s" is not a package URL (pkg:<type>/<name>, e.g. pkg:github/owner/repo@v1.0)',
+        [ Prefix, AComp.Purl ] ) );
 
   // Validate component type (the SBOM builder lower-cases it, and falls back to library)
   var ValidTypes: TArray<string> := [ 'library', 'framework', 'application' ];

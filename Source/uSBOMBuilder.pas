@@ -320,7 +320,10 @@ begin
         // The purl names the component; a component without a name is referenced by its manifest row
         var Purl    := '';
 
-        if Trim( Entry.Name ) = '' then
+        // A manifest purl (e.g. pkg:github/owner/repo@tag) replaces the generated pkg:delphi one
+        if Entry.Purl <> '' then
+          Purl      := Entry.Purl
+        else if Trim( Entry.Name ) = '' then
           Log( llWarning, Format( 'Manifest component %d has no name — no purl emitted', [ CU.ComponentIndex ] ) )
         else if Entry.Version <> '' then
           Purl      := Format( 'pkg:delphi/%s@%s', [ PurlEncode( Entry.Name ), PurlEncode( Entry.Version ) ] )
