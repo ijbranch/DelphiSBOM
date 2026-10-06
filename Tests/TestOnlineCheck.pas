@@ -100,6 +100,34 @@ type
     /// </summary>
     [Test]
     procedure GitHubPurlIsOffered;
+
+    /// <summary>
+    ///   Proves the token's order of precedence: GITHUB_TOKEN when set, without consulting Git Credential
+    ///   Manager; otherwise the stored credential; otherwise none.
+    /// </summary>
+    [Test]
+    procedure TokenComesFromEnvironmentThenCredentialManager;
+
+    /// <summary>
+    ///   Proves the stored credential is never looked up when requests go anywhere but api.github.com, so
+    ///   pointing DELPHISBOM_GITHUB_API elsewhere cannot send the user's GitHub token to that server.
+    /// </summary>
+    [Test]
+    procedure CredentialIsNeverLookedUpForAnotherHost;
+
+    /// <summary>
+    ///   Proves the token is the password= line of "git credential fill" output, with LF or CRLF line ends,
+    ///   and '' when there is none.
+    /// </summary>
+    [Test]
+    procedure CredentialOutputIsParsed;
+
+    /// <summary>
+    ///   Proves a checker given its own fetch never consults the credential source, so tests and callers
+    ///   that inject a fetch cannot read a real credential.
+    /// </summary>
+    [Test]
+    procedure InjectedFetchNeverReadsACredential;
   end;
 
 implementation
@@ -313,6 +341,91 @@ begin
   var Findings := Run( [ Entry( 'FastMM5', 'https://github.com/pleriche/FastMM5', 'GPL-3.0-only', '5.07' ) ] );
 
   Assert.IsTrue( HasFinding( Findings, 'FastMM5', 'pkg:github/pleriche/FastMM5@version_507', ofkInfo ), 'GitHub purl' );
+
+end;
+
+procedure TOnlineCheckTests.TokenComesFromEnvironmentThenCredentialManager;
+begin
+
+  var Calls := 0;
+  var Credential: TFunc<string> :=
+    function: string
+    begin
+      Inc( Calls );
+      Result := 'stored-token';
+    end;
+  var Source: string;
+
+  Assert.AreEqual( 'env-token', ResolveGitHubToken( 'https://api.github.com', 'env-token', Credential, Source ) );
+  Assert.AreEqual( 'GITHUB_TOKEN', Source );
+  Assert.AreEqual( 0, Calls, 'Credential Manager consulted although GITHUB_TOKEN is set' );
+
+  Assert.AreEqual( 'stored-token', ResolveGitHubToken( 'https://api.github.com/', '', Credential, Source ) );
+  Assert.AreEqual( 'Git Credential Manager', Source );
+
+  Assert.AreEqual( '', ResolveGitHubToken( 'https://api.github.com',  '',
+    function: string
+    begin
+      Result := '';
+    end, Source ) );
+  Assert.AreEqual( 'none', Source );
+
+  Assert.AreEqual( '', ResolveGitHubToken( 'https://api.github.com', '', nil, Source ) );
+  Assert.AreEqual( 'none', Source );
+
+end;
+
+procedure TOnlineCheckTests.CredentialIsNeverLookedUpForAnotherHost;
+begin
+
+  var Calls := 0;
+  var Credential: TFunc<string> :=
+    function: string
+    begin
+      Inc( Calls );
+      Result := 'stored-token';
+    end;
+  var Source: string;
+
+  for var Base in [ 'http://127.0.0.1:5000', 'https://api.github.com.evil.example', 'https://example.com/api.github.com' ] do
+  begin
+    Assert.AreEqual( '', ResolveGitHubToken( Base, '', Credential, Source ), Base );
+    Assert.AreEqual( 'none', Source, Base );
+  end;
+
+  Assert.AreEqual( 0, Calls, 'Credential looked up for a non-GitHub host' );
+
+end;
+
+procedure TOnlineCheckTests.CredentialOutputIsParsed;
+begin
+
+  Assert.AreEqual( 'abc123', ParseCredentialOutput( 'protocol=https' + #10 + 'host=github.com' + #10 + 'username=me' + #10 +
+    'password=abc123' + #10 ) );
+  Assert.AreEqual( 'abc123', ParseCredentialOutput( 'protocol=https' + #13#10 + 'password=abc123' + #13#10 ) );
+  Assert.AreEqual( '', ParseCredentialOutput( 'protocol=https' + #10 + 'host=github.com' + #10 ) );
+  Assert.AreEqual( '', ParseCredentialOutput( '' ) );
+
+end;
+
+procedure TOnlineCheckTests.InjectedFetchNeverReadsACredential;
+begin
+
+  var Saved: TFunc<string> := OnlineCredentialSource;
+  var Calls := 0;
+  OnlineCredentialSource :=
+    function: string
+    begin
+      Inc( Calls );
+      Result := 'stored-token';
+    end;
+  try
+    Respond( '/repos/acme/widgets', 200, '{ "license": null, "archived": false }' );
+    Run( [ Entry( 'Acme', 'https://github.com/acme/widgets', '', '' ) ] );
+    Assert.AreEqual( 0, Calls, 'Credential read although a fetch was injected' );
+  finally
+    OnlineCredentialSource := Saved;
+  end;
 
 end;
 
