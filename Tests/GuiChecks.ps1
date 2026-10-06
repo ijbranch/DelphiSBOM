@@ -85,6 +85,37 @@ $MapA = "$ProjA\ProjA.map"
   'System', 'System.SysUtils', 'UnitA', 'ZzqLibMain', 'ZzqLibUtils', 'ZzqIndirect', 'ProjA' | ForEach-Object {
     " 0001:00000000 00000010 C=CODE     S=.text    G=(none)   M=$_ ALIGN=4" }) -join "`r`n"), $utf8)
 $Bom = Join-Path $Scratch 'bom.json'
+
+# Project C for the online check: one component whose vendor_url is a GitHub repository
+$ProjC = Join-Path $Scratch 'Work\ProjC'
+New-Item -ItemType Directory -Path $ProjC -Force | Out-Null
+[IO.File]::WriteAllText("$ProjC\ProjC.dpr", "program ProjC;`r`nbegin end.", $utf8)
+[IO.File]::WriteAllText("$ProjC\components.json", '{ "schema_version": "1.0", "components": [ { "name": "Acme", "version": "", ' +
+  '"vendor": "Acme", "vendor_url": "https://github.com/acme/widgets", "licence": "", "units_exact": [ "AcmeUnit" ] } ] }', $utf8)
+
+# A fake GitHub API on a loopback port, so the online check runs without the network; the app reads its
+# address from DELPHISBOM_GITHUB_API (inherited by every launch below)
+$ApiListener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+$ApiListener.Start()
+$env:DELPHISBOM_GITHUB_API = "http://127.0.0.1:$($ApiListener.LocalEndpoint.Port)"
+$ApiJob = Start-ThreadJob -ArgumentList $ApiListener -ScriptBlock {
+  param($Listener)
+  while ($true) {
+    try { $client = $Listener.AcceptTcpClient() } catch { break }
+    $stream = $client.GetStream()
+    $reader = [IO.StreamReader]::new($stream)
+    $path = ($reader.ReadLine() -split ' ')[1]
+    while (($h = $reader.ReadLine()) -ne $null -and $h -ne '') { }
+    $status = '200 OK'
+    if ($path -eq '/repos/acme/widgets') { $body = '{ "license": { "spdx_id": "MIT" }, "archived": false }' }
+    elseif ($path -eq '/repos/acme/widgets/releases/latest') { $body = '{ "tag_name": "v2.4.0" }' }
+    else { $status = '404 Not Found'; $body = '{ "message": "Not Found" }' }
+    $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+    $head = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $status`r`nContent-Type: application/json`r`nContent-Length: $($bytes.Length)`r`nConnection: close`r`n`r`n")
+    $stream.Write($head, 0, $head.Length); $stream.Write($bytes, 0, $bytes.Length); $stream.Flush()
+    $client.Close()
+  }
+}
 [IO.File]::WriteAllText($Bom, '{ "bomFormat": "CycloneDX", "components": [] }', $utf8)
 
 # ---- protect the user's real settings ----------------------------------------------------------------------
@@ -268,12 +299,39 @@ try {
   $count = [int][W]::SendMessage($combo, $CB_GETCOUNT, [IntPtr]::Zero, [IntPtr]::Zero)
   $items = for ($i = 0; $i -lt $count; $i++) { $sb = New-Object Text.StringBuilder 1024; [void][W]::SendMessage($combo, $CB_GETLBTEXT, [IntPtr]$i, $sb); $sb.ToString() }
   Check ($items -contains "$ProjB\ProjB.dpr") 'M20 Cyrillic project survives restart in the MRU list' ($items -join ' | ')
+
+  # ---- Online check: findings dialog, tick one suggestion, apply ---------------------------------------------
+  SetText $combo "$ProjC\ProjC.dpr"
+  SetText $mmLog ''
+  Click $btn['Check Online']
+  $online = $null
+  $shown = WaitFor { $script:online = [W]::TopWindows([uint32]$proc.Id) | Where-Object { [W]::Cls($_) -eq 'TOnlineCheckForm' } | Select-Object -First 1; $script:online } 20000
+  Check $shown 'Check Online shows the findings dialog' ([W]::Text($mmLog) -split "`r`n" | Select-Object -Last 3 | Out-String)
+  if ($shown) {
+    $clb = [W]::Children($online) | Where-Object { [W]::Cls($_) -eq 'TCheckListBox' } | Select-Object -First 1
+    $onBtns = @{}; foreach ($k in [W]::Children($online) | Where-Object { [W]::Cls($_) -eq 'TButton' }) { $onBtns[[W]::Text($k)] = $k }
+    $n = [int][W]::SendMessage($clb, 0x018B, [IntPtr]::Zero, [IntPtr]::Zero)                  # LB_GETCOUNT
+    $texts = for ($i = 0; $i -lt $n; $i++) { $sb = New-Object Text.StringBuilder 2048; [void][W]::SendMessage($clb, 0x0189, [IntPtr]$i, $sb); $sb.ToString() }
+    $lic = [Array]::FindIndex([string[]]$texts, [Predicate[string]] { param($t) $t -like '*set licence to MIT*' })
+    Check ($lic -ge 0 -and ($texts -like '*set version to 2.4.0*')) 'Findings offer the licence and version from GitHub' ($texts -join ' / ')
+    Check (-not [W]::IsWindowEnabled($onBtns['Apply Ticked'])) 'Nothing is ticked to begin with'
+    [void][W]::SendMessage($clb, 0x0186, [IntPtr]$lic, [IntPtr]::Zero)                         # LB_SETCURSEL
+    [void][W]::SendMessage($clb, $WM_CHAR, [IntPtr][int][char]' ', [IntPtr]::Zero)             # Space ticks it
+    Start-Sleep -Milliseconds 200
+    Check ([W]::IsWindowEnabled($onBtns['Apply Ticked'])) 'Ticking a suggestion enables Apply'
+    Click $onBtns['Apply Ticked']
+    [void](WaitFor { -not [W]::IsWindowVisible($online) } 5000)
+    $manC = Get-Content -Raw "$ProjC\components.json" | ConvertFrom-Json
+    Check ($manC.components[0].licence -eq 'MIT' -and $manC.components[0].version -eq '') 'Apply writes the ticked licence only' "licence=$($manC.components[0].licence) version=$($manC.components[0].version)"
+  }
 }
 catch {
   Check $false 'Script error' $_.Exception.Message
 }
 finally {
   if ($proc -and -not $proc.HasExited) { [void][W]::PostMessage($main, $WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero); if (-not (WaitFor { $proc.HasExited } 5000)) { Stop-Process -Id $proc.Id -Force } }
+  $ApiListener.Stop(); Stop-Job $ApiJob -ErrorAction SilentlyContinue; Remove-Job $ApiJob -Force -ErrorAction SilentlyContinue
+  Remove-Item Env:\DELPHISBOM_GITHUB_API -ErrorAction SilentlyContinue
   if (Test-Path $Ini) { Remove-Item $Ini }
   if ($HadIni) { Copy-Item $IniBak $Ini }
   $Results | Format-Table -AutoSize -Wrap | Out-String -Width 220

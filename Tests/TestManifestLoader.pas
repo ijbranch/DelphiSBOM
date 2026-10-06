@@ -82,12 +82,20 @@ type
     /// </summary>
     [Test]
     procedure SyntaxErrorNamesFileAndPosition;
+
+    /// <summary>
+    ///   Proves setting a component's fields changes that component only — an existing field is replaced,
+    ///   a missing one added, other components and keys kept — and that an unknown component raises
+    ///   rather than silently writing nothing.
+    /// </summary>
+    [Test]
+    procedure SetComponentFieldsChangesOnlyThatComponent;
   end;
 
 implementation
 
 uses
-  System.SysUtils, System.IOUtils,
+  System.SysUtils, System.IOUtils, System.Generics.Collections,
   uTypes, uTextFiles;
 
 { TManifestLoaderTests }
@@ -260,6 +268,35 @@ begin
 
   Assert.Contains( Message, 'components.json' );
   Assert.Contains( Message, 'line 4', True );
+
+end;
+
+procedure TManifestLoaderTests.SetComponentFieldsChangesOnlyThatComponent;
+begin
+
+  var FileName := FScratch.PathOf( 'components.json' );
+  WriteUtf8File( FileName,
+    '{ "schema_version": "1.0", "components": [ ' +
+    '{ "name": "Acme", "version": "1", "licence": "", "units_exact": [ "AcmeUnit" ] }, ' +
+    '{ "name": "Other", "version": "2", "licence": "MIT", "units_exact": [ "OtherUnit" ] } ], ' +
+    '"own_code_units": [ "Mine" ] }' );
+
+  FLoader.SetComponentFields( FileName, 'acme', [ TPair<string, string>.Create( 'licence', 'GPL-3.0-only' ),
+    TPair<string, string>.Create( 'vendor', 'Acme Ltd' ) ] );
+
+  var Manifest := FLoader.Load( FileName );
+  Assert.AreEqual( 'GPL-3.0-only', Manifest.Components[ 0 ].Licence );
+  Assert.AreEqual( 'Acme Ltd', Manifest.Components[ 0 ].Vendor );
+  Assert.AreEqual( '1', Manifest.Components[ 0 ].Version );
+  Assert.AreEqual( 'AcmeUnit', Manifest.Components[ 0 ].ExactUnits[ 0 ] );
+  Assert.AreEqual( 'MIT', Manifest.Components[ 1 ].Licence );
+  Assert.AreEqual( 'Mine', Manifest.OwnCodeUnits[ 0 ] );
+
+  Assert.WillRaise(
+    procedure
+    begin
+      FLoader.SetComponentFields( FileName, 'Missing', [ TPair<string, string>.Create( 'licence', 'MIT' ) ] );
+    end, EManifestError );
 
 end;
 

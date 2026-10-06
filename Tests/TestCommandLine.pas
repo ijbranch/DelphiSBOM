@@ -119,13 +119,21 @@ type
     /// </summary>
     [Test]
     procedure ValidateManifestExitCodes;
+
+    /// <summary>
+    ///   Proves --check-online prints a finding for a component with a GitHub vendor_url, including the
+    ///   suggestion, and leaves the exit code alone (the check is advice); and that without the flag no
+    ///   request is made at all.
+    /// </summary>
+    [Test]
+    procedure CheckOnlineReportsAndOnlyWhenAsked;
   end;
 
 implementation
 
 uses
   System.SysUtils, System.IOUtils,
-  uCommandLine;
+  uCommandLine, uOnlineCheck;
 
 { TCommandLineTests }
 
@@ -347,6 +355,40 @@ begin
   WriteUtf8File( Manifest, '{ "schema_version": "1.0", "components": [ { "name": "Acme", "version": "1", "vendor": "Acme", ' +
     '"licence": "MIT", "units_exact": [ "AcmeUnit" ] } ] }' );
   Assert.AreEqual( ExitOK, Run( [ FScratch.PathOf( 'Gap\Gap.dpr' ), '--validate-manifest', '--manifest=' + Manifest ] ), FErr );
+
+end;
+
+procedure TCommandLineRunTests.CheckOnlineReportsAndOnlyWhenAsked;
+begin
+
+  var Manifest := FScratch.PathOf( 'Online\components.json' );
+  WriteUtf8File( FScratch.PathOf( 'Online\Online.dpr' ), 'program Online;' + sLineBreak + 'begin end.' );
+  WriteUtf8File( Manifest, '{ "schema_version": "1.0", "components": [ { "name": "Acme", "version": "1.0", "vendor": "Acme", ' +
+    '"vendor_url": "https://github.com/acme/widgets", "licence": "", "units_exact": [ "AcmeUnit" ] } ] }' );
+
+  var Requests := 0;
+  OnlineHttpOverride :=
+    function( const AUrl: string; out AStatus: Integer ): string
+    begin
+      Inc( Requests );
+      AStatus := 200;
+
+      if AUrl.EndsWith( '/releases/latest' ) then
+        Result := '{ "tag_name": "v1.0" }'
+      else
+        Result := '{ "license": { "spdx_id": "MIT" }, "archived": false }';
+    end;
+  try
+    Assert.AreEqual( ExitOK, Run( [ FScratch.PathOf( 'Online\Online.dpr' ), '--quiet' ] ), FErr );
+    Assert.AreEqual( 0, Requests, 'Requests made without --check-online' );
+
+    Assert.AreEqual( ExitOK, Run( [ FScratch.PathOf( 'Online\Online.dpr' ), '--check-online' ] ), FErr );
+    Assert.IsTrue( Requests > 0, 'No request made with --check-online' );
+    Assert.Contains( FOut, 'online: Acme' );
+    Assert.Contains( FOut, 'suggested licence: MIT' );
+  finally
+    OnlineHttpOverride := nil;
+  end;
 
 end;
 

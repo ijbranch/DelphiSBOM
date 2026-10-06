@@ -37,7 +37,9 @@ uses
   uReportWriter in '..\Source\uReportWriter.pas',
   TestReportWriter in 'TestReportWriter.pas',
   uCommandLine in '..\Source\uCommandLine.pas',
-  TestCommandLine in 'TestCommandLine.pas';
+  TestCommandLine in 'TestCommandLine.pas',
+  uOnlineCheck in '..\Source\uOnlineCheck.pas',
+  TestOnlineCheck in 'TestOnlineCheck.pas';
 
 begin
 
