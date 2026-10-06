@@ -1,7 +1,7 @@
 # DelphiSBOM — Implementation Progress
 
 **Plan document:** `DelphiSBOM_Refined_Plan.md` (v0.6 — Final Draft)
-**Last updated:** 2026-10-07 (Session 17)
+**Last updated:** 2026-10-07 (Session 18)
 
 ---
 
@@ -9,7 +9,7 @@
 
 **Phase:** 2 — Polish and Reliability. DCU-only discovery, MAP input, dependency graph, post-write check, reports and CLI landed 2026-10-07.
 **Step:** Phase 2 — remaining: cancellation (audit M21), v1.0.0 release tag
-**Status:** Clean (no hints/warnings, built WITHOUT `USE_SYNEDIT`) builds 2026-10-07: GUI Win64 Debug + Release, CLI Win64 Release, tests Win64 Debug + Release. DUnitX suite 173/173, GUI checks 45/45 (session 17). `Tests/GuiChecks.ps1` 40/40 against the Release exe. Real-data runs: the CLI over DelphiSBOM itself with its Release MAP (166 linked units, check passed, both reports written) and over a large internal project (FastMM5 now discovered at its library folder; check passed). CLI pipeline examples in `Docs/CI-INTEGRATION.md` are untested on GitHub/GitLab.
+**Status:** Clean (no hints/warnings, built WITHOUT `USE_SYNEDIT`) builds 2026-10-07: GUI Win64 Debug + Release, CLI Win64 Release, tests Win64 Debug + Release. DUnitX suite 177/177, GUI checks 45/45 (session 18). `Tests/GuiChecks.ps1` 40/40 against the Release exe. Real-data runs: the CLI over DelphiSBOM itself with its Release MAP (166 linked units, check passed, both reports written) and over a large internal project (FastMM5 now discovered at its library folder; check passed). CLI pipeline examples in `Docs/CI-INTEGRATION.md` are untested on GitHub/GitLab.
 
 ## Next Action
 
@@ -101,3 +101,4 @@ Open questions from the 41-project run (session 14, see the session log): (a) a 
 | 2026-10-07 | 15 | Vendor detection: up to 200 files vote, a company on an ASCII-art banner counts, and a holder written before "copyright" is read. Ian confirmed ReportBuilder's vendor is Digital Metaphors; the 41-project re-run now gives it, Pierre le Riche (FastMM5), Primoz Gabrijelcic (OmniThreadLibrary), Woll2Woll Software (InfoPower) and Stefan Glienke (TestInsight), with no other vendor changed. 3 new tests (157). GUI checks 40/40. |
 | 2026-10-07 | 16 | Opt-in online check: compares components with a GitHub vendor_url against GitHub (licence detection, latest release/tag, archived, pkg:github purl); findings are advice, ticked suggestions are written by `SetComponentFields`. GUI button + dialog, CLI `--check-online` / `checkOnline` (exit code unchanged). Live run on a real manifest matched the manual FastMM5 check. 17 new tests (172); GUI checks 45/45 against a fake API on loopback. |
 | 2026-10-07 | 17 | Suite manifests (DBiWorkflow, DBiStore, DBiAdmin, DBiWhoIsOn) corrected and completed, each fact checked against the installed product or GitHub: ASG_Capture replaced by FastMM5 5.07 (GPL-3.0-only), DBiStore trailing comma, vendor_url for StyledComponents/FastMM5/LoggerPro, StyledComponents 4.3.1, EurekaLog 7.16.2.0 (Neos Eureka S.r.l.), VirtualUI 3.5 (Cybele Software, Inc.), GITLAKLib 2.3.2 Proprietary, supplier GITLAK Software; DBiWorkflow's libraries added (0 unclassified). All four validate with no warnings. DelphiSBOM: Validate Manifest accepts "Proprietary" like "Commercial" (1 new test, 173). |
+| 2026-10-07 | 18 | Online check token: GITHUB_TOKEN, else the github.com credential from Git Credential Manager (`git credential fill`, non-interactive, 10 s), else anonymous; the stored credential is resolved only for https://api.github.com. Prompted by a real run hitting the 60/hour anonymous limit; verified with anonymous access exhausted (authenticated from GCM, 2.8 s, no window). gllLoggerPro bumped to 2.1.1 earlier this session; all four suite manifests check clean. 4 new tests (177). |

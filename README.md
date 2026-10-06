@@ -138,7 +138,9 @@ write are:
 
 DelphiSBOM does **not** write to the Windows Registry, and connects to the
 network only for the online check you ask for (`api.github.com`, the repository
-names in your `vendor_url` fields).
+names in your `vendor_url` fields). That check authenticates with `GITHUB_TOKEN`,
+or else reads your github.com credential from Git Credential Manager (no prompt)
+and sends it to `api.github.com` only.
 
 ## Requirements
 

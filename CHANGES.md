@@ -2,6 +2,19 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-07 — Online Check Uses the Stored GitHub Credential [Changed]
+
+- Without `GITHUB_TOKEN` the online check was anonymous, and GitHub's 60-requests-an-hour limit ran out
+  after a few manifests (seen on a real run). It now falls back to the github.com credential in Git
+  Credential Manager — the one `git push` uses — read by `git credential fill` with no window and no
+  prompt (`GCM_INTERACTIVE=never`, `GIT_TERMINAL_PROMPT=0`, a 10-second limit). **Why not a permanent
+  `GITHUB_TOKEN`:** that would leave a broad token in plain text in every process's environment. The
+  stored credential is resolved only when requests go to `https://api.github.com`, never for another
+  API address. The log names the token's source, never the token — `Source/uOnlineCheck.pas`
+- Tests: 4 new (177 in all); the host rule was mutation-checked — `Tests/TestOnlineCheck.pas`
+- Docs: User's Guide (online check, privacy), README, CI guide, `CLAUDE.md` —
+  `Docs/UsersGuide.md`, `README.md`, `Docs/CI-INTEGRATION.md`, `CLAUDE.md`
+
 ## 2026-10-07 — "Proprietary" Is a Standard Licence Name [Fixed]
 
 - Validate Manifest warned that "Proprietary" is not a recognised SPDX identifier, although it is as

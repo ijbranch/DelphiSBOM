@@ -47,6 +47,11 @@ and describe the partial state in the Next Action line.
   `--check-online`). Generation must never make a request. Tests reach it only through the seams:
   `TOnlineChecker.Create( Log, FakeGet )`, the `OnlineHttpOverride` variable (CLI tests), and the
   `DELPHISBOM_GITHUB_API` environment variable (`GuiChecks.ps1` serves a fake API on loopback)
+- The token is `GITHUB_TOKEN`, else the github.com credential from Git Credential Manager
+  (`GitCredentialToken`, non-interactive), else none — and the stored credential is resolved ONLY when
+  the API base is `https://api.github.com` (`ResolveGitHubToken`; test
+  `CredentialIsNeverLookedUpForAnotherHost`). Tests replace `OnlineCredentialSource`; never let a test
+  read the real credential
 - After any code edit to `.pas`, `.dfm`, or `.dproj` files, prompt the user
   to build and report the result. Do not attempt to compile automatically.
 

@@ -378,9 +378,12 @@ release, not your copy), then **Apply Ticked** writes them to `components.json`.
 Generate again to use them. Components without a GitHub `vendor_url` are listed
 as not checked — commercial vendors have no machine-readable data to compare.
 
-Without a token GitHub allows 60 requests an hour (about two per component);
-set the `GITHUB_TOKEN` environment variable for more. After a refusal the check
-stops asking and says so. From the command line, `--check-online` prints the
+GitHub allows 60 anonymous requests an hour (about two per component), and
+5,000 with a token. The check uses, in order: the `GITHUB_TOKEN` environment
+variable; otherwise the github.com credential stored in Git Credential Manager
+(the one `git push` uses), asked for without any sign-in window; otherwise no
+token. The log says which. The stored credential is only ever sent to
+`api.github.com`. After a refusal the check stops asking and says so. From the command line, `--check-online` prints the
 same findings after the run; it is advice and never changes the exit code.
 
 ## Reports (Optional)
@@ -619,8 +622,9 @@ DelphiSBOM is a local-only tool. It sends no telemetry, and makes no network
 connections — except when you ask for the [online check](#online-check-optional)
 (the **Check Online** button, or `--check-online`). That sends
 `api.github.com` the GitHub repository names from your `components.json`
-(`vendor_url`) and nothing else; set `GITHUB_TOKEN` to have the requests
-authenticated.
+(`vendor_url`) and nothing else. Its requests are authenticated with
+`GITHUB_TOKEN` when set, or else with your github.com credential from Git
+Credential Manager, read locally and sent to `api.github.com` only.
 
 | File | Location | Purpose |
 |------|----------|---------|

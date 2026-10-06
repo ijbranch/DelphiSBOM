@@ -19,7 +19,7 @@
 | **Save & Regenerate** | Saves discovered libraries to `components.json` and re-runs the pipeline |
 | **Edit...** | Opens a modal grid editor to review and modify discovered library metadata (Name, Version, Vendor, Licence, Prefix) before saving |
 | **Mark as Own Code** | Saves remaining unresolved units to `own_code_units` in `components.json` and re-runs |
-| **Check Online** | Opt-in. Compares `components.json` with each component's GitHub repository (`vendor_url`): licence, latest release, archived. Connects to `api.github.com` only when pressed; nothing is written unless you tick a suggestion and click **Apply Ticked**. See the User's Guide, "Online Check" |
+| **Check Online** | Opt-in. Compares `components.json` with each component's GitHub repository (`vendor_url`): licence, latest release, archived. Connects to `api.github.com` only when pressed, authenticated with `GITHUB_TOKEN` or else your github.com credential from Git Credential Manager (no prompt); nothing is written unless you tick a suggestion and click **Apply Ticked**. See the User's Guide, "Online Check" |
 | **View SBOM File** | Opens the generated `.cdx.json` in a read-only viewer. If SynEdit is available (compile with `USE_SYNEDIT`), shows syntax-highlighted JSON with line numbers |
 
 > **Tip:** Hover over any control for a tooltip describing its purpose.
