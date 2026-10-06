@@ -1267,9 +1267,11 @@ begin
 
   if Pos( 'REDISTRIBUTION AND USE IN SOURCE AND BINARY FORMS', Upper ) > 0 then
   begin
+    // The third (non-endorsement) clause comes as "Neither the name of X ..." or "The name of X may not be
+    // used to endorse or promote ..." (OmniThreadLibrary)
     if Pos( 'ADVERTISING MATERIALS', Upper ) > 0 then
       Exit( 'BSD-4-Clause' )
-    else if Pos( 'NEITHER THE NAME', Upper ) > 0 then
+    else if ( Pos( 'NEITHER THE NAME', Upper ) > 0 ) or ( Pos( 'USED TO ENDORSE OR PROMOTE', Upper ) > 0 ) then
       Exit( 'BSD-3-Clause' )
     else
       Exit( 'BSD-2-Clause' );
