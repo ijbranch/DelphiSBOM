@@ -188,6 +188,25 @@ function TSBOMBuilder.Build( const AProjectInfo: TProjectInfo;
 
 begin
 
+  // bom-refs must be unique in the document: a repeated one gets a #2, #3 ... suffix
+  var UsedRefs      := TDictionary<string, Boolean>.Create;
+  var LibraryRefs   := TList<string>.Create;
+
+  var UniqueRef :=
+    function( const ABase: string ): string
+    begin
+      Result        := ABase;
+      var N         := 1;
+
+      while UsedRefs.ContainsKey( Result ) do
+      begin
+        Inc( N );
+        Result      := ABase + '#' + IntToStr( N );
+      end;
+
+      UsedRefs.Add( Result, True );
+    end;
+
   // Every child is attached to its parent as soon as it is created, so an exception part-way
   // through leaves nothing unowned when Root is freed
   var Root          := TJSONObject.Create;
@@ -226,19 +245,14 @@ begin
     ToolSupplier.AddPair( 'name', 'DelphiSBOM Contributors' );
 
     // Metadata > component (the application being described)
+    var EffectiveVersion := EffectiveProductVersion( AVersionOverride, AProjectInfo.ProjectVersion );
+    var AppRef      := UniqueRef( 'application:' + AProjectInfo.ProjectName + '@' + EffectiveVersion );
+
     var MainComp    := TJSONObject.Create;
     Metadata.AddPair( 'component', MainComp );
+    MainComp.AddPair( 'bom-ref', AppRef );
     MainComp.AddPair( 'type', 'application' );
     MainComp.AddPair( 'name', AProjectInfo.ProjectName );
-
-    var EffectiveVersion := AVersionOverride;
-
-    if EffectiveVersion = '' then
-      EffectiveVersion := AProjectInfo.ProjectVersion;
-
-    if EffectiveVersion = '' then
-      EffectiveVersion := '0.0.0.0';
-
     MainComp.AddPair( 'version', EffectiveVersion );
 
     if AManifest.Supplier.Name <> '' then
@@ -260,23 +274,26 @@ begin
     Root.AddPair( 'components', Components );
 
     // Add RTL as single aggregate component
-    var RTLComp     := TJSONObject.Create;
-    Components.AddElement( RTLComp );
-    RTLComp.AddPair( 'type', 'framework' );
-    RTLComp.AddPair( 'name', 'Embarcadero Delphi RTL' );
-
     var DelphiVer   := AProjectInfo.DelphiVersion;
 
     if DelphiVer = '' then
       DelphiVer     := 'unknown';
 
+    var RTLPurl     := 'pkg:delphi/embarcadero-rtl@' + PurlEncode( DelphiVer );
+    var RTLRef      := UniqueRef( RTLPurl );
+
+    var RTLComp     := TJSONObject.Create;
+    Components.AddElement( RTLComp );
+    RTLComp.AddPair( 'bom-ref', RTLRef );
+    RTLComp.AddPair( 'type', 'framework' );
+    RTLComp.AddPair( 'name', 'Embarcadero Delphi RTL' );
     RTLComp.AddPair( 'version', DelphiVer );
 
     var RTLSupplier := TJSONObject.Create;
     RTLComp.AddPair( 'supplier', RTLSupplier );
     RTLSupplier.AddPair( 'name', 'Embarcadero Technologies' );
 
-    RTLComp.AddPair( 'purl', 'pkg:delphi/embarcadero-rtl@' + PurlEncode( DelphiVer ) );
+    RTLComp.AddPair( 'purl', RTLPurl );
 
     // Attach per-unit evidence from DX.Comply if available
     AddEvidenceSubComponents( RTLComp, ucRTL, -1 );
@@ -299,9 +316,30 @@ begin
         AddedComponents.Add( CU.ComponentIndex, True );
 
         var Entry   := AManifest.Components[ CU.ComponentIndex ];
+
+        // The purl names the component; a component without a name is referenced by its manifest row
+        var Purl    := '';
+
+        if Trim( Entry.Name ) = '' then
+          Log( llWarning, Format( 'Manifest component %d has no name — no purl emitted', [ CU.ComponentIndex ] ) )
+        else if Entry.Version <> '' then
+          Purl      := Format( 'pkg:delphi/%s@%s', [ PurlEncode( Entry.Name ), PurlEncode( Entry.Version ) ] )
+        else
+          Purl      := 'pkg:delphi/' + PurlEncode( Entry.Name );
+
+        var CompRef: string;
+
+        if Purl <> '' then
+          CompRef   := UniqueRef( Purl )
+        else
+          CompRef   := UniqueRef( 'component:' + IntToStr( CU.ComponentIndex ) );
+
+        LibraryRefs.Add( CompRef );
+
         var CompObj := TJSONObject.Create;
         Components.AddElement( CompObj );
 
+        CompObj.AddPair( 'bom-ref', CompRef );
         CompObj.AddPair( 'type', NormaliseComponentType( Entry.CompType ) );
         CompObj.AddPair( 'name', Entry.Name );
 
@@ -363,13 +401,8 @@ begin
           ExtRef.AddPair( 'url', Entry.VendorURL );
         end;
 
-        // PURL
-        if Trim( Entry.Name ) = '' then
-          Log( llWarning, Format( 'Manifest component %d has no name — no purl emitted', [ CU.ComponentIndex ] ) )
-        else if Entry.Version <> '' then
-          CompObj.AddPair( 'purl', Format( 'pkg:delphi/%s@%s', [ PurlEncode( Entry.Name ), PurlEncode( Entry.Version ) ] ) )
-        else
-          CompObj.AddPair( 'purl', 'pkg:delphi/' + PurlEncode( Entry.Name ) );
+        if Purl <> '' then
+          CompObj.AddPair( 'purl', Purl );
 
         // Attach per-unit evidence from DX.Comply if available
         AddEvidenceSubComponents( CompObj, ucThirdParty, CU.ComponentIndex );
@@ -378,9 +411,33 @@ begin
       AddedComponents.Free;
     end;
 
+    // Dependency graph, two levels: the application uses the RTL and every library; the RTL uses
+    // nothing third-party. A library's own dependencies are unknown, so it has no entry — an entry
+    // with an empty dependsOn would claim it has none
+    var Dependencies := TJSONArray.Create;
+    Root.AddPair( 'dependencies', Dependencies );
+
+    var AppDeps     := TJSONObject.Create;
+    Dependencies.AddElement( AppDeps );
+    AppDeps.AddPair( 'ref', AppRef );
+
+    var AppDependsOn := TJSONArray.Create;
+    AppDeps.AddPair( 'dependsOn', AppDependsOn );
+    AppDependsOn.Add( RTLRef );
+
+    for var Ref in LibraryRefs do
+      AppDependsOn.Add( Ref );
+
+    var RTLDeps     := TJSONObject.Create;
+    Dependencies.AddElement( RTLDeps );
+    RTLDeps.AddPair( 'ref', RTLRef );
+    RTLDeps.AddPair( 'dependsOn', TJSONArray.Create );
+
     Result          := Root.Format;
   finally
     Root.Free;
+    LibraryRefs.Free;
+    UsedRefs.Free;
   end;
 
 end;
