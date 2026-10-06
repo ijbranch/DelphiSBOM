@@ -58,11 +58,22 @@
       "version": "3.0",
       "vendor": "SynEdit Contributors",
       "vendor_url": "https://github.com/SynEdit/SynEdit",
-      "licence": "MPL-1.1",
-      "licence_url": "https://www.mozilla.org/en-US/MPL/1.1/",
+      "licence": "MPL-1.1 OR LGPL-2.1-or-later",
       "type": "library",
       "units_prefix": ["SynEdit", "SynHighlighter", "SynMemo"],
-      "notes": "Syntax-highlighting editor component"
+      "notes": "Dual-licensed: an SPDX expression is emitted as licenses[].expression"
+    },
+    {
+      "name": "TMS VCL UI Pack",
+      "version": "13.0",
+      "vendor": "tmssoftware.com",
+      "vendor_url": "https://www.tmssoftware.com",
+      "licence": "Commercial",
+      "type": "library",
+      "units_prefix": ["AdvGrid", "AdvEdit"],
+      "notes": "Non-SPDX licence: emitted as license.name"
     }
-  ]
+  ],
+  "own_code_units": ["MainForm", "AppSettings"],
+  "own_code_prefixes": ["app"]
 }
