@@ -64,7 +64,7 @@ treated as missing.
 | `version` | Yes | Version string (e.g. `"3.7.8"`, `"2.x"`) |
 | `vendor` | Yes | Library author or vendor name |
 | `vendor_url` | No | URL to the library's home page or repository. A GitHub repository URL (`https://github.com/owner/repo`) lets the opt-in online check compare the entry's licence and version with GitHub |
-| `licence` | Yes | SPDX licence identifier (e.g. `"MIT"`, `"BSD-3-Clause"`), an SPDX expression (e.g. `"MPL-1.1 OR LGPL-2.1-or-later"`), or a plain name such as `"Commercial"`. Recognised identifiers are emitted as `license.id`, expressions as `expression`, anything else as `license.name` (Validate Manifest warns about unrecognised values other than `Commercial`) |
+| `licence` | Yes | SPDX licence identifier (e.g. `"MIT"`, `"BSD-3-Clause"`), an SPDX expression (e.g. `"MPL-1.1 OR LGPL-2.1-or-later"`), or a plain name such as `"Commercial"`. Recognised identifiers are emitted as `license.id`, expressions as `expression`, anything else as `license.name` (Validate Manifest warns about unrecognised values other than `Commercial` and `Proprietary`) |
 | `licence_url` | No | URL to licence text (not emitted for an expression, which CycloneDX does not allow a URL on) |
 | `type` | Yes | CycloneDX component type: `"library"`, `"framework"`, or `"application"`. Case-insensitive; emitted lower-case, and an unrecognised value is emitted as `"library"` |
 | `units_prefix` | No | Array of unit name prefixes for matching (case-insensitive) |
@@ -136,6 +136,9 @@ For commercially licenced libraries, use `"Commercial"` as the licence value:
   "licence_url": "https://vendor.example.com/licence"
 }
 ```
+
+For a library that is neither open source nor sold — your own, or one licensed to you alone —
+use `"Proprietary"`. Both names are written as `license.name` without a validation warning.
 
 ### Type Selection
 

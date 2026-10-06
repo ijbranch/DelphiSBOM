@@ -2,6 +2,14 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-07 — "Proprietary" Is a Standard Licence Name [Fixed]
+
+- Validate Manifest warned that "Proprietary" is not a recognised SPDX identifier, although it is as
+  standard a name for a licence without one as "Commercial", which it accepted. Both are now accepted
+  in any casing; other unrecognised values are still warned about — `Source/uManifestLoader.pas`
+- Test: 1 new (173 in all), red before the fix — `Tests/TestManifestLoader.pas`
+- `Docs/SCHEMA.md` describes when to use `Proprietary`
+
 ## 2026-10-07 — Opt-In Online Check [Added]
 
 - **Online check.** Compares each `components.json` component whose `vendor_url` is a GitHub

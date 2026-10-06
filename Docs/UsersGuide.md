@@ -406,7 +406,7 @@ The generated `.cdx.json` contains:
   - Supplier/vendor
   - Licence — an SPDX `id` when the value is a recognised SPDX identifier, an
     SPDX `expression` when it contains `OR`/`AND`/`WITH`, otherwise a licence
-    `name` (e.g. `Commercial`)
+    `name` (e.g. `Commercial`, or `Proprietary` for your own or sole-use libraries)
   - Package URL (`pkg:delphi/<name>@<version>`, percent-encoded, so a space is `%20`)
   - External references (vendor website)
 - **Embarcadero Delphi RTL**: listed as a single framework component with
