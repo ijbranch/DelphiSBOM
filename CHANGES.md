@@ -2,6 +2,21 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-07 — Manifest purl Override; BSD-3 Detection [Added, Fixed]
+
+- **Added: optional `purl` per component.** It replaces the generated `pkg:delphi/<name>@<version>` as the
+  purl and the `bom-ref`, so a library can carry a registered package type (`pkg:github/owner/repo@tag`).
+  Written as given; Validate Manifest warns when it is not a package URL. **Why:** promised to the DX.Comply
+  author, whose manifest support (PR #56) already reads it — `Source/uTypes.pas`, `Source/uManifestLoader.pas`,
+  `Source/uSBOMBuilder.pas`, `Samples/components.sample.json`
+- **Fixed: BSD-3-Clause read as BSD-2-Clause** when the non-endorsement clause is worded "The name of X may
+  not be used to endorse or promote" rather than "Neither the name of X". Found while verifying
+  OmniThreadLibrary's licence for the sample; that library's checkout now reads BSD-3-Clause —
+  `Source/uLibraryDiscovery.pas`
+- Tests: 3 new (180 in all), each red before its fix — `Tests/TestSBOMBuilder.pas`, `Tests/TestManifestLoader.pas`,
+  `Tests/TestLibraryDiscovery.pas`
+- Docs: `Docs/SCHEMA.md` (the `purl` field), `Docs/CYCLONEDX-NOTES.md`
+
 ## 2026-10-07 — Online Check Uses the Stored GitHub Credential [Changed]
 
 - Without `GITHUB_TOKEN` the online check was anonymous, and GitHub's 60-requests-an-hour limit ran out

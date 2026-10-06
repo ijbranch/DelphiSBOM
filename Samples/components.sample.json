@@ -11,6 +11,7 @@
       "version": "3.7.8",
       "vendor": "Primož Gabrijelčič",
       "vendor_url": "https://github.com/gabr42/OmniThreadLibrary",
+      "purl": "pkg:github/gabr42/OmniThreadLibrary@release-3.07.8",
       "licence": "BSD-3-Clause",
       "licence_url": "https://opensource.org/licenses/BSD-3-Clause",
       "type": "library",

@@ -30,6 +30,11 @@ unreserved characters (`A-Z a-z 0-9 . - _ ~`) are kept and everything else
 becomes `%XX` of its UTF-8 bytes — a space is `%20`, never the form-encoding `+`.
 A component with no name gets no purl; one with no version gets no `@`.
 
+A `purl` in a `components.json` entry replaces the generated one, as the purl and
+as the `bom-ref` — useful for a library with a registered package type, such as
+`pkg:github/owner/repo@tag` (the online check shows that purl for GitHub-hosted
+libraries).
+
 The RTL version is the BDS version of the Delphi release that wrote the
 `.dproj` (`ProjectVersion` 20.4 and later = 37.0, Delphi 13; 20.1–20.3 = 23.0,
 Delphi 12; 19.3–19.5 = 22.0, Delphi 11; and so on), or `unknown`.

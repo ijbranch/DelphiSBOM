@@ -70,6 +70,7 @@ treated as missing.
 | `units_prefix` | No | Array of unit name prefixes for matching (case-insensitive) |
 | `units_exact` | No | Array of exact unit names for matching (case-insensitive) |
 | `notes` | No | Freeform notes for documentation purposes |
+| `purl` | No | Package URL to emit instead of the generated `pkg:delphi/<name>@<version>` — e.g. `"pkg:github/gabr42/OmniThreadLibrary@v3.07.10"`, a registered purl type other tools resolve. Used as the component's `bom-ref` too. Written as given; Validate Manifest warns when it is not a package URL (`pkg:<type>/<name>`) |
 
 At least one of `units_prefix` or `units_exact` must be present for the
 component to participate in unit classification.
