@@ -76,6 +76,25 @@ type
       out AAutoOwnCodeUnits: TArray<string> ): TArray<TDiscoveredLibrary>;
   end;
 
+/// <summary>
+///   Returns the parent of a library directory when it may be searched for the library's package
+///   (.dpk) files, or '' when there is none or it is a drive or share root: a root holds unrelated
+///   checkouts, whose packages would otherwise name the library (E:\EurekaLog taking its name from
+///   E:\ElevateDB\rbEDB2337.dpk).
+/// </summary>
+/// <param name="ADirectory">The library directory.</param>
+/// <returns>The parent directory, or '' when it must not be searched.</returns>
+function LibraryParentDirectory( const ADirectory: string ): string;
+
+/// <summary>
+///   Cleans the text that follows a copyright marker down to the holder's name:
+///   strips (c) / copyright signs, years and year ranges, "by", comment closers,
+///   "All rights reserved" and surrounding punctuation.
+/// </summary>
+/// <param name="AText">The text after "Copyright" or the copyright sign.</param>
+/// <returns>The holder's name, or '' when what remains is not a name.</returns>
+function CleanCopyrightHolder( const AText: string ): string;
+
 implementation
 
 uses
@@ -102,6 +121,16 @@ begin
   Result            := TPath.GetDirectoryName( Trimmed );
 
   if SameText( IncludeTrailingPathDelimiter( Result ), IncludeTrailingPathDelimiter( Trimmed ) ) then
+    Result          := '';
+
+end;
+
+function LibraryParentDirectory( const ADirectory: string ): string;
+begin
+
+  Result            := ParentDirectory( ADirectory );
+
+  if ( Result <> '' ) and SameText( IncludeTrailingPathDelimiter( TPath.GetPathRoot( Result ) ), IncludeTrailingPathDelimiter( Result ) ) then
     Result          := '';
 
 end;
@@ -611,7 +640,7 @@ end;
 function TLibraryDiscovery.LooksLikeLibrary( const ADirectory: string ): Boolean;
 begin
 
-  // A licence file, or a package (.dpk) in the directory, its parent, or a subdirectory
+  // A licence file, or a package (.dpk) in the directory, its parent (unless a root), or a subdirectory
   var LicFile       := '';
   DetectLicence( ADirectory, LicFile );
 
@@ -619,7 +648,7 @@ begin
 
   try
     var Candidates: TArray<string> := [ ADirectory ];
-    var Parent      := ParentDirectory( ADirectory );
+    var Parent      := LibraryParentDirectory( ADirectory );
 
     if Parent <> '' then
       Candidates    := Candidates + [ Parent ];
@@ -810,8 +839,8 @@ begin
   // Strategy 1: Find a .dpk file in this directory or nearby and use its name
   var SearchDirs: TArray<string> := [ ADirectory ];
 
-  // Also check the parent and a sibling Packages directory (common pattern)
-  var ParentDir     := ParentDirectory( ADirectory );
+  // Also check the parent and a sibling Packages directory (common pattern), unless the parent is a root
+  var ParentDir     := LibraryParentDirectory( ADirectory );
 
   if ParentDir <> '' then
   begin
@@ -1013,11 +1042,18 @@ begin
 
 end;
 
-/// <summary>
-///   Cleans the text that follows a copyright marker down to the holder's name:
-///   strips (c) / copyright signs, years and year ranges, "by", comment closers,
-///   "All rights reserved" and surrounding punctuation.
-/// </summary>
+/// <summary>Counts the occurrences of a character in a string.</summary>
+function CharCount( const AText: string; AChar: Char ): Integer;
+begin
+
+  Result            := 0;
+
+  for var C in AText do
+    if C = AChar then
+      Inc( Result );
+
+end;
+
 function CleanCopyrightHolder( const AText: string ): string;
 begin
 
@@ -1064,7 +1100,9 @@ begin
 
   Result            := Trim( Result );
 
-  while ( Result.Length > 0 ) and CharInSet( Result[ Result.Length ], [ '.', ')', ',', ';', ' ' ] ) do
+  // A closing bracket goes only when unmatched: "Jane Doe (Acme Software)" keeps its own
+  while ( Result.Length > 0 ) and ( CharInSet( Result[ Result.Length ], [ '.', ',', ';', ' ' ] ) or
+    ( ( Result[ Result.Length ] = ')' ) and ( CharCount( Result, ')' ) > CharCount( Result, '(' ) ) ) ) do
     Delete( Result, Result.Length, 1 );
 
   // Must contain a letter to be a name
