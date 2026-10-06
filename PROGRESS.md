@@ -13,7 +13,7 @@
 
 ## Next Action
 
-Run the GUI against a real project and check the items listed as not yet verified in Current State; then run a generated SBOM through a CycloneDX 1.5 validator (e.g. `cyclonedx validate`). Reply pending to the DX.Comply author on the manifest-format differences. Decide on the `LICENCE` copyright line (audit L21). Then Phase 2 items: DUnitX suite (port the scratch harness checks), cancellation (audit M21), report writer, cancel button, CLI mode, DUnitX tests, v1.0.0 release tag. Future enhancement: capture DX.Comply confidence/evidence-type properties in TUnitEvidence.
+Run the GUI against a real project and check the items listed as not yet verified in Current State; then run a generated SBOM through a CycloneDX 1.5 validator (e.g. `cyclonedx validate`). DX.Comply author replied to (2026-10-06) on the manifest-format differences in https://github.com/omonien/DX.Comply/issues/20#issuecomment-6012347502 — await his response. Decide on the `LICENCE` copyright line (audit L21). Then Phase 2 items: DUnitX suite (port the scratch harness checks), cancellation (audit M21), report writer, cancel button, CLI mode, DUnitX tests, v1.0.0 release tag. Future enhancement: capture DX.Comply confidence/evidence-type properties in TUnitEvidence.
 
 ## Blockers / Questions for Ian
 
