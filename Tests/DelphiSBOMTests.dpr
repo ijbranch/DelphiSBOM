@@ -28,7 +28,8 @@ uses
   TestSBOMBuilder in 'TestSBOMBuilder.pas',
   TestEvidenceMerger in 'TestEvidenceMerger.pas',
   TestSBOMEngine in 'TestSBOMEngine.pas',
-  TestDelphiInstall in 'TestDelphiInstall.pas';
+  TestDelphiInstall in 'TestDelphiInstall.pas',
+  TestLibraryDiscovery in 'TestLibraryDiscovery.pas';
 
 begin
 
