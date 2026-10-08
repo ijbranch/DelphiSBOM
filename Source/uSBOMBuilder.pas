@@ -4,6 +4,7 @@
   MIT Licence — see LICENCE file
 
   uSBOMBuilder.pas — Assembles and emits CycloneDX 1.5 JSON SBOM
+  Dependency graph and compositions shape after DX.Comply (Olaf Monien, MIT) — see THIRD-PARTY-NOTICES.md
 *)
 unit uSBOMBuilder;
 
@@ -158,15 +159,18 @@ function TSBOMBuilder.Build( const AProjectInfo: TProjectInfo;
           SubComp.AddPair( 'type', 'library' );
           SubComp.AddPair( 'name', Ev.UnitName );
 
-          if ( Ev.Algorithm <> '' ) and ( Ev.HashValue <> '' ) then
+          if Length( Ev.Hashes ) > 0 then
           begin
             var HashArr := TJSONArray.Create;
             SubComp.AddPair( 'hashes', HashArr );
 
-            var HashObj := TJSONObject.Create;
-            HashArr.AddElement( HashObj );
-            HashObj.AddPair( 'alg', Ev.Algorithm );
-            HashObj.AddPair( 'content', Ev.HashValue );
+            for var Hash in Ev.Hashes do
+            begin
+              var HashObj := TJSONObject.Create;
+              HashArr.AddElement( HashObj );
+              HashObj.AddPair( 'alg', Hash.Algorithm );
+              HashObj.AddPair( 'content', Hash.Content );
+            end;
           end;
 
           if Ev.Origin <> '' then
@@ -349,11 +353,30 @@ begin
         if Entry.Version <> '' then
           CompObj.AddPair( 'version', Entry.Version );
 
-        if Entry.Vendor <> '' then
+        // CycloneDX's email is format idn-email, so a value that is not an email address is left out
+        // (the manifest loader warns about it)
+        var VendorEmail := Trim( Entry.VendorEmail );
+
+        if not IsEmailAddress( VendorEmail ) then
+          VendorEmail := '';
+
+        if ( Entry.Vendor <> '' ) or ( VendorEmail <> '' ) then
         begin
           var VendorObj := TJSONObject.Create;
           CompObj.AddPair( 'supplier', VendorObj );
-          VendorObj.AddPair( 'name', Entry.Vendor );
+
+          if Entry.Vendor <> '' then
+            VendorObj.AddPair( 'name', Entry.Vendor );
+
+          if VendorEmail <> '' then
+          begin
+            var ContactArr := TJSONArray.Create;
+            VendorObj.AddPair( 'contact', ContactArr );
+
+            var ContactObj := TJSONObject.Create;
+            ContactArr.AddElement( ContactObj );
+            ContactObj.AddPair( 'email', VendorEmail );
+          end;
         end;
 
         // Licences: license.id is an SPDX enum, so only recognised identifiers go there
@@ -435,6 +458,19 @@ begin
     Dependencies.AddElement( RTLDeps );
     RTLDeps.AddPair( 'ref', RTLRef );
     RTLDeps.AddPair( 'dependsOn', TJSONArray.Create );
+
+    // The graph is incomplete: libraries' own dependencies are not resolved, and unclassified units
+    // are left out. Same shape as DX.Comply writes, so the two tools' output line up
+    var Compositions := TJSONArray.Create;
+    Root.AddPair( 'compositions', Compositions );
+
+    var Composition := TJSONObject.Create;
+    Compositions.AddElement( Composition );
+    Composition.AddPair( 'aggregate', 'incomplete' );
+
+    var CompositionDeps := TJSONArray.Create;
+    Composition.AddPair( 'dependencies', CompositionDeps );
+    CompositionDeps.Add( AppRef );
 
     Result          := Root.Format;
   finally
