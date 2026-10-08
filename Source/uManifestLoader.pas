@@ -275,6 +275,7 @@ begin
           Entry.Version := ReadString( CompObj, 'version', '', Context );
           Entry.Vendor := ReadString( CompObj, 'vendor', '', Context );
           Entry.VendorURL := ReadString( CompObj, 'vendor_url', '', Context );
+          Entry.VendorEmail := Trim( ReadString( CompObj, 'vendor_email', '', Context ) );
           Entry.Licence := ReadString( CompObj, 'licence', '', Context );
           Entry.LicenceURL := ReadString( CompObj, 'licence_url', '', Context );
           Entry.CompType := ReadString( CompObj, 'type', 'library', Context );
@@ -376,6 +377,11 @@ begin
   if ( AComp.Purl <> '' ) and ( not TRegEx.IsMatch( AComp.Purl, '^pkg:[a-z][a-z0-9.+-]*/[^/]' ) ) then
     Log( llWarning, Format( '%s: purl "%s" is not a package URL (pkg:<type>/<name>, e.g. pkg:github/owner/repo@v1.0)',
         [ Prefix, AComp.Purl ] ) );
+
+  // The SBOM builder leaves out a vendor_email that is not an email address, so say so here
+  if ( AComp.VendorEmail <> '' ) and ( not IsEmailAddress( AComp.VendorEmail ) ) then
+    Log( llWarning, Format( '%s: vendor_email "%s" is not an email address — it will be left out of the SBOM',
+        [ Prefix, AComp.VendorEmail ] ) );
 
   // Validate component type (the SBOM builder lower-cases it, and falls back to library)
   var ValidTypes: TArray<string> := [ 'library', 'framework', 'application' ];
