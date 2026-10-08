@@ -25,6 +25,7 @@ Place `components.json` in the same directory as your `.dpr` / `.dproj` file.
       "version": "1.0.0",
       "vendor": "Vendor Name",
       "vendor_url": "https://vendor.example.com",
+      "vendor_email": "sales@vendor.example.com",
       "licence": "MIT",
       "licence_url": "https://opensource.org/licenses/MIT",
       "type": "library",
@@ -64,6 +65,7 @@ treated as missing.
 | `version` | Yes | Version string (e.g. `"3.7.8"`, `"2.x"`) |
 | `vendor` | Yes | Library author or vendor name |
 | `vendor_url` | No | URL to the library's home page or repository. A GitHub repository URL (`https://github.com/owner/repo`) lets the opt-in online check compare the entry's licence and version with GitHub |
+| `vendor_email` | No | Contact email of the vendor, emitted as the component's `supplier.contact[0].email` (BSI TR-03183-2 asks for the component creator's email or URL). A value that is not an email address is warned about and left out of the SBOM |
 | `licence` | Yes | SPDX licence identifier (e.g. `"MIT"`, `"BSD-3-Clause"`), an SPDX expression (e.g. `"MPL-1.1 OR LGPL-2.1-or-later"`), or a plain name such as `"Commercial"`. Recognised identifiers are emitted as `license.id`, expressions as `expression`, anything else as `license.name` (Validate Manifest warns about unrecognised values other than `Commercial` and `Proprietary`) |
 | `licence_url` | No | URL to licence text (not emitted for an expression, which CycloneDX does not allow a URL on) |
 | `type` | Yes | CycloneDX component type: `"library"`, `"framework"`, or `"application"`. Case-insensitive; emitted lower-case, and an unrecognised value is emitted as `"library"` |

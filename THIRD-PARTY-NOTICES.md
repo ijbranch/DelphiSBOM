@@ -15,7 +15,7 @@ written for DelphiSBOM; no DX.Comply source code is included.
 |------------|-------------------------------|
 | `Source/uMapFile.pas` | Reading linked units from a detailed MAP file's `M=` segment entries and "Line numbers for" headers |
 | `Source/uCommandLine.pas`, `CLI/DelphiSBOMCLI.dpr` | A per-project JSON config whose settings yield to options given explicitly on the command line |
-| `Source/uSBOMBuilder.pas` (dependency graph) | A two-level `dependencies` section: the application depends on its components |
+| `Source/uSBOMBuilder.pas` (dependency graph) | A two-level `dependencies` section: the application depends on its components; a `compositions` entry with `aggregate` `incomplete` naming the application |
 | `Source/uSBOMValidator.pas` | A structural check of the written SBOM (serial number, hashes, dependency references) |
 | `Source/uReportWriter.pas` | Human-readable HTML and Markdown companion reports |
 | `Docs/CI-INTEGRATION.md` | Build-server examples for GitHub Actions and GitLab |

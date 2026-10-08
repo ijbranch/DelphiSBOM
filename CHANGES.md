@@ -2,6 +2,28 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-08 — Every Evidence Hash, Graph Completeness, Vendor Email [Added, Fixed]
+
+- **Fixed: only one hash per unit survived a DX.Comply merge.** The merger kept SHA-256 (else the first
+  algorithm) and dropped the rest, so the SHA-512 that DX.Comply's draft PR #60 adds for BSI TR-03183-2
+  would have been lost. Every hash in the CycloneDX 1.5 enum is now kept, in DX.Comply's order, one per
+  algorithm; `TUnitEvidence.Hashes` replaces `Algorithm`/`HashValue` — `Source/uTypes.pas`,
+  `Source/uEvidenceMerger.pas`, `Source/uSBOMBuilder.pas`
+- **Added: `compositions` declaring the dependency graph incomplete** (`aggregate` `incomplete`, naming the
+  application), the shape DX.Comply writes. **Why:** libraries' own dependencies are not resolved and
+  unclassified units are not listed; TR-03183-2 asks for completeness to be stated — `Source/uSBOMBuilder.pas`
+- **Added: optional `vendor_email` per manifest component**, written as `supplier.contact[0].email`.
+  Validate Manifest warns about a value that is not an email address, and the builder leaves it out
+  (CycloneDX `email` is `idn-email`). **Why:** TR-03183-2 asks for the component creator's email or URL; a
+  separate field rather than DX.Comply's reading of `vendor` as an email when it looks like one —
+  `Source/uTypes.pas` (`IsEmailAddress`), `Source/uManifestLoader.pas`, `Source/uSBOMBuilder.pas`
+- The post-write check now checks `compositions` (aggregate enum, refs) and that `supplier.contact` is an
+  array — `Source/uSBOMValidator.pas`
+- Tests: 17 new (197 in all); every new rule was mutation-checked (9 reintroduced defects, all caught) —
+  `Tests/TestEvidenceMerger.pas`, `Tests/TestSBOMBuilder.pas`, `Tests/TestSBOMValidator.pas`,
+  `Tests/TestManifestLoader.pas`, `Tests/TestTypes.pas`, `Tests/TestSupport.pas`
+- Docs: `Docs/SCHEMA.md` (`vendor_email`), `Docs/CYCLONEDX-NOTES.md`
+
 ## 2026-10-07 — Manifest purl Override; BSD-3 Detection [Added, Fixed]
 
 - **Added: optional `purl` per component.** It replaces the generated `pkg:delphi/<name>@<version>` as the

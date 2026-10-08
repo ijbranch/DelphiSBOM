@@ -109,7 +109,7 @@ a `components` array. Earlier formats are not used.
 
 ### Binary Evidence via DX.Comply
 
-When a DX.Comply `bom.json` is provided, DelphiSBOM merges per-unit SHA-256
+When a DX.Comply `bom.json` is provided, DelphiSBOM merges per-unit
 hashes into the SBOM as **nested sub-components**. The CycloneDX 1.5
 specification allows `components` arrays within components:
 
@@ -141,11 +141,12 @@ classified units by unit name (case-insensitive), as written or with the scope
 prefix stripped on both sides. Only RTL and third-party units receive evidence
 in the output — own-code units are excluded by design.
 
-The SHA-256 hash is used when DX.Comply lists one; otherwise the first hash
-whose algorithm is in the CycloneDX 1.5 `hash-alg` enum. Algorithm names are
-normalised (`SHA256` becomes `SHA-256`), and hashes with an algorithm outside the
-enum are dropped with a warning, because they would make the SBOM invalid. A
-unit listed twice by DX.Comply (`.pas` and `.dcu`) is emitted once.
+Every hash DX.Comply lists for a unit is kept, in its order — e.g. SHA-256 and
+the SHA-512 that BSI TR-03183-2 asks for — with an algorithm that is listed
+twice written once. Algorithm names are normalised (`SHA256` becomes `SHA-256`),
+and hashes with an algorithm outside the CycloneDX 1.5 `hash-alg` enum are
+dropped with a warning, because they would make the SBOM invalid. A unit listed
+twice by DX.Comply (`.pas` and `.dcu`) is emitted once.
 
 Only units named in the project's own uses clause are classified, so DX.Comply
 entries for units the project uses transitively are not matched; the log
@@ -176,6 +177,22 @@ nothing third-party. A library has no entry: CycloneDX 1.5 reads an empty
 Library units stay nested under their library when DX.Comply evidence is
 merged (see below); the graph does not replace that nesting.
 
+The graph is declared incomplete, in the same shape DX.Comply writes:
+
+```json
+"compositions": [ { "aggregate": "incomplete", "dependencies": [ "application:MyApp@2.4.0.0" ] } ]
+```
+
+Libraries' own dependencies are not resolved (see Known Limitations), and units
+that could not be classified are not listed, so "complete" would overstate it.
+
+### Vendor Contact
+
+A manifest `vendor_email` is written as the library's supplier contact:
+`"supplier": { "name": "Vendor", "contact": [ { "email": "sales@vendor.example.com" } ] }`.
+CycloneDX defines `email` as `idn-email`, so a value that is not an email
+address is left out (Validate Manifest warns about it).
+
 ### Post-Write Check
 
 Every SBOM is read back after writing and checked against the schema rules
@@ -185,8 +202,10 @@ format, component types (the 1.5 enum, case-sensitive) and names, `license`
 holding exactly one of `id`/`name` with `id` an SPDX identifier in its exact
 spelling, `licenses` items holding exactly one of `license`/`expression`, hash
 algorithms from the 1.5 enum with a digest of the right length, purls starting
-`pkg:<type>/`, external reference types, unique `bom-ref`s, and dependency
-`ref`/`dependsOn` values that name a component. Problems are reported with
+`pkg:<type>/`, external reference types, a supplier's `url` and `contact` being
+arrays, unique `bom-ref`s, dependency `ref`/`dependsOn` values that name a
+component, and composition `aggregate` values (the 1.5 enum) with
+`assemblies`/`dependencies` that name a component. Problems are reported with
 their JSON path; the file is kept. This is not a full schema validation.
 
 ## Known Limitations

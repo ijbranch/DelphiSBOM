@@ -281,7 +281,7 @@ The new version flows into the SBOM immediately. No other steps are needed.
 ## DX.Comply Evidence Bridge (Optional)
 
 [DX.Comply](https://github.com/omonien/dx.comply) by Olaf Monien generates
-SBOMs from Delphi MAP file analysis. It produces per-unit SHA-256 hashes with
+SBOMs from Delphi MAP file analysis. It produces per-unit file hashes with
 strong binary evidence, but sparse metadata (no vendor, licence, or PURL).
 
 DelphiSBOM produces the opposite: rich metadata but no binary evidence.
@@ -296,10 +296,10 @@ Together, they produce a complete SBOM.
    `bom.json` file
 4. Click **Generate SBOM**
 
-DelphiSBOM merges the hashes from DX.Comply into its own output — the SHA-256
-hash when DX.Comply lists one, otherwise the first algorithm CycloneDX 1.5
-defines (names such as `SHA256` are normalised to `SHA-256`; algorithms outside
-the CycloneDX enum are skipped). Each RTL and third-party component gains a
+DelphiSBOM merges the hashes from DX.Comply into its own output — every hash
+DX.Comply lists for a unit (e.g. SHA-256 and SHA-512), in its order, each
+algorithm once (names such as `SHA256` are normalised to `SHA-256`; algorithms
+outside the CycloneDX 1.5 enum are skipped). Each RTL and third-party component gains a
 nested `components` array listing the individual units with their binary
 hashes and a `dxcomply:origin` property. Units match by name as written or
 scope-stripped (`SysUtils` matches `System.SysUtils.dcu`), and a unit DX.Comply
@@ -406,7 +406,7 @@ The generated `.cdx.json` contains:
   generated the SBOM
 - **Components**: a flat list of all third-party dependencies, each with:
   - Name and version
-  - Supplier/vendor
+  - Supplier/vendor, with its contact email when the manifest gives a `vendor_email`
   - Licence — an SPDX `id` when the value is a recognised SPDX identifier, an
     SPDX `expression` when it contains `OR`/`AND`/`WITH`, otherwise a licence
     `name` (e.g. `Commercial`, or `Proprietary` for your own or sole-use libraries)
@@ -415,9 +415,12 @@ The generated `.cdx.json` contains:
 - **Embarcadero Delphi RTL**: listed as a single framework component with
   the Delphi version number
 - **Binary evidence** (when DX.Comply is used): nested sub-components under
-  RTL and third-party entries, each with SHA-256 hashes from MAP file analysis
+  RTL and third-party entries, each with the hashes DX.Comply lists (SHA-256,
+  and SHA-512 where DX.Comply writes one)
 - **Dependencies**: every component has a `bom-ref`, and the `dependencies`
-  section records that your application uses the RTL and each library
+  section records that your application uses the RTL and each library. A
+  `compositions` entry states that this graph is incomplete: which library
+  uses which is not recorded
 
 ### What is NOT in the SBOM
 
