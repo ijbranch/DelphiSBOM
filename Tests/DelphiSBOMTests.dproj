@@ -115,8 +115,8 @@
   <PropertyGroup Condition="'$(Cfg_1_Win64)'!=''">
     <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
     <VerInfo_Locale>1033</VerInfo_Locale>
-    <VerInfo_Build>1</VerInfo_Build>
-    <VerInfo_Keys>CompanyName=;FileDescription=DelphiSBOMTests;FileVersion=1.0.0.1;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.DelphiSBOMTests;ProductName=DelphiSBOMTests;ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
+    <VerInfo_Build>2</VerInfo_Build>
+    <VerInfo_Keys>CompanyName=;FileDescription=DelphiSBOMTests;FileVersion=1.0.0.2;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.DelphiSBOMTests;ProductName=DelphiSBOMTests;ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Cfg_2)'!=''">
     <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
@@ -134,8 +134,8 @@
   <PropertyGroup Condition="'$(Cfg_2_Win64)'!=''">
     <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
     <VerInfo_Locale>1033</VerInfo_Locale>
-    <VerInfo_Keys>CompanyName=;FileDescription=DelphiSBOMTests;FileVersion=1.0.0.63;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.DelphiSBOMTests;ProductName=DelphiSBOMTests;ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
-    <VerInfo_Build>63</VerInfo_Build>
+    <VerInfo_Keys>CompanyName=;FileDescription=DelphiSBOMTests;FileVersion=1.0.0.67;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.DelphiSBOMTests;ProductName=DelphiSBOMTests;ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
+    <VerInfo_Build>67</VerInfo_Build>
     <VerInfo_AutoIncVersion>true</VerInfo_AutoIncVersion>
   </PropertyGroup>
   <ItemGroup>
