@@ -4,7 +4,7 @@
   MIT Licence — see LICENCE file
 
   uEvidenceMerger.pas — Imports binary evidence from DX.Comply SBOM output
-  Parses DX.Comply's CycloneDX JSON to extract per-unit SHA-256 hashes
+  Parses DX.Comply's CycloneDX JSON to extract per-unit hashes (every algorithm listed)
   and origin classifications from MAP file analysis.
 *)
 unit uEvidenceMerger;
@@ -144,9 +144,8 @@ begin
 
         if CompName = '' then Continue;
 
-        // Take the SHA-256 hash when one is listed, else the first algorithm CycloneDX defines
-        var HashAlg := '';
-        var HashValue := '';
+        // Keep every hash CycloneDX defines (e.g. SHA-256 and SHA-512), one per algorithm: the first listed wins
+        var Hashes: TArray<TEvidenceHash> := nil;
         var HashVal := CompObj.GetValue( 'hashes' );
 
         if HashVal is TJSONArray then
@@ -154,20 +153,24 @@ begin
           begin
             if not ( HashItem is TJSONObject ) then Continue;
 
-            var Alg := NormaliseHashAlgorithm( JsonString( TJSONObject( HashItem ), 'alg' ) );
-            var HashContent := JsonString( TJSONObject( HashItem ), 'content' );
+            var Hash: TEvidenceHash;
+            Hash.Algorithm := NormaliseHashAlgorithm( JsonString( TJSONObject( HashItem ), 'alg' ) );
+            Hash.Content := JsonString( TJSONObject( HashItem ), 'content' );
 
-            if ( Alg = '' ) or ( HashContent = '' ) then
+            if ( Hash.Algorithm = '' ) or ( Hash.Content = '' ) then
             begin
               Inc( Unsupported );
               Continue;
             end;
 
-            if ( HashAlg = '' ) or ( ( Alg = 'SHA-256' ) and ( HashAlg <> 'SHA-256' ) ) then
-            begin
-              HashAlg := Alg;
-              HashValue := HashContent;
-            end;
+            var Listed := False;
+
+            for var H in Hashes do
+              if H.Algorithm = Hash.Algorithm then
+                Listed := True;
+
+            if not Listed then
+              Hashes := Hashes + [ Hash ];
           end;
 
         // Extract origin from properties array
@@ -190,8 +193,7 @@ begin
 
         var Evidence: TUnitEvidence;
         Evidence.UnitName := UnitName;
-        Evidence.Algorithm := HashAlg;
-        Evidence.HashValue := HashValue;
+        Evidence.Hashes := Hashes;
         Evidence.Origin := Origin;
 
         // The same unit can be listed twice (.pas and .dcu) — keep one entry, preferring one with a hash
@@ -201,7 +203,7 @@ begin
         begin
           Inc( Duplicates );
 
-          if ( EvidenceList[ Existing ].HashValue = '' ) and ( HashValue <> '' ) then
+          if ( Length( EvidenceList[ Existing ].Hashes ) = 0 ) and ( Length( Hashes ) > 0 ) then
             EvidenceList[ Existing ] := Evidence;
 
           Continue;
