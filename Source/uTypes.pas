@@ -31,6 +31,7 @@ type
     Version: string;
     Vendor: string;
     VendorURL: string;
+    VendorEmail: string; // Contact email of the vendor (empty = none); written as supplier.contact
     Licence: string;
     LicenceURL: string;
     CompType: string; // CycloneDX type: 'library', 'framework', 'application'
@@ -122,13 +123,20 @@ type
   TReportFormats = set of TReportFormat;
 
   /// <summary>
+  ///   One hash of a unit's file, as DX.Comply listed it.
+  /// </summary>
+  TEvidenceHash = record
+    Algorithm: string; // CycloneDX 1.5 hash algorithm (e.g. 'SHA-256', 'SHA-512')
+    Content: string; // The digest in hex
+  end;
+
+  /// <summary>
   ///   Binary evidence for a single unit, imported from DX.Comply SBOM output.
-  ///   Contains the SHA-256 hash and origin classification from MAP file analysis.
+  ///   Contains every hash DX.Comply lists for the unit and its origin classification from MAP file analysis.
   /// </summary>
   TUnitEvidence = record
     UnitName: string; // Unit name without .dcu extension (e.g. 'System.SysUtils')
-    Algorithm: string; // Hash algorithm (e.g. 'SHA-256')
-    HashValue: string; // Hash content
+    Hashes: TArray<TEvidenceHash>; // One per algorithm, in DX.Comply's order (empty = no usable hash)
     Origin: string; // DX.Comply origin classification (e.g. 'Embarcadero RTL', 'Third party')
   end;
 
@@ -281,6 +289,15 @@ function ClassifyLicence( const AValue: string; out ANormalised: string ): TLice
 /// <returns>The CycloneDX spelling, or '' when unsupported.</returns>
 function NormaliseHashAlgorithm( const AAlgorithm: string ): string;
 
+/// <summary>
+///   Whether a value has the shape of an email address: one '@', something before it, a dotted domain
+///   after it, and no spaces. A plausibility check, not RFC 5322: it keeps names and URLs out of
+///   CycloneDX email fields.
+/// </summary>
+/// <param name="AValue">The value to check.</param>
+/// <returns>True when the value looks like an email address.</returns>
+function IsEmailAddress( const AValue: string ): Boolean;
+
 implementation
 
 const
@@ -406,6 +423,24 @@ begin
       Exit( Alg );
 
   Result            := '';
+
+end;
+
+function IsEmailAddress( const AValue: string ): Boolean;
+begin
+
+  var At            := Pos( '@', AValue );
+
+  if ( At <= 1 ) or ( Pos( '@', AValue, At + 1 ) > 0 ) then Exit( False );
+
+  for var C in AValue do
+    if C <= ' ' then
+      Exit( False );
+
+  var Domain        := Copy( AValue, At + 1, MaxInt );
+  var Dot           := Pos( '.', Domain );
+
+  Result            := ( Dot > 1 ) and ( not Domain.EndsWith( '.' ) );
 
 end;
 
