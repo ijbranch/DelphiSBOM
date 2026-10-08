@@ -74,6 +74,25 @@ type
     /// </summary>
     [Test]
     procedure MacroReferencesExpanded;
+
+    /// <summary>
+    ///   Proves the email plausibility check accepts addresses and rejects what a vendor_email field is
+    ///   likely to hold by mistake: a URL, a name, two '@', a missing local part or an undotted domain.
+    /// </summary>
+    /// <param name="AValue">The value to check.</param>
+    /// <param name="AExpected">Whether it should be accepted.</param>
+    [Test]
+    [TestCase( 'address', 'info@example.com,True' )]
+    [TestCase( 'subdomain and plus', 'a.b+sbom@mail.example.co.uk,True' )]
+    [TestCase( 'url', 'https://example.com,False' )]
+    [TestCase( 'name', 'Acme Pty Ltd,False' )]
+    [TestCase( 'space', 'info @example.com,False' )]
+    [TestCase( 'two at signs', 'a@b@example.com,False' )]
+    [TestCase( 'no local part', '@example.com,False' )]
+    [TestCase( 'undotted domain', 'info@localhost,False' )]
+    [TestCase( 'trailing dot', 'info@example.,False' )]
+    [TestCase( 'empty', ',False' )]
+    procedure EmailAddressesRecognised( const AValue: string; AExpected: Boolean );
   end;
 
 implementation
@@ -160,6 +179,13 @@ begin
   Assert.AreEqual( 'C:\<BDS>\lib\<PLATFORM>', ExpandMacroReferences( 'C:\$(BDS)\lib\$(Platform)', Resolver ), False );
   Assert.AreEqual( 'no macros', ExpandMacroReferences( 'no macros', Resolver ), False );
   Assert.AreEqual( 'open $(BDS', ExpandMacroReferences( 'open $(BDS', Resolver ), False );
+
+end;
+
+procedure TTypesTests.EmailAddressesRecognised( const AValue: string; AExpected: Boolean );
+begin
+
+  Assert.AreEqual( AExpected, IsEmailAddress( AValue ), AValue );
 
 end;
 

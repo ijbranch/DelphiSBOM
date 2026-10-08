@@ -116,6 +116,28 @@ type
     procedure EvidenceMatchesScopeStrippedName;
 
     /// <summary>
+    ///   Proves a unit with several hashes gets them all, in order (SHA-256 and SHA-512): only one used
+    ///   to be written, so a SHA-512 from DX.Comply was lost.
+    /// </summary>
+    [Test]
+    procedure EvidenceWritesEveryHash;
+
+    /// <summary>
+    ///   Proves the SBOM states its dependency graph is incomplete (libraries' own dependencies are not
+    ///   resolved): one composition, aggregate "incomplete", naming the application's bom-ref.
+    /// </summary>
+    [Test]
+    procedure CompositionDeclaresTheGraphIncomplete;
+
+    /// <summary>
+    ///   Proves a manifest vendor_email becomes supplier.contact[0].email (trimmed), also without a
+    ///   vendor name, and that a value which is not an email address is left out rather than making the
+    ///   SBOM invalid (CycloneDX's email is format idn-email).
+    /// </summary>
+    [Test]
+    procedure VendorEmailWrittenAsSupplierContact;
+
+    /// <summary>
     ///   Proves BuildAndSave writes UTF-8 without a BOM and the file parses as JSON.
     /// </summary>
     [Test]
@@ -410,8 +432,7 @@ begin
   var Evidence: TArray<TUnitEvidence>;
   SetLength( Evidence, 1 );
   Evidence[ 0 ].UnitName  := 'System.SysUtils';
-  Evidence[ 0 ].Algorithm := 'SHA-256';
-  Evidence[ 0 ].HashValue := 'abc123';
+  Evidence[ 0 ].Hashes    := [ EvidenceHash( 'SHA-256', 'abc123' ) ];
   Evidence[ 0 ].Origin    := 'Embarcadero RTL';
 
   var Root := BuildJson( Evidence );
@@ -421,6 +442,70 @@ begin
     Assert.AreEqual( 'System.SysUtils', Rtl.GetValue<string>( 'components[0].name' ), False );
     Assert.AreEqual( 'abc123', Rtl.GetValue<string>( 'components[0].hashes[0].content' ), False );
     Assert.AreEqual( 'Embarcadero RTL', Rtl.GetValue<string>( 'components[0].properties[0].value' ), False );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.EvidenceWritesEveryHash;
+begin
+
+  var Evidence: TArray<TUnitEvidence>;
+  SetLength( Evidence, 1 );
+  Evidence[ 0 ].UnitName := 'SysUtils';
+  Evidence[ 0 ].Hashes   := [ EvidenceHash( 'SHA-256', 'aaa' ), EvidenceHash( 'SHA-512', 'bbb' ) ];
+
+  var Root := BuildJson( Evidence );
+  try
+    var Hashes := Component( Root, 0 ).GetValue<TJSONArray>( 'components[0].hashes' );
+
+    Assert.AreEqual<Integer>( 2, Hashes.Count );
+    Assert.AreEqual( 'SHA-256', Hashes.Items[ 0 ].GetValue<string>( 'alg' ) );
+    Assert.AreEqual( 'aaa', Hashes.Items[ 0 ].GetValue<string>( 'content' ) );
+    Assert.AreEqual( 'SHA-512', Hashes.Items[ 1 ].GetValue<string>( 'alg' ) );
+    Assert.AreEqual( 'bbb', Hashes.Items[ 1 ].GetValue<string>( 'content' ) );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.CompositionDeclaresTheGraphIncomplete;
+begin
+
+  var Root := BuildJson( nil );
+  try
+    var Compositions := Root.GetValue<TJSONArray>( 'compositions' );
+    Assert.IsNotNull( Compositions, 'No compositions section' );
+    Assert.AreEqual<Integer>( 1, Compositions.Count );
+    Assert.AreEqual( 'incomplete', Compositions.Items[ 0 ].GetValue<string>( 'aggregate' ) );
+
+    var Refs := Compositions.Items[ 0 ].GetValue<TJSONArray>( 'dependencies' );
+    Assert.AreEqual<Integer>( 1, Refs.Count );
+    Assert.AreEqual( BomRef( Root.GetValue<TJSONObject>( 'metadata.component' ) ), Refs.Items[ 0 ].Value, 'Names the application' );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.VendorEmailWrittenAsSupplierContact;
+begin
+
+  FManifest.Components[ 0 ].Vendor      := 'TMS Software';
+  FManifest.Components[ 0 ].VendorEmail := ' info@tmssoftware.com ';
+  FManifest.Components[ 1 ].VendorEmail := 'https://example.com';
+  FManifest.Components[ 2 ].Vendor      := '';
+  FManifest.Components[ 2 ].VendorEmail := 'dual@example.org';
+
+  var Root := BuildJson( nil );
+  try
+    Assert.AreEqual( 'TMS Software', Component( Root, 1 ).GetValue<string>( 'supplier.name' ) );
+    Assert.AreEqual( 'info@tmssoftware.com', Component( Root, 1 ).GetValue<string>( 'supplier.contact[0].email' ), 'Trimmed' );
+    Assert.IsNull( Component( Root, 2 ).GetValue( 'supplier' ), 'Not an email address: left out, and no vendor either' );
+    Assert.IsNull( Component( Root, 3 ).FindValue( 'supplier.name' ), 'No vendor name' );
+    Assert.AreEqual( 'dual@example.org', Component( Root, 3 ).GetValue<string>( 'supplier.contact[0].email' ), 'Email without a vendor name' );
   finally
     Root.Free;
   end;

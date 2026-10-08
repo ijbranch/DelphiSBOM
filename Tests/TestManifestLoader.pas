@@ -105,6 +105,13 @@ type
     /// </summary>
     [Test]
     procedure PurlOverrideIsReadAndChecked;
+
+    /// <summary>
+    ///   Proves a component's optional vendor_email is read (trimmed), and that a value which is not an
+    ///   email address is warned about, as the SBOM builder leaves it out.
+    /// </summary>
+    [Test]
+    procedure VendorEmailIsReadAndChecked;
   end;
 
 implementation
@@ -373,6 +380,40 @@ begin
 
     Assert.AreEqual<Integer>( 1, Warnings.Count, string.Join( ' / ', Warnings.ToArray ) );
     Assert.Contains( Warnings[ 0 ], 'https://github.com/acme/b' );
+  finally
+    Warnings.Free;
+  end;
+
+end;
+
+procedure TManifestLoaderTests.VendorEmailIsReadAndChecked;
+begin
+
+  var FileName := FScratch.PathOf( 'components.json' );
+  WriteUtf8File( FileName, '{ "schema_version": "1.0", "last_updated": "2026-10-08", "supplier": { "name": "Me" }, "components": [ ' +
+    '{ "name": "A", "version": "1", "vendor": "V", "vendor_email": " sales@acme.example ", "licence": "MIT", "units_exact": [ "UA" ] }, ' +
+    '{ "name": "B", "version": "1", "vendor": "V", "vendor_email": "https://acme.example", "licence": "MIT", "units_exact": [ "UB" ] }, ' +
+    '{ "name": "C", "version": "1", "vendor": "V", "licence": "MIT", "units_exact": [ "UC" ] } ] }' );
+
+  var Warnings := TList<string>.Create;
+  try
+    var Loader := TManifestLoader.Create(
+      procedure( ALevel: TLogLevel; AMessage: string )
+      begin
+        if ALevel = llWarning then
+          Warnings.Add( AMessage );
+      end );
+    try
+      var Manifest := Loader.Load( FileName );
+      Assert.AreEqual( 'sales@acme.example', Manifest.Components[ 0 ].VendorEmail, 'Trimmed' );
+      Assert.AreEqual( 'https://acme.example', Manifest.Components[ 1 ].VendorEmail, 'Kept as written, for the warning' );
+      Assert.AreEqual( '', Manifest.Components[ 2 ].VendorEmail, 'Optional' );
+    finally
+      Loader.Free;
+    end;
+
+    Assert.AreEqual<Integer>( 1, Warnings.Count, string.Join( ' / ', Warnings.ToArray ) );
+    Assert.Contains( Warnings[ 0 ], 'vendor_email "https://acme.example"' );
   finally
     Warnings.Free;
   end;

@@ -65,6 +65,11 @@ type
     [TestCase( 'unknown dependency owner', '{ "ref": "pkg:delphi/embarcadero-rtl@37.0", "dependsOn": [] }|' +
       '{ "ref": "pkg:delphi/nowhere@1", "dependsOn": [] }|dependencies[1].ref', '|' )]
     [TestCase( 'external reference type', '"type": "website"|"type": "homepage"|externalReferences[0].type', '|' )]
+    [TestCase( 'supplier contact', '"contact": [ { "email": "acme@example.com" } ]|"contact": { "email": "acme@example.com" }|' +
+      'components[1].supplier', '|' )]
+    [TestCase( 'composition aggregate', '"aggregate": "incomplete"|"aggregate": "partial"|compositions[0].aggregate', '|' )]
+    [TestCase( 'unknown composition ref', '"dependencies": [ "application:App@1.0.0.0" ]|"dependencies": [ "application:Other@1" ]|' +
+      'compositions[0].dependencies[0]', '|' )]
     procedure BrokenRuleIsReported( const AFind, AReplace, AExpected: string );
 
     /// <summary>
@@ -96,7 +101,8 @@ const
     '      "hashes": [ { "alg": "SHA-256", "content": "88de45b3a6f2c1d0e9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6" } ], ' +
     '      "properties": [ { "name": "dxcomply:origin", "value": "Embarcadero RTL" } ] } ] }, ' +
     '  { "bom-ref": "pkg:delphi/acme-widgets@2.1", "type": "library", "name": "Acme Widgets", "version": "2.1", ' +
-    '    "supplier": { "name": "Acme" }, "licenses": [ { "license": { "id": "MIT", "url": "https://example.com/l" } } ], ' +
+    '    "supplier": { "name": "Acme", "contact": [ { "email": "acme@example.com" } ] }, ' +
+    '    "licenses": [ { "license": { "id": "MIT", "url": "https://example.com/l" } } ], ' +
     '    "externalReferences": [ { "type": "website", "url": "https://example.com" } ], ' +
     '    "purl": "pkg:delphi/acme-widgets@2.1" }, ' +
     '  { "bom-ref": "pkg:delphi/dual@3", "type": "library", "name": "Dual", "version": "3", ' +
@@ -106,7 +112,8 @@ const
     '"dependencies": [ ' +
     '  { "ref": "application:App@1.0.0.0", "dependsOn": [ "pkg:delphi/embarcadero-rtl@37.0", "pkg:delphi/acme-widgets@2.1", ' +
     '    "pkg:delphi/dual@3", "pkg:delphi/closed@1" ] }, ' +
-    '  { "ref": "pkg:delphi/embarcadero-rtl@37.0", "dependsOn": [] } ] }';
+    '  { "ref": "pkg:delphi/embarcadero-rtl@37.0", "dependsOn": [] } ], ' +
+    '"compositions": [ { "aggregate": "incomplete", "dependencies": [ "application:App@1.0.0.0" ] } ] }';
 
 { TSBOMValidatorTests }
 
@@ -150,6 +157,7 @@ begin
   Manifest.Components[ 0 ].Version := '2.1';
   Manifest.Components[ 0 ].Licence := 'mit';
   Manifest.Components[ 0 ].VendorURL := 'https://example.com';
+  Manifest.Components[ 0 ].VendorEmail := 'acme@example.com';
   Manifest.Components[ 1 ].Name := 'Dual';
   Manifest.Components[ 1 ].Licence := 'MPL-1.1 OR LGPL-2.1-or-later';
   Manifest.Components[ 2 ].Name := 'Dual';
@@ -174,8 +182,8 @@ begin
   var Evidence: TArray<TUnitEvidence>;
   SetLength( Evidence, 1 );
   Evidence[ 0 ].UnitName  := 'System.SysUtils';
-  Evidence[ 0 ].Algorithm := 'SHA-256';
-  Evidence[ 0 ].HashValue := '88de45b3a6f2c1d0e9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6';
+  Evidence[ 0 ].Hashes    := [ EvidenceHash( 'SHA-256', '88de45b3a6f2c1d0e9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6' ),
+    EvidenceHash( 'SHA-512', StringOfChar( 'a', 128 ) ) ];
   Evidence[ 0 ].Origin    := 'Embarcadero RTL';
 
   var Builder := TSBOMBuilder.Create( NoLog() );

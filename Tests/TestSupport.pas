@@ -56,6 +56,14 @@ procedure WriteUtf8File( const AFileName, AText: string );
 /// <returns>A no-op TProc&lt;TLogLevel, string&gt;.</returns>
 function NoLog: TProc<TLogLevel, string>;
 
+/// <summary>
+///   Returns one evidence hash, for building TUnitEvidence test data.
+/// </summary>
+/// <param name="AAlgorithm">The CycloneDX algorithm name.</param>
+/// <param name="AContent">The digest.</param>
+/// <returns>The hash record.</returns>
+function EvidenceHash( const AAlgorithm, AContent: string ): TEvidenceHash;
+
 implementation
 
 uses
@@ -118,6 +126,14 @@ begin
     procedure( ALevel: TLogLevel; AMessage: string )
     begin
     end;
+
+end;
+
+function EvidenceHash( const AAlgorithm, AContent: string ): TEvidenceHash;
+begin
+
+  Result.Algorithm := AAlgorithm;
+  Result.Content := AContent;
 
 end;
 
