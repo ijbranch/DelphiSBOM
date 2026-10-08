@@ -34,6 +34,13 @@ const
     'device-driver', 'firmware', 'file', 'machine-learning-model', 'data'
     );
 
+  /// <summary>The CycloneDX 1.5 composition aggregate enum.</summary>
+  AggregateTypes    : array[ 0..9 ] of string = (
+    'complete', 'incomplete', 'incomplete_first_party_only', 'incomplete_first_party_proprietary_only',
+    'incomplete_first_party_opensource_only', 'incomplete_third_party_only', 'incomplete_third_party_proprietary_only',
+    'incomplete_third_party_opensource_only', 'unknown', 'not_specified'
+    );
+
   /// <summary>The CycloneDX 1.5 external reference type enum.</summary>
   ExternalReferenceTypes: array[ 0..38 ] of string = (
     'vcs', 'issue-tracker', 'website', 'advisories', 'bom', 'mailing-list', 'social', 'chat', 'documentation',
@@ -62,6 +69,7 @@ type
     procedure CheckHashes( const APath: string; AValue: TJSONValue );
     procedure CheckExternalReferences( const APath: string; AValue: TJSONValue );
     procedure CheckDependencies( AValue: TJSONValue );
+    procedure CheckCompositions( AValue: TJSONValue );
   public
     constructor Create;
     destructor Destroy; override;
@@ -173,8 +181,9 @@ begin
 
     CheckComponents( 'components', Root.GetValue( 'components' ) );
 
-    // Every bom-ref has been collected; dependencies may now name any of them
+    // Every bom-ref has been collected; dependencies and compositions may now name any of them
     CheckDependencies( Root.GetValue( 'dependencies' ) );
+    CheckCompositions( Root.GetValue( 'compositions' ) );
   finally
     Parsed.Free;
   end;
@@ -239,8 +248,9 @@ begin
   var Supplier      := AComponent.GetValue( 'supplier' );
 
   if Assigned( Supplier ) and ( ( not ( Supplier is TJSONObject ) ) or
-    ( Assigned( TJSONObject( Supplier ).GetValue( 'url' ) ) and ( not ( TJSONObject( Supplier ).GetValue( 'url' ) is TJSONArray ) ) ) ) then
-    Error( APath + '.supplier', 'must be an object whose url is an array' );
+    ( Assigned( TJSONObject( Supplier ).GetValue( 'url' ) ) and ( not ( TJSONObject( Supplier ).GetValue( 'url' ) is TJSONArray ) ) ) or
+    ( Assigned( TJSONObject( Supplier ).GetValue( 'contact' ) ) and ( not ( TJSONObject( Supplier ).GetValue( 'contact' ) is TJSONArray ) ) ) ) then
+    Error( APath + '.supplier', 'must be an object whose url and contact are arrays' );
 
   CheckComponents( APath + '.components', AComponent.GetValue( 'components' ) );
 
@@ -449,6 +459,58 @@ begin
     end;
   finally
     Owners.Free;
+  end;
+
+end;
+
+procedure TSBOMCheck.CheckCompositions( AValue: TJSONValue );
+begin
+
+  if ( not Assigned( AValue ) ) then Exit;
+
+  if ( not ( AValue is TJSONArray ) ) then
+  begin
+    Error( 'compositions', 'must be an array' );
+    Exit;
+  end;
+
+  for var I := 0 to TJSONArray( AValue ).Count - 1 do
+  begin
+    var ItemPath    := Format( 'compositions[%d]', [ I ] );
+    var Item        := TJSONArray( AValue ).Items[ I ];
+
+    if ( not ( Item is TJSONObject ) ) then
+    begin
+      Error( ItemPath, 'must be an object' );
+      Continue;
+    end;
+
+    var Found: Boolean;
+    var Aggregate   := StringField( TJSONObject( Item ), 'aggregate', Found );
+
+    if ( not InList( Aggregate, AggregateTypes ) ) then
+      Error( ItemPath + '.aggregate', Format( '"%s" is not a CycloneDX 1.5 composition aggregate', [ Aggregate ] ) );
+
+    // assemblies and dependencies both list bom-refs of this document
+    var Fields: TArray<string> := [ 'assemblies', 'dependencies' ];
+
+    for var Field in Fields do
+    begin
+      var Refs      := TJSONObject( Item ).GetValue( Field );
+
+      if ( not Assigned( Refs ) ) then Continue;
+
+      if ( not ( Refs is TJSONArray ) ) then
+      begin
+        Error( ItemPath + '.' + Field, 'must be an array' );
+        Continue;
+      end;
+
+      for var J := 0 to TJSONArray( Refs ).Count - 1 do
+        if ( not FRefs.ContainsKey( TJSONArray( Refs ).Items[ J ].Value ) ) then
+          Error( Format( '%s.%s[%d]', [ ItemPath, Field, J ] ),
+            Format( '"%s" is not the bom-ref of any component', [ TJSONArray( Refs ).Items[ J ].Value ] ) );
+    end;
   end;
 
 end;
