@@ -141,25 +141,54 @@ type
   end;
 
   /// <summary>
+  ///   What one manifest component's units use, found by reading their uses clauses: other manifest components
+  ///   and the RTL. Only units whose source was read contribute, so the list can be incomplete, never invented.
+  /// </summary>
+  TLibraryDependency = record
+    /// <summary>Index into TManifest.Components of the component whose units were read</summary>
+    ComponentIndex: Integer;
+    /// <summary>Component indexes it uses, each once; RTLComponentIndex for the RTL</summary>
+    DependsOn: TArray<Integer>;
+  end;
+
+  /// <summary>
   ///   Complete results from a pipeline run, passed from uSBOMEngine to the form.
   /// </summary>
   TSBOMResult = record
+    /// <summary>True only when the SBOM file was written</summary>
     Success: Boolean;
-    OutputFile: string; // Path to the generated .cdx.json
-    ManifestFile: string; // Resolved components.json path used by this run
+    /// <summary>Path to the generated .cdx.json</summary>
+    OutputFile: string;
+    /// <summary>Resolved components.json path used by this run</summary>
+    ManifestFile: string;
+    /// <summary>The parsed project, its unit list replaced by the MAP file when one was given</summary>
     ProjectInfo: TProjectInfo;
+    /// <summary>Counts per classification</summary>
     Summary: TClassificationSummary;
+    /// <summary>Every unit of the project with its classification</summary>
     ClassifiedUnits: TArray<TClassifiedUnit>;
+    /// <summary>The components.json used by this run</summary>
     Manifest: TManifest;
-    RTLScanAvailable: Boolean; // False if RTL scanner could not find Delphi install
-    DiscoveredLibraries: TArray<TDiscoveredLibrary>; // Libraries found by file system scan
-    AutoOwnCodeUnits: TArray<string>; // Units found in the project dir or sibling own-code dirs (auto own-code)
-    Evidence: TArray<TUnitEvidence>; // Binary evidence from DX.Comply (optional)
-    ProductVersion: string; // The application version written to the SBOM
-    UnitSource: string; // Where the unit list came from: the uses clause or a MAP file
-    ValidationErrors: TArray<string>; // Problems the post-write check found in the SBOM (empty = passed)
-    ReportFiles: TArray<string>; // Companion reports written
-    ErrorMessage: string; // Populated only on failure
+    /// <summary>False if RTL scanner could not find Delphi install</summary>
+    RTLScanAvailable: Boolean;
+    /// <summary>Libraries found by file system scan</summary>
+    DiscoveredLibraries: TArray<TDiscoveredLibrary>;
+    /// <summary>Units found in the project dir or sibling own-code dirs (auto own-code)</summary>
+    AutoOwnCodeUnits: TArray<string>;
+    /// <summary>Binary evidence from DX.Comply (optional)</summary>
+    Evidence: TArray<TUnitEvidence>;
+    /// <summary>Library uses read from the libraries' source</summary>
+    LibraryDependencies: TArray<TLibraryDependency>;
+    /// <summary>The application version written to the SBOM</summary>
+    ProductVersion: string;
+    /// <summary>Where the unit list came from: the uses clause or a MAP file</summary>
+    UnitSource: string;
+    /// <summary>Problems the post-write check found in the SBOM (empty = passed)</summary>
+    ValidationErrors: TArray<string>;
+    /// <summary>Companion reports written</summary>
+    ReportFiles: TArray<string>;
+    /// <summary>Populated only on failure</summary>
+    ErrorMessage: string;
   end;
 
   /// <summary>
@@ -221,6 +250,12 @@ const
   ///   Minimum allowed length for a units_prefix entry in components.json.
   /// </summary>
   MinPrefixLength   = 3;
+
+  /// <summary>
+  ///   The component index that stands for the Embarcadero RTL in TLibraryDependency.DependsOn (the RTL is
+  ///   not a manifest row).
+  /// </summary>
+  RTLComponentIndex = -1;
 
   /// <summary>
   ///   Application version string.
