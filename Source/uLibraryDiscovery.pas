@@ -29,12 +29,35 @@ type
       end;
 
     var
+      /// <summary>Logging callback (may be nil)</summary>
       FLog          : TProc<TLogLevel, string>;
+      /// <summary>IDE environment and path macros ($(BDS), $(Platform) ...) for expanding search paths</summary>
       FMacros       : TDictionary<string, string>;
-      FRootSources  : TObjectDictionary<string, TDictionary<string, string>>; // library root → .pas file name → path
+      /// <summary>Library root, then .pas file name (lower case), then its path; filled once per root</summary>
+      FRootSources  : TObjectDictionary<string, TDictionary<string, string>>;
+      /// <summary>The folders whose top-level subfolders the drive scan searches</summary>
       FScanRoots    : TArray<string>;
+      /// <summary>The arguments the paths below were collected for ('' = not collected yet)</summary>
+      FPathsKey     : string;
+      /// <summary>CollectCompilerPaths' result for FPathsKey: every folder searched</summary>
+      FCompilerPaths: TArray<string>;
+      /// <summary>CollectCompilerPaths' result for FPathsKey: the folders the compiler reads .dcu files from</summary>
+      FCompilerDcuPaths: TArray<string>;
 
     procedure BuildMacroTable( const ADelphiPath, ABDSVersion, APlatform: string );
+    /// <summary>
+    ///   Adds the folders the compiler searches to AAllPaths (the project folder, the project search path, the IDE
+    ///   library path) and those it reads .dcu files from to ADcuPaths. Collected once per set of arguments.
+    /// </summary>
+    /// <param name="ASearchPaths">The project's evaluated DCC_UnitSearchPath entries.</param>
+    /// <param name="AProjectDir">The project directory.</param>
+    /// <param name="ADelphiPath">Resolved Delphi root directory (may be empty).</param>
+    /// <param name="ABDSVersion">BDS version of that installation (may be empty).</param>
+    /// <param name="APlatform">Target platform, e.g. 'Win64'.</param>
+    /// <param name="AAllPaths">Receives every folder, in search order; expected empty.</param>
+    /// <param name="ADcuPaths">Receives the .dcu folders (the Delphi lib folders excluded); expected empty.</param>
+    procedure CollectCompilerPaths( const ASearchPaths: TArray<string>; const AProjectDir, ADelphiPath, ABDSVersion,
+      APlatform: string; AAllPaths, ADcuPaths: TList<string> );
     function ExpandMacros( const AValue: string ): string;
     function BuildUnitFileIndex( const ASearchPaths: TArray<string>; ACompilerPathCount: Integer;
       out AScanOrderStart: Integer ): TDictionary<string, TIndexEntry>;
@@ -80,6 +103,26 @@ type
       const ABDSVersion: string;
       const APlatform: string;
       out AAutoOwnCodeUnits: TArray<string> ): TArray<TDiscoveredLibrary>;
+
+    /// <summary>
+    ///   The .pas file of each unit on the paths the compiler searches: the project folder, the project search
+    ///   path and the IDE library path, each with its parent and subfolders as Discover searches them; for a unit
+    ///   compiled from a DCU folder on those paths, the source under its library root. There is no drive scan,
+    ///   so a unit whose source is found only elsewhere gets ''.
+    /// </summary>
+    /// <param name="AUnits">The unit names, as written in the project or the MAP file.</param>
+    /// <param name="ASearchPaths">The project's evaluated DCC_UnitSearchPath entries.</param>
+    /// <param name="AProjectDir">The project directory.</param>
+    /// <param name="ADelphiPath">Resolved Delphi root directory (may be empty).</param>
+    /// <param name="ABDSVersion">BDS version of that installation, e.g. '37.0' (may be empty).</param>
+    /// <param name="APlatform">Target platform, e.g. 'Win64'.</param>
+    /// <returns>One path per unit, in the order of AUnits ('' = no source found).</returns>
+    function FindCompilerSources( const AUnits: TArray<string>;
+      const ASearchPaths: TArray<string>;
+      const AProjectDir: string;
+      const ADelphiPath: string;
+      const ABDSVersion: string;
+      const APlatform: string ): TArray<string>;
 
     /// <summary>
     ///   The folders whose top-level subfolders are scanned for .pas files after the project, search and
@@ -299,55 +342,11 @@ begin
   AAutoOwnCodeUnits := nil;
   Result            := nil;
 
-  BuildMacroTable( ADelphiPath, ABDSVersion, APlatform );
-
   var OwnCodeList   := TList<string>.Create;
   var AllPaths      := TList<string>.Create;
   var DcuPaths      := TList<string>.Create; // The folders the compiler reads units from: search paths and library path
   try
-    // The project directory first: the compiler always searches it, so a unit there needs no 'in' clause
-    if ( AProjectDir <> '' ) and TDirectory.Exists( AProjectDir ) then
-      AllPaths.Add( ExcludeTrailingPathDelimiter( AProjectDir ) );
-
-    // Project search paths, resolved against the project directory
-    for var P in ASearchPaths do
-    begin
-      try
-        var Expanded := ExpandMacros( P );
-
-        if Expanded.Contains( '$(' ) then
-        begin
-          Log( llWarning, Format( 'Skipping search path with unresolved macro: %s', [ P ] ) );
-          Continue;
-        end;
-
-        if ( not TPath.IsPathRooted( Expanded ) ) and ( AProjectDir <> '' ) then
-          Expanded  := TPath.GetFullPath( TPath.Combine( AProjectDir, Expanded ) );
-
-        if TDirectory.Exists( Expanded ) then
-        begin
-          AllPaths.Add( Expanded );
-
-          if ( not IsDelphiLibFolder( Expanded, ADelphiPath ) ) then
-            DcuPaths.Add( Expanded );
-        end
-        else
-          Log( llInfo, Format( 'Search path not found, skipped: %s', [ Expanded ] ) );
-      except
-        on E: EArgumentException do
-          Log( llWarning, Format( 'Skipping invalid search path "%s": %s', [ P, E.Message ] ) );
-      end;
-    end;
-
-    // Delphi IDE library paths from the registry
-    for var IP in GetDelphiLibraryPaths( ABDSVersion, APlatform ) do
-      if ( not AllPaths.Contains( IP ) ) and TDirectory.Exists( IP ) then
-      begin
-        AllPaths.Add( IP );
-
-        if ( not IsDelphiLibFolder( IP, ADelphiPath ) ) then
-          DcuPaths.Add( IP );
-      end;
+    CollectCompilerPaths( ASearchPaths, AProjectDir, ADelphiPath, ABDSVersion, APlatform, AllPaths, DcuPaths );
 
     // Common root directories — not where the compiler looks, so a .pas found only there is a guess
     var CompilerPathCount := AllPaths.Count;
@@ -653,6 +652,117 @@ end;
 // ---------------------------------------------------------------------------
 //  Macro expansion — $(BDS), $(BDSCOMMONDIR), IDE environment variables, etc.
 // ---------------------------------------------------------------------------
+
+procedure TLibraryDiscovery.CollectCompilerPaths( const ASearchPaths: TArray<string>; const AProjectDir, ADelphiPath,
+  ABDSVersion, APlatform: string; AAllPaths, ADcuPaths: TList<string> );
+begin
+
+  // Collected once per set of arguments, so a second call in the same run neither repeats the work nor its warnings
+  var Key           := string.Join( #1, [ string.Join( #2, ASearchPaths ), AProjectDir, ADelphiPath, ABDSVersion, APlatform ] );
+
+  if Key = FPathsKey then
+  begin
+    AAllPaths.AddRange( FCompilerPaths );
+    ADcuPaths.AddRange( FCompilerDcuPaths );
+    Exit;
+  end;
+
+  BuildMacroTable( ADelphiPath, ABDSVersion, APlatform );
+
+  // The project directory first: the compiler always searches it, so a unit there needs no 'in' clause
+  if ( AProjectDir <> '' ) and TDirectory.Exists( AProjectDir ) then
+    AAllPaths.Add( ExcludeTrailingPathDelimiter( AProjectDir ) );
+
+  // Project search paths, resolved against the project directory
+  for var P in ASearchPaths do
+  begin
+    try
+      var Expanded := ExpandMacros( P );
+
+      if Expanded.Contains( '$(' ) then
+      begin
+        Log( llWarning, Format( 'Skipping search path with unresolved macro: %s', [ P ] ) );
+        Continue;
+      end;
+
+      if ( not TPath.IsPathRooted( Expanded ) ) and ( AProjectDir <> '' ) then
+        Expanded  := TPath.GetFullPath( TPath.Combine( AProjectDir, Expanded ) );
+
+      if TDirectory.Exists( Expanded ) then
+      begin
+        AAllPaths.Add( Expanded );
+
+        if ( not IsDelphiLibFolder( Expanded, ADelphiPath ) ) then
+          ADcuPaths.Add( Expanded );
+      end
+      else
+        Log( llInfo, Format( 'Search path not found, skipped: %s', [ Expanded ] ) );
+    except
+      on E: EArgumentException do
+        Log( llWarning, Format( 'Skipping invalid search path "%s": %s', [ P, E.Message ] ) );
+    end;
+  end;
+
+  // Delphi IDE library paths from the registry
+  for var IP in GetDelphiLibraryPaths( ABDSVersion, APlatform ) do
+    if ( not AAllPaths.Contains( IP ) ) and TDirectory.Exists( IP ) then
+    begin
+      AAllPaths.Add( IP );
+
+      if ( not IsDelphiLibFolder( IP, ADelphiPath ) ) then
+        ADcuPaths.Add( IP );
+    end;
+
+  FPathsKey         := Key;
+  FCompilerPaths    := AAllPaths.ToArray;
+  FCompilerDcuPaths := ADcuPaths.ToArray;
+
+end;
+
+function TLibraryDiscovery.FindCompilerSources( const AUnits: TArray<string>;
+  const ASearchPaths: TArray<string>;
+  const AProjectDir: string;
+  const ADelphiPath: string;
+  const ABDSVersion: string;
+  const APlatform: string ): TArray<string>;
+begin
+
+  SetLength( Result, Length( AUnits ) );
+
+  var AllPaths      := TList<string>.Create;
+  var DcuPaths      := TList<string>.Create;
+  try
+    CollectCompilerPaths( ASearchPaths, AProjectDir, ADelphiPath, ABDSVersion, APlatform, AllPaths, DcuPaths );
+
+    var ScanOrderStart: Integer;
+    var FileIndex   := BuildUnitFileIndex( AllPaths.ToArray, AllPaths.Count, ScanOrderStart );
+    var DcuIndex    := BuildDcuIndex( DcuPaths.ToArray );
+    try
+      for var I := 0 to High( AUnits ) do
+      begin
+        var FoundOrder: Integer;
+        Result[ I ] := FindUnitFile( AUnits[ I ], FileIndex, FoundOrder );
+
+        // Compiled from a DCU folder on the search or library path: its source, when the library ships
+        // it, is under the folder above the build-output folders (as Discover finds it)
+        if Result[ I ] = '' then
+        begin
+          var DcuFile := FindDcuFile( AUnits[ I ], DcuIndex );
+
+          if DcuFile <> '' then
+            Result[ I ] := FindSourceUnderRoot( DcuLibraryRoot( ExtractFileDir( DcuFile ) ), AUnits[ I ] );
+        end;
+      end;
+    finally
+      DcuIndex.Free;
+      FileIndex.Free;
+    end;
+  finally
+    DcuPaths.Free;
+    AllPaths.Free;
+  end;
+
+end;
 
 procedure TLibraryDiscovery.BuildMacroTable( const ADelphiPath, ABDSVersion, APlatform: string );
 begin
