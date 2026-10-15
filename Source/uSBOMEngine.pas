@@ -6,6 +6,7 @@
   uSBOMEngine.pas — UI-independent pipeline orchestrator
   Coordinates: ProjectParser (or MapFile) → RTLScanner → ManifestLoader → UnitClassifier → LibraryDiscovery →
   SBOMBuilder → SBOMValidator → ReportWriter
+  Library uses edges read from source follow DX.Comply (Olaf Monien, MIT) — see THIRD-PARTY-NOTICES.md
 *)
 unit uSBOMEngine;
 
@@ -13,7 +14,7 @@ interface
 
 uses
   System.SysUtils,
-  uTypes;
+  uTypes, uRTLScanner, uLibraryDiscovery;
 
 type
   /// <summary>
@@ -27,6 +28,20 @@ type
 
     procedure Log( ALevel: TLogLevel; const AMessage: string );
     procedure ApplyMapFile( const AMapFile: string; var AResult: TSBOMResult );
+    /// <summary>
+    ///   What each manifest library in the run uses: the uses clauses of its units' source, found by
+    ///   ADiscovery.FindCompilerSources, classified by the run's rules. Edges go to the RTL and to other manifest
+    ///   components, never to the library itself; a library with no edge gets no record. A source that cannot be
+    ///   opened is logged and skipped.
+    /// </summary>
+    /// <param name="AResult">The run so far: project, manifest and classified units.</param>
+    /// <param name="AScanner">The run's RTL scanner.</param>
+    /// <param name="ADiscovery">The run's library discovery, whose search paths are reused.</param>
+    /// <param name="ADelphiPath">Resolved Delphi root directory (may be empty).</param>
+    /// <param name="ABDSVersion">BDS version of that installation (may be empty).</param>
+    /// <returns>One record per library that uses something, in the order of the project's units.</returns>
+    function ResolveLibraryDependencies( const AResult: TSBOMResult; AScanner: TRTLScanner; ADiscovery: TLibraryDiscovery;
+      const ADelphiPath, ABDSVersion: string ): TArray<TLibraryDependency>;
   public
     constructor Create( ALogProc: TProc<TLogLevel, string> );
 
@@ -52,9 +67,8 @@ type
 implementation
 
 uses
-  System.IOUtils, System.Generics.Collections, System.Generics.Defaults,
-  uMapFile, uSBOMValidator, uReportWriter, uTextFiles, uProjectParser, uRTLScanner, uManifestLoader, uUnitClassifier, uSBOMBuilder, uLibraryDiscovery,
-    uEvidenceMerger,
+  System.Classes, System.IOUtils, System.Generics.Collections, System.Generics.Defaults,
+  uMapFile, uSBOMValidator, uReportWriter, uTextFiles, uProjectParser, uManifestLoader, uUnitClassifier, uSBOMBuilder, uEvidenceMerger,
   uDelphiInstall;
 
 { TSBOMEngine }
@@ -139,6 +153,106 @@ begin
 
 end;
 
+function TSBOMEngine.ResolveLibraryDependencies( const AResult: TSBOMResult; AScanner: TRTLScanner; ADiscovery: TLibraryDiscovery;
+  const ADelphiPath, ABDSVersion: string ): TArray<TLibraryDependency>;
+begin
+
+  Result            := nil;
+
+  // The units of manifest components: these are the libraries whose uses are wanted
+  var LibraryUnits  := TList<TClassifiedUnit>.Create;
+  var Names         := TList<string>.Create;
+  var Order         := TList<Integer>.Create; // Component indexes in the order first seen
+  var Targets       := TObjectDictionary<Integer, TList<Integer>>.Create( [ doOwnsValues ] );
+  try
+    for var CU in AResult.ClassifiedUnits do
+      if ( CU.Classification = ucThirdParty ) and ( CU.ComponentIndex >= 0 ) and ( CU.ComponentIndex <= High( AResult.Manifest.Components ) ) then
+      begin
+        LibraryUnits.Add( CU );
+        Names.Add( CU.OriginalName );
+      end;
+
+    if LibraryUnits.Count = 0 then Exit;
+
+    var Sources     := ADiscovery.FindCompilerSources( Names.ToArray, AResult.ProjectInfo.SearchPaths, AResult.ProjectInfo.ProjectDir,
+      ADelphiPath, ABDSVersion, AResult.ProjectInfo.TargetPlatform );
+
+    // The units a library uses are classified by the same rules as the project's own; no log, so the run's
+    // classification summary is not repeated for each file
+    var Classifier  := TUnitClassifier.Create( nil, AScanner, AResult.Manifest, AResult.RTLScanAvailable, AResult.ProjectInfo.OwnCodeUnits );
+    try
+      var ReadCount := 0;
+
+      for var I := 0 to LibraryUnits.Count - 1 do
+      begin
+        if Sources[ I ] = '' then Continue;
+
+        var Content: string;
+
+        try
+          Content   := ReadTextFile( Sources[ I ] );
+        except
+          on E: EFOpenError do
+          begin
+            Log( llWarning, Format( 'Could not read %s for its uses clause: %s', [ Sources[ I ], E.Message ] ) );
+            Continue;
+          end;
+        end;
+
+        Inc( ReadCount );
+        var Owner   := LibraryUnits[ I ].ComponentIndex;
+        var OwnerTargets: TList<Integer>;
+
+        if ( not Targets.TryGetValue( Owner, OwnerTargets ) ) then
+        begin
+          OwnerTargets := TList<Integer>.Create;
+          Targets.Add( Owner, OwnerTargets );
+          Order.Add( Owner );
+        end;
+
+        for var Used in Classifier.Classify( ExtractUsedUnits( Content ) ) do
+        begin
+          var Target: Integer;
+
+          // Own code, unclassified units and the library's own units are not edges
+          if Used.Classification = ucRTL then
+            Target  := RTLComponentIndex
+          else if ( Used.Classification = ucThirdParty ) and ( Used.ComponentIndex >= 0 ) and ( Used.ComponentIndex <> Owner ) then
+            Target  := Used.ComponentIndex
+          else
+            Continue;
+
+          if ( not OwnerTargets.Contains( Target ) ) then
+            OwnerTargets.Add( Target );
+        end;
+      end;
+
+      var EdgeCount := 0;
+
+      for var Owner in Order do
+        if Targets[ Owner ].Count > 0 then
+        begin
+          var Dependency: TLibraryDependency;
+          Dependency.ComponentIndex := Owner;
+          Dependency.DependsOn := Targets[ Owner ].ToArray;
+          Result    := Result + [ Dependency ];
+          Inc( EdgeCount, Length( Dependency.DependsOn ) );
+        end;
+
+      Log( llInfo, Format( 'Library uses: read the source of %d of %d third-party units; %d libraries use %d other libraries or the RTL',
+          [ ReadCount, LibraryUnits.Count, Length( Result ), EdgeCount ] ) );
+    finally
+      Classifier.Free;
+    end;
+  finally
+    Targets.Free;
+    Order.Free;
+    Names.Free;
+    LibraryUnits.Free;
+  end;
+
+end;
+
 function TSBOMEngine.Execute( const AOptions: TSBOMOptions ): TSBOMResult;
 begin
 
@@ -192,59 +306,63 @@ begin
   else if DelphiPath = '' then
     Log( llWarning, 'No Delphi installation found in the registry' );
 
-  // Step 2: Scan RTL units
-  var Scanner       := TRTLScanner.Create( FLog );
+  // One discovery object for the run: library uses (step 4) and discovery (step 4b) share its search paths
+  var Discovery     := TLibraryDiscovery.Create( FLog );
   try
-    Result.RTLScanAvailable := Scanner.Scan( DelphiPath, Result.ProjectInfo.TargetPlatform );
+    // Step 2: Scan RTL units
+    var Scanner     := TRTLScanner.Create( FLog );
+    try
+      Result.RTLScanAvailable := Scanner.Scan( DelphiPath, Result.ProjectInfo.TargetPlatform );
 
-    // Step 3: Load manifest
-    if FileExists( Result.ManifestFile ) then
-    begin
-      var Loader    := TManifestLoader.Create( FLog );
+      // Step 3: Load manifest
+      if FileExists( Result.ManifestFile ) then
+      begin
+        var Loader  := TManifestLoader.Create( FLog );
+        try
+          Result.Manifest := Loader.Load( Result.ManifestFile );
+        finally
+          Loader.Free;
+        end;
+      end
+      else
+        Log( llWarning, Format( 'Manifest not found at %s — no third-party classification available', [ Result.ManifestFile ] ) );
+
+      // Step 4: Classify units
+      var Classifier  := TUnitClassifier.Create( FLog, Scanner, Result.Manifest, Result.RTLScanAvailable, Result.ProjectInfo.OwnCodeUnits );
       try
-        Result.Manifest := Loader.Load( Result.ManifestFile );
+        Result.ClassifiedUnits := Classifier.Classify( Result.ProjectInfo.Units );
       finally
-        Loader.Free;
+        Classifier.Free;
       end;
-    end
-    else
-      Log( llWarning, Format( 'Manifest not found at %s — no third-party classification available', [ Result.ManifestFile ] ) );
 
-    // Step 4: Classify units
-    var Classifier  := TUnitClassifier.Create( FLog, Scanner, Result.Manifest, Result.RTLScanAvailable, Result.ProjectInfo.OwnCodeUnits );
-    try
-      Result.ClassifiedUnits := Classifier.Classify( Result.ProjectInfo.Units );
+      // Step 4 (continued): what each library uses, from the uses clauses of its source on the compiler's paths
+      Result.LibraryDependencies := ResolveLibraryDependencies( Result, Scanner, Discovery, DelphiPath, BDSVersion );
     finally
-      Classifier.Free;
+      Scanner.Free;
     end;
-  finally
-    Scanner.Free;
-  end;
 
-  Result.Summary    := TUnitClassifier.Summarise( Result.ClassifiedUnits );
+    Result.Summary  := TUnitClassifier.Summarise( Result.ClassifiedUnits );
 
-  // Step 4a: Report dormant manifest entries (components not referenced by any project unit)
-  if Length( Result.Manifest.Components ) > 0 then
-  begin
-    var ReferencedIndices := TDictionary<Integer, Boolean>.Create;
-    try
-      for var CU in Result.ClassifiedUnits do
-        if ( CU.Classification = ucThirdParty ) and ( CU.ComponentIndex >= 0 ) then
-          ReferencedIndices.TryAdd( CU.ComponentIndex, True );
+    // Step 4a: Report dormant manifest entries (components not referenced by any project unit)
+    if Length( Result.Manifest.Components ) > 0 then
+    begin
+      var ReferencedIndices := TDictionary<Integer, Boolean>.Create;
+      try
+        for var CU in Result.ClassifiedUnits do
+          if ( CU.Classification = ucThirdParty ) and ( CU.ComponentIndex >= 0 ) then
+            ReferencedIndices.TryAdd( CU.ComponentIndex, True );
 
-      for var I := 0 to High( Result.Manifest.Components ) do
-        if not ReferencedIndices.ContainsKey( I ) then
-          Log( llInfo, Format( 'components.json: ''%s'' not referenced by any project unit', [ Result.Manifest.Components[ I ].Name ] ) );
-    finally
-      ReferencedIndices.Free;
+        for var I := 0 to High( Result.Manifest.Components ) do
+          if not ReferencedIndices.ContainsKey( I ) then
+            Log( llInfo, Format( 'components.json: ''%s'' not referenced by any project unit', [ Result.Manifest.Components[ I ].Name ] ) );
+      finally
+        ReferencedIndices.Free;
+      end;
     end;
-  end;
 
-  // Step 4b: Discover libraries for unclassified units
-  if Result.Summary.UnclassifiedCount > 0 then
-  begin
-    var Discovery   := TLibraryDiscovery.Create( FLog );
-    try
+    // Step 4b: Discover libraries for unclassified units
+    if Result.Summary.UnclassifiedCount > 0 then
+    begin
       // Collect unclassified unit names
       var UnclassifiedNames := TList<string>.Create;
       try
@@ -271,24 +389,24 @@ begin
 
       if Length( Result.DiscoveredLibraries ) > 0 then
         Log( llInfo, Format( 'Discovered %d libraries for unclassified units', [ Length( Result.DiscoveredLibraries ) ] ) );
-    finally
-      Discovery.Free;
-    end;
 
-    // Auto-detected own-code units count as own code in THIS run, not only the next one
-    if Length( Result.AutoOwnCodeUnits ) > 0 then
-    begin
-      for var I := 0 to High( Result.ClassifiedUnits ) do
-        if Result.ClassifiedUnits[ I ].Classification = ucUnclassified then
-          for var OwnUnit in Result.AutoOwnCodeUnits do
-            if SameText( Result.ClassifiedUnits[ I ].OriginalName, OwnUnit ) then
-            begin
-              Result.ClassifiedUnits[ I ].Classification := ucOwnCode;
-              Break;
-            end;
+      // Auto-detected own-code units count as own code in THIS run, not only the next one
+      if Length( Result.AutoOwnCodeUnits ) > 0 then
+      begin
+        for var I := 0 to High( Result.ClassifiedUnits ) do
+          if Result.ClassifiedUnits[ I ].Classification = ucUnclassified then
+            for var OwnUnit in Result.AutoOwnCodeUnits do
+              if SameText( Result.ClassifiedUnits[ I ].OriginalName, OwnUnit ) then
+              begin
+                Result.ClassifiedUnits[ I ].Classification := ucOwnCode;
+                Break;
+              end;
 
-      Result.Summary := TUnitClassifier.Summarise( Result.ClassifiedUnits );
+        Result.Summary := TUnitClassifier.Summarise( Result.ClassifiedUnits );
+      end;
     end;
+  finally
+    Discovery.Free;
   end;
 
   // Step 4c: Load binary evidence from DX.Comply if provided
@@ -328,7 +446,8 @@ begin
       Result.Manifest,
       AOptions.VersionOverride,
       AOptions.OutputDir,
-      Result.Evidence
+      Result.Evidence,
+      Result.LibraryDependencies
       );
   finally
     Builder.Free;
