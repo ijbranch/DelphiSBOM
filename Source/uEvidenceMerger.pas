@@ -35,6 +35,10 @@ type
     ///   Skips the application-level entry (the .exe) and processes only
     ///   library/framework components.
     /// </summary>
+    /// <param name="ADXComplyFile">Full path of the DX.Comply bom.json.</param>
+    /// <returns>One entry per unit, each unit once; empty when the file is missing or not a CycloneDX JSON
+    ///   object (logged).</returns>
+    /// <exception cref="EFOpenError">The file exists but cannot be opened.</exception>
     function LoadEvidence( const ADXComplyFile: string ): TArray<TUnitEvidence>;
   end;
 
@@ -185,8 +189,9 @@ begin
               Break;
             end;
 
-        // Strip the .dcu / .pas extension to get the unit name for matching
-        var UnitName := CompName;
+        // Strip the folder and the .dcu / .pas extension to get the unit name for matching. DX.Comply's
+        // library mode names a source file by its path relative to the release (src\Foo.pas)
+        var UnitName := CompName.Substring( CompName.LastDelimiter( '\/' ) + 1 );
 
         if UnitName.EndsWith( '.dcu', True ) or UnitName.EndsWith( '.pas', True ) then
           UnitName  := UnitName.Substring( 0, UnitName.Length - 4 );
