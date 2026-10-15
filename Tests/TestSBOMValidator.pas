@@ -32,7 +32,7 @@ type
 
     /// <summary>
     ///   Proves what the builder itself writes passes, evidence sub-components and the dependency
-    ///   graph included.
+    ///   graph, with a library's own entry, included.
     /// </summary>
     [Test]
     procedure BuilderOutputPasses;
@@ -64,6 +64,8 @@ type
       '"dependsOn": [ "pkg:delphi/embarcadero-rtl@37.0", "pkg:delphi/nowhere@1"|dependencies[0].dependsOn', '|' )]
     [TestCase( 'unknown dependency owner', '{ "ref": "pkg:delphi/embarcadero-rtl@37.0", "dependsOn": [] }|' +
       '{ "ref": "pkg:delphi/nowhere@1", "dependsOn": [] }|dependencies[1].ref', '|' )]
+    [TestCase( 'repeated dependency', '"dependsOn": [ "pkg:delphi/dual@3", "pkg:delphi/embarcadero-rtl@37.0" ]|' +
+      '"dependsOn": [ "pkg:delphi/dual@3", "pkg:delphi/dual@3" ]|dependencies[2].dependsOn[1]', '|' )]
     [TestCase( 'external reference type', '"type": "website"|"type": "homepage"|externalReferences[0].type', '|' )]
     [TestCase( 'supplier contact', '"contact": [ { "email": "acme@example.com" } ]|"contact": { "email": "acme@example.com" }|' +
       'components[1].supplier', '|' )]
@@ -112,7 +114,8 @@ const
     '"dependencies": [ ' +
     '  { "ref": "application:App@1.0.0.0", "dependsOn": [ "pkg:delphi/embarcadero-rtl@37.0", "pkg:delphi/acme-widgets@2.1", ' +
     '    "pkg:delphi/dual@3", "pkg:delphi/closed@1" ] }, ' +
-    '  { "ref": "pkg:delphi/embarcadero-rtl@37.0", "dependsOn": [] } ], ' +
+    '  { "ref": "pkg:delphi/embarcadero-rtl@37.0", "dependsOn": [] }, ' +
+    '  { "ref": "pkg:delphi/acme-widgets@2.1", "dependsOn": [ "pkg:delphi/dual@3", "pkg:delphi/embarcadero-rtl@37.0" ] } ], ' +
     '"compositions": [ { "aggregate": "incomplete", "dependencies": [ "application:App@1.0.0.0" ] } ] }';
 
 { TSBOMValidatorTests }
@@ -186,9 +189,14 @@ begin
     EvidenceHash( 'SHA-512', StringOfChar( 'a', 128 ) ) ];
   Evidence[ 0 ].Origin    := 'Embarcadero RTL';
 
+  var Dependencies: TArray<TLibraryDependency>;
+  SetLength( Dependencies, 1 );
+  Dependencies[ 0 ].ComponentIndex := 0;
+  Dependencies[ 0 ].DependsOn := [ 1, RTLComponentIndex ];
+
   var Builder := TSBOMBuilder.Create( NoLog() );
   try
-    var Errors := CheckSBOM( Builder.Build( Project, Units, Manifest, '', Evidence ) );
+    var Errors := CheckSBOM( Builder.Build( Project, Units, Manifest, '', Evidence, Dependencies ) );
     Assert.AreEqual<Integer>( 0, Length( Errors ), string.Join( ' / ', Errors ) );
   finally
     Builder.Free;

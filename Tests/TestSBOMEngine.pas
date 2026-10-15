@@ -98,6 +98,42 @@ type
     procedure InvalidOutputIsReportedNotDiscarded;
   end;
 
+  /// <summary>
+  ///   Library uses read from source. Four manifest libraries are in the project: X (LibX, on the search path)
+  ///   uses Y, the RTL, its own helper and a fifth manifest row that is not in the project; Y (LibY, on the search
+  ///   path) uses nothing; D is compiled from LibD\Lib\Win64\Release, with its source under LibD\Source, and uses
+  ///   Y; Z's source is in a folder the compiler does not search.
+  /// </summary>
+  [TestFixture]
+  TSBOMEngineLibraryUsesTests = class
+  private
+    /// <summary>The fixture's folders: App, LibX, LibY, LibD and Elsewhere.</summary>
+    FScratch: TScratchDir;
+    /// <summary>True when SetupFixture initialised COM and TearDownFixture must uninitialise it.</summary>
+    FComInitialised: Boolean;
+    /// <summary>The result of the one engine run all tests read.</summary>
+    FResult: TSBOMResult;
+    /// <summary>Every line the run logged.</summary>
+    FLog: string;
+  public
+    /// <summary>Writes the libraries, project and manifest, then runs the engine once.</summary>
+    [SetupFixture]
+    procedure SetupFixture;
+    /// <summary>Uninitialises COM and removes the folders.</summary>
+    [TearDownFixture]
+    procedure TearDownFixture;
+
+    /// <summary>
+    ///   Proves the run records what X uses (the RTL, Y and the absent W, but not its own helper) and what D uses
+    ///   (Y, read from the source under its DCU folder's library root), and nothing for Y or Z; that the written
+    ///   SBOM gives X its own dependency entry naming the RTL and Y, W dropped; that Y (source read, no library
+    ///   used) and Z (source not on the compiler's paths) have no entry; that the result passes the post-write
+    ///   check; and that the log says how many sources were read.
+    /// </summary>
+    [Test]
+    procedure LibraryUsesReachTheDependencyGraph;
+  end;
+
 implementation
 
 uses
@@ -287,6 +323,141 @@ begin
     CoUninitialize;
 
   FScratch.Free;
+
+end;
+
+{ TSBOMEngineLibraryUsesTests }
+
+procedure TSBOMEngineLibraryUsesTests.SetupFixture;
+begin
+
+  FScratch := TScratchDir.Create;
+  FComInitialised := Succeeded( CoInitializeEx( nil, COINIT_APARTMENTTHREADED ) );
+
+  // Unique unit names so nothing elsewhere on the machine can be matched
+  var Tag := 'Dsbu' + Copy( StringReplace( TGUID.NewGuid.ToString, '-', '', [ rfReplaceAll ] ), 2, 8 );
+
+  WriteUtf8File( FScratch.PathOf( 'App\App.dpr' ),
+    'program App;' + sLineBreak + 'uses' + sLineBreak +
+    Format( '  System.SysUtils, %0:sXMain, %0:sYCore, %0:sZOnly, %0:sDMain;', [ Tag ] ) + sLineBreak + 'begin end.' );
+  WriteUtf8File( FScratch.PathOf( 'App\App.dproj' ),
+    '<Project><PropertyGroup><ProjectVersion>20.4</ProjectVersion></PropertyGroup>' +
+    '<PropertyGroup><DCC_UnitSearchPath>..\LibX;..\LibY;..\LibD\Lib\Win64\Release</DCC_UnitSearchPath></PropertyGroup>' +
+    '<ProjectExtensions><BorlandProject><Platforms><Platform value="Win64">True</Platform></Platforms></BorlandProject></ProjectExtensions></Project>' );
+
+  WriteUtf8File( FScratch.PathOf( 'LibX\' + Tag + 'XMain.pas' ),
+    Format( 'unit %0:sXMain;' + sLineBreak + 'interface' + sLineBreak + 'uses System.SysUtils, %0:sYCore, %0:sWThing;' + sLineBreak +
+    'implementation' + sLineBreak + 'uses %0:sXHelper;' + sLineBreak + 'end.', [ Tag ] ) );
+  WriteUtf8File( FScratch.PathOf( 'LibY\' + Tag + 'YCore.pas' ), 'unit ' + Tag + 'YCore; interface implementation end.' );
+  // D: only a .dcu where the compiler looks; its source is under the library root, above the build-output folders
+  WriteUtf8File( FScratch.PathOf( 'LibD\Lib\Win64\Release\' + Tag + 'DMain.dcu' ), 'not a real dcu' );
+  WriteUtf8File( FScratch.PathOf( 'LibD\Source\' + Tag + 'DMain.pas' ),
+    Format( 'unit %0:sDMain; interface uses %0:sYCore; implementation end.', [ Tag ] ) );
+  WriteUtf8File( FScratch.PathOf( 'Elsewhere\' + Tag + 'ZOnly.pas' ),
+    Format( 'unit %0:sZOnly; interface uses %0:sYCore; implementation end.', [ Tag ] ) );
+
+  var Rows := '';
+
+  for var Lib in [ 'X', 'Y', 'Z', 'W', 'D' ] do
+  begin
+    if Rows <> '' then
+      Rows := Rows + ', ';
+
+    Rows := Rows + Format( '{ "name": "Lib %0:s", "version": "1", "vendor": "Acme", "licence": "MIT", "units_prefix": [ "%1:s%0:s" ] }',
+      [ Lib, Tag ] );
+  end;
+
+  WriteUtf8File( FScratch.PathOf( 'App\components.json' ), '{ "schema_version": "1.0", "components": [ ' + Rows + ' ] }' );
+
+  var Options := Default( TSBOMOptions );
+  Options.ProjectFile := FScratch.PathOf( 'App\App.dproj' );
+
+  var Engine := TSBOMEngine.Create(
+    procedure( ALevel: TLogLevel; AMessage: string )
+    begin
+      FLog := FLog + AMessage + sLineBreak;
+    end );
+  try
+    FResult := Engine.Execute( Options );
+  finally
+    Engine.Free;
+  end;
+
+end;
+
+procedure TSBOMEngineLibraryUsesTests.TearDownFixture;
+begin
+
+  if FComInitialised then
+    CoUninitialize;
+
+  FScratch.Free;
+
+end;
+
+procedure TSBOMEngineLibraryUsesTests.LibraryUsesReachTheDependencyGraph;
+begin
+
+  Assert.IsTrue( FResult.Success, 'Run failed: ' + FResult.ErrorMessage );
+  Assert.AreEqual<Integer>( 0, Length( FResult.ValidationErrors ), string.Join( ' / ', FResult.ValidationErrors ) );
+  Assert.Contains( FLog, 'read the source of 3 of 4 third-party units' );
+
+  // The run's own records, in project order: X (row 0) uses the RTL, Y (row 1) and W (row 3, dropped by the
+  // builder), never itself; D (row 4) uses Y. Y used nothing, so it has no record
+  var Records := '';
+
+  for var Dependency in FResult.LibraryDependencies do
+  begin
+    Records := Records + IntToStr( Dependency.ComponentIndex ) + ':';
+
+    for var T in Dependency.DependsOn do
+      Records := Records + ' ' + IntToStr( T );
+
+    Records := Records + '; ';
+  end;
+
+  Assert.AreEqual( '0: -1 1 3; 4: 1; ', Records );
+
+  var Root := TJSONObject.ParseJSONValue( ReadTextFile( FResult.OutputFile ) ) as TJSONObject;
+  try
+    // bom-ref by component name
+    var Refs := TDictionary<string, string>.Create;
+    try
+      for var C in Root.GetValue<TJSONArray>( 'components' ) do
+        Refs.Add( C.GetValue<string>( 'name' ), C.GetValue<string>( 'bom-ref' ) );
+
+      Assert.IsFalse( Refs.ContainsKey( 'Lib W' ), 'Test data: Lib W must not be in the SBOM' );
+
+      var AppRef := Root.GetValue<string>( 'metadata.component.bom-ref' );
+      var XDependsOn := '';
+      var DDependsOn := '';
+
+      for var D in Root.GetValue<TJSONArray>( 'dependencies' ) do
+      begin
+        var Ref := D.GetValue<string>( 'ref' );
+
+        if Ref = Refs[ 'Lib X' ] then
+        begin
+          for var Target in D.GetValue<TJSONArray>( 'dependsOn' ) do
+            XDependsOn := XDependsOn + Target.Value + ' ';
+        end
+        else if Ref = Refs[ 'Lib D' ] then
+        begin
+          for var Target in D.GetValue<TJSONArray>( 'dependsOn' ) do
+            DDependsOn := DDependsOn + Target.Value + ' ';
+        end
+        else if ( Ref <> AppRef ) and ( Ref <> Refs[ 'Embarcadero Delphi RTL' ] ) then
+          Assert.Fail( 'Unexpected dependency entry for ' + Ref );
+      end;
+
+      Assert.AreEqual( Refs[ 'Embarcadero Delphi RTL' ] + ' ' + Refs[ 'Lib Y' ] + ' ', XDependsOn, 'In uses-clause order: the RTL, then Lib Y' );
+      Assert.AreEqual( Refs[ 'Lib Y' ] + ' ', DDependsOn, 'Lib D, read from the source under its DCU folder''s library root' );
+    finally
+      Refs.Free;
+    end;
+  finally
+    Root.Free;
+  end;
 
 end;
 

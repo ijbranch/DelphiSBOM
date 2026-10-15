@@ -127,13 +127,36 @@ type
     /// </summary>
     [Test]
     procedure CheckOnlineReportsAndOnlyWhenAsked;
+
+    /// <summary>
+    ///   Proves --version-from-git-tag asks for the newest tag of the project folder and writes its version
+    ///   (v4.5.6 gives 4.5.6) as the application version; that --product-version beats it; that no tag gives
+    ///   a warning and the version the run has without the option; and that without the option git is not run.
+    /// </summary>
+    [Test]
+    procedure VersionFromGitTagSetsTheProductVersion;
+  end;
+
+  /// <summary>
+  ///   uGit against the real git: the only tests that run a process. They need git on the PATH.
+  /// </summary>
+  [TestFixture]
+  TGitTests = class
+  public
+    /// <summary>
+    ///   Proves LatestGitTag runs git in the folder it is given and returns the tag reachable from HEAD, and
+    ///   '' for a work tree with no tag. Built with plumbing commands (write-tree, commit-tree, update-ref) so
+    ///   the user's commit and tag signing settings play no part.
+    /// </summary>
+    [Test]
+    procedure LatestGitTagReadsTheWorkTree;
   end;
 
 implementation
 
 uses
-  System.SysUtils, System.IOUtils,
-  uCommandLine, uOnlineCheck;
+  Winapi.Windows, System.SysUtils, System.IOUtils, System.JSON,
+  uCommandLine, uOnlineCheck, uGit, uTextFiles;
 
 { TCommandLineTests }
 
@@ -192,7 +215,7 @@ begin
 
   var ConfigFile := FScratch.PathOf( 'Proj\' + ConfigFileName );
   WriteUtf8File( ConfigFile, '{ "manifest": "meta\\components.json", "output": "sbom", "map": "Win64\\Release\\App.map", ' +
-    '"productVersion": "3.1", "report": "html", "failOnUnclassified": true }' );
+    '"productVersion": "3.1", "report": "html", "failOnUnclassified": true, "versionFromGitTag": true }' );
 
   var CLI: TCLIOptions;
   var Error: string;
@@ -206,6 +229,7 @@ begin
   Assert.AreEqual( '3.1', CLI.Options.VersionOverride );
   Assert.IsTrue( CLI.Options.ReportFormats = [ rfHtml ], 'Reports from config' );
   Assert.IsTrue( CLI.FailOnUnclassified, 'failOnUnclassified from config' );
+  Assert.IsTrue( CLI.VersionFromGitTag, 'versionFromGitTag from config' );
 
 end;
 
@@ -388,6 +412,91 @@ begin
     Assert.Contains( FOut, 'suggested licence: MIT' );
   finally
     OnlineHttpOverride := nil;
+  end;
+
+end;
+
+/// <summary>The application version written to an SBOM file.</summary>
+function SBOMProductVersion( const AFile: string ): string;
+begin
+
+  var Root := TJSONObject.ParseJSONValue( ReadTextFile( AFile ) ) as TJSONObject;
+  try
+    Result := Root.GetValue<string>( 'metadata.component.version' );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TCommandLineRunTests.VersionFromGitTagSetsTheProductVersion;
+begin
+
+  var SBOMFile := FScratch.PathOf( 'Ok\sbom\Ok.cdx.json' );
+  var Calls := 0;
+  var AskedDir := '';
+  var Tag := 'v4.5.6';
+
+  GitTagSource :=
+    function( ADir: string ): string
+    begin
+      Inc( Calls );
+      AskedDir := ADir;
+      Result := Tag;
+    end;
+  try
+    Assert.AreEqual( ExitOK, Run( [ FScratch.PathOf( 'Ok\Ok.dpr' ) ] ), FErr );
+    Assert.AreEqual( 0, Calls, 'git asked for a tag without --version-from-git-tag' );
+    var Untagged := SBOMProductVersion( SBOMFile );
+
+    Assert.AreEqual( ExitOK, Run( [ FScratch.PathOf( 'Ok\Ok.dpr' ), '--version-from-git-tag' ] ), FErr );
+    Assert.AreEqual( FScratch.PathOf( 'Ok' ), AskedDir );
+    Assert.AreEqual( '4.5.6', SBOMProductVersion( SBOMFile ) );
+    Assert.Contains( FOut, 'from git tag v4.5.6' );
+
+    Assert.AreEqual( ExitOK, Run( [ FScratch.PathOf( 'Ok\Ok.dpr' ), '--version-from-git-tag', '--product-version=9.9' ] ), FErr );
+    Assert.AreEqual( '9.9', SBOMProductVersion( SBOMFile ) );
+
+    Tag := '';
+    Assert.AreEqual( ExitOK, Run( [ FScratch.PathOf( 'Ok\Ok.dpr' ), '--version-from-git-tag' ] ), FErr );
+    Assert.Contains( FOut, '[WARNING] No git tag' );
+    Assert.AreEqual( Untagged, SBOMProductVersion( SBOMFile ) );
+  finally
+    GitTagSource := nil;
+  end;
+
+end;
+
+{ TGitTests }
+
+procedure TGitTests.LatestGitTagReadsTheWorkTree;
+begin
+
+  var Scratch := TScratchDir.Create;
+  try
+    var Repo := Scratch.PathOf( 'Repo' );
+    TDirectory.CreateDirectory( Repo );
+
+    var Output: string;
+    Assert.IsTrue( RunGit( 'init -q', Repo, '', Output ), 'git init failed (is git on the PATH?): ' + Output );
+    Assert.IsTrue( RunGit( 'write-tree', Repo, '', Output ), Output );
+    var Tree := Trim( Output );
+    Assert.IsTrue( RunGit( '-c user.name=DelphiSBOM -c user.email=tests@example.com commit-tree ' + Tree + ' -m Tests', Repo, '', Output ),
+      Output );
+    var Commit := Trim( Output );
+    Assert.IsTrue( RunGit( 'update-ref HEAD ' + Commit, Repo, '', Output ), Output );
+
+    Assert.AreEqual( '', LatestGitTag( Repo ), 'A work tree with no tag' );
+
+    Assert.IsTrue( RunGit( 'update-ref refs/tags/v1.2.3 ' + Commit, Repo, '', Output ), Output );
+    Assert.AreEqual( 'v1.2.3', LatestGitTag( Repo ) );
+  finally
+    // git writes its objects read-only, which a recursive delete cannot remove
+    if TDirectory.Exists( Scratch.PathOf( 'Repo' ) ) then
+      for var F in TDirectory.GetFiles( Scratch.PathOf( 'Repo' ), '*', TSearchOption.soAllDirectories ) do
+        SetFileAttributes( PChar( F ), FILE_ATTRIBUTE_NORMAL );
+
+    Scratch.Free;
   end;
 
 end;

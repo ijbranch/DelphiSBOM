@@ -48,6 +48,13 @@ type
     /// </summary>
     [Test]
     procedure DeduplicatesPasAndDcu;
+
+    /// <summary>
+    ///   Proves a component named by a relative path, as DX.Comply's library mode writes it (src\Otl\OtlTask.pas,
+    ///   or with forward slashes), is matched by its unit name: with the folder kept it matched no unit at all.
+    /// </summary>
+    [Test]
+    procedure StripsTheFolderFromLibraryModeNames;
   end;
 
 implementation
@@ -143,6 +150,28 @@ begin
     Assert.AreEqual( 'OtlTask', Evidence[ 0 ].UnitName, False );
     Assert.AreEqual<NativeInt>( 1, Length( Evidence[ 0 ].Hashes ) );
     Assert.AreEqual( 'dcuhash', Evidence[ 0 ].Hashes[ 0 ].Content );
+  finally
+    Merger.Free;
+  end;
+
+end;
+
+procedure TEvidenceMergerTests.StripsTheFolderFromLibraryModeNames;
+begin
+
+  var FileName := FScratch.PathOf( 'bom.json' );
+  WriteUtf8File( FileName,
+    '{ "bomFormat": "CycloneDX", "components": [ ' +
+    '{ "type": "file", "name": "src\\Otl\\OtlTask.pas", "hashes": [ { "alg": "SHA-256", "content": "a" } ] }, ' +
+    '{ "type": "file", "name": "src/Otl/OtlComm.pas", "hashes": [ { "alg": "SHA-256", "content": "b" } ] } ] }' );
+
+  var Merger := TEvidenceMerger.Create( NoLog() );
+  try
+    var Evidence := Merger.LoadEvidence( FileName );
+
+    Assert.AreEqual<NativeInt>( 2, Length( Evidence ) );
+    Assert.AreEqual( 'OtlTask', Evidence[ 0 ].UnitName );
+    Assert.AreEqual( 'OtlComm', Evidence[ 1 ].UnitName );
   finally
     Merger.Free;
   end;

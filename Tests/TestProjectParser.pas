@@ -103,6 +103,13 @@ type
     /// </summary>
     [Test]
     procedure MainSourcePackageParsed;
+
+    /// <summary>
+    ///   Proves ExtractUsedUnits reads both uses clauses of a unit, in order and each unit once, while a unit
+    ///   named only in a comment, the word 'uses' in a string or a comment, and an 'in' file reference add nothing.
+    /// </summary>
+    [Test]
+    procedure UsedUnitsComeFromEveryUsesClause;
   end;
 
 implementation
@@ -316,6 +323,27 @@ begin
   finally
     Parser.Free;
   end;
+
+end;
+
+procedure TProjectParserTests.UsedUnitsComeFromEveryUsesClause;
+begin
+
+  var Source := string.Join( sLineBreak, [
+    'unit Widgets;',
+    '// uses Commented;',
+    'interface',
+    'uses',
+    '  System.SysUtils, {Braced,} OtlTask (* Starred, *),',
+    '  Vendored in ''..\Vendor\Vendored.pas'';',
+    'const Label = ''this unit uses Fake; not really'';',
+    'implementation',
+    'uses OtlTask, Winapi.Windows;',
+    'end.' ] );
+
+  var Units := ExtractUsedUnits( Source );
+
+  Assert.AreEqual( 'System.SysUtils,OtlTask,Vendored,Winapi.Windows', string.Join( ',', Units ) );
 
 end;
 

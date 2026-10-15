@@ -25,7 +25,12 @@ type
     FProject: TProjectInfo;
     FManifest: TManifest;
     FUnits: TArray<TClassifiedUnit>;
+    /// <summary>The library uses passed to the builder (none unless a test sets them).</summary>
+    FLibraryDependencies: TArray<TLibraryDependency>;
 
+    /// <summary>Builds the SBOM from the fixture's project, units, manifest and library uses.</summary>
+    /// <param name="AEvidence">The DX.Comply evidence to merge.</param>
+    /// <returns>The parsed document; the caller frees it.</returns>
     function BuildJson( const AEvidence: TArray<TUnitEvidence> ): TJSONObject;
     function Component( ARoot: TJSONObject; AIndex: Integer ): TJSONObject;
   public
@@ -130,6 +135,14 @@ type
     procedure CompositionDeclaresTheGraphIncomplete;
 
     /// <summary>
+    ///   Proves a library's uses become its own dependency entry, naming the other library and the RTL once
+    ///   each, while an edge to a manifest row that is not in the SBOM, to itself, or a repeat, is left out; and
+    ///   that a library with no edge left gets no entry, since an empty dependsOn would claim it uses nothing.
+    /// </summary>
+    [Test]
+    procedure LibraryUsesBecomeDependencyEntries;
+
+    /// <summary>
     ///   Proves a manifest vendor_email becomes supplier.contact[0].email (trimmed), also without a
     ///   vendor name, and that a value which is not an email address is left out rather than making the
     ///   SBOM invalid (CycloneDX's email is format idn-email).
@@ -199,7 +212,7 @@ begin
 
   var Builder := TSBOMBuilder.Create( NoLog() );
   try
-    Result := TJSONObject.ParseJSONValue( Builder.Build( FProject, FUnits, FManifest, '', AEvidence ) ) as TJSONObject;
+    Result := TJSONObject.ParseJSONValue( Builder.Build( FProject, FUnits, FManifest, '', AEvidence, FLibraryDependencies ) ) as TJSONObject;
   finally
     Builder.Free;
   end;
@@ -484,6 +497,49 @@ begin
     var Refs := Compositions.Items[ 0 ].GetValue<TJSONArray>( 'dependencies' );
     Assert.AreEqual<Integer>( 1, Refs.Count );
     Assert.AreEqual( BomRef( Root.GetValue<TJSONObject>( 'metadata.component' ) ), Refs.Items[ 0 ].Value, 'Names the application' );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.LibraryUsesBecomeDependencyEntries;
+begin
+
+  // A fourth manifest row that no unit uses, so it is not in the SBOM
+  SetLength( FManifest.Components, 4 );
+  FManifest.Components[ 3 ].Name    := 'Unused';
+  FManifest.Components[ 3 ].Version := '1';
+
+  SetLength( FLibraryDependencies, 2 );
+  FLibraryDependencies[ 0 ].ComponentIndex := 0;
+  FLibraryDependencies[ 0 ].DependsOn := [ 1, RTLComponentIndex, 3, 0, 1 ];
+  FLibraryDependencies[ 1 ].ComponentIndex := 1;
+  FLibraryDependencies[ 1 ].DependsOn := [ 3 ];
+
+  var Root := BuildJson( nil );
+  try
+    var AppRef := BomRef( Root.GetValue<TJSONObject>( 'metadata.component' ) );
+    var RTLRef := BomRef( Component( Root, 0 ) );
+    var Lib0Ref := BomRef( Component( Root, 1 ) );
+    var Lib1Ref := BomRef( Component( Root, 2 ) );
+    var Lib0Entry: TJSONObject := nil;
+
+    for var D in Root.GetValue<TJSONArray>( 'dependencies' ) do
+    begin
+      var Ref := D.GetValue<string>( 'ref' );
+
+      if Ref = Lib0Ref then
+        Lib0Entry := D as TJSONObject
+      else if ( Ref <> AppRef ) and ( Ref <> RTLRef ) then
+        Assert.Fail( 'Unexpected dependency entry for ' + Ref );
+    end;
+
+    Assert.IsNotNull( Lib0Entry, 'No entry for the library whose uses were read' );
+    var DependsOn := Lib0Entry.GetValue<TJSONArray>( 'dependsOn' );
+    Assert.AreEqual<Integer>( 2, DependsOn.Count, 'The other library and the RTL, once each' );
+    Assert.AreEqual( Lib1Ref, DependsOn.Items[ 0 ].Value );
+    Assert.AreEqual( RTLRef, DependsOn.Items[ 1 ].Value );
   finally
     Root.Free;
   end;
