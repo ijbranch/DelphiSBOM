@@ -42,7 +42,7 @@ type
   ///   A setting that can come from either the command line or the config file.
   /// </summary>
   TCLISetting = ( csManifest, csOutput, csDelphi, csProductVersion, csDXComply, csMap, csReports, csFailOnUnclassified,
-    csCheckOnline );
+    csCheckOnline, csVersionFromGitTag );
 
   /// <summary>
   ///   The settings given explicitly on the command line; the config file never overrides these.
@@ -53,15 +53,27 @@ type
   ///   Everything the command line asked for.
   /// </summary>
   TCLIOptions = record
-    Options: TSBOMOptions; // The pipeline inputs; paths are absolute
-    ConfigFile: string; // --config=<file> (empty = look for .delphisbom.json beside the project)
-    NoConfig: Boolean; // --no-config: ignore any project config file
-    Explicit: TCLISettings; // Settings given on the command line
-    FailOnUnclassified: Boolean; // Exit 3 when units are missing from the SBOM
-    ValidateManifestOnly: Boolean; // --validate-manifest: check components.json and stop
-    CheckOnline: Boolean; // --check-online: compare components.json with the libraries' GitHub repositories
-    Quiet: Boolean; // Show warnings and errors only
+    /// <summary>The pipeline inputs; paths are absolute</summary>
+    Options: TSBOMOptions;
+    /// <summary>--config=<file> (empty = look for .delphisbom.json beside the project)</summary>
+    ConfigFile: string;
+    /// <summary>--no-config: ignore any project config file</summary>
+    NoConfig: Boolean;
+    /// <summary>Settings given on the command line</summary>
+    Explicit: TCLISettings;
+    /// <summary>Exit 3 when units are missing from the SBOM</summary>
+    FailOnUnclassified: Boolean;
+    /// <summary>--validate-manifest: check components.json and stop</summary>
+    ValidateManifestOnly: Boolean;
+    /// <summary>--check-online: compare components.json with the libraries' GitHub repositories</summary>
+    CheckOnline: Boolean;
+    /// <summary>--version-from-git-tag: the product version from the newest git tag</summary>
+    VersionFromGitTag: Boolean;
+    /// <summary>Show warnings and errors only</summary>
+    Quiet: Boolean;
+    /// <summary>--help: print the usage text and stop</summary>
     ShowHelp: Boolean;
+    /// <summary>--version: print the DelphiSBOM version and stop</summary>
     ShowVersion: Boolean;
   end;
 
@@ -103,11 +115,18 @@ function UsageText: string;
 /// <returns>ExitOK, ExitUsageError, ExitFileError or ExitValidationError.</returns>
 function RunCommandLine( const AArgs: TArray<string>; const AOut, AErr: TProc<string> ): Integer;
 
+var
+  /// <summary>
+  ///   Where --version-from-git-tag gets the newest tag of a folder: uGit.LatestGitTag when nil. Test seam:
+  ///   tests assign it so no real git is run. Leave nil in production.
+  /// </summary>
+  GitTagSource: TFunc<string, string>;
+
 implementation
 
 uses
   System.Classes, System.IOUtils, System.JSON, Winapi.ActiveX,
-  uSBOMEngine, uTextFiles, uManifestLoader, uOnlineCheck;
+  uSBOMEngine, uTextFiles, uManifestLoader, uOnlineCheck, uGit;
 
 /// <summary>Parses a report setting: md, html, both or none.</summary>
 function TryParseReports( const AValue: string; out AFormats: TReportFormats ): Boolean;
@@ -181,7 +200,7 @@ begin
 
     // Flags take no value
     if ( Name = 'version' ) or ( Name = 'quiet' ) or ( Name = 'no-config' ) or ( Name = 'fail-on-unclassified' ) or
-      ( Name = 'validate-manifest' ) or ( Name = 'check-online' ) then
+      ( Name = 'validate-manifest' ) or ( Name = 'check-online' ) or ( Name = 'version-from-git-tag' ) then
     begin
       if HasValue then
       begin
@@ -201,6 +220,11 @@ begin
       begin
         AOptions.CheckOnline := True;
         Include( AOptions.Explicit, csCheckOnline );
+      end
+      else if Name = 'version-from-git-tag' then
+      begin
+        AOptions.VersionFromGitTag := True;
+        Include( AOptions.Explicit, csVersionFromGitTag );
       end
       else
       begin
@@ -355,6 +379,14 @@ begin
         if ( not ( csCheckOnline in AOptions.Explicit ) ) then
           AOptions.CheckOnline := TJSONBool( Pair.JsonValue ).AsBoolean;
       end
+      else if Key = 'versionFromGitTag' then
+      begin
+        if ( not ( Pair.JsonValue is TJSONBool ) ) then
+          raise ECommandLineConfig.CreateFmt( '%s: "versionFromGitTag" must be true or false', [ AConfigFile ] );
+
+        if ( not ( csVersionFromGitTag in AOptions.Explicit ) ) then
+          AOptions.VersionFromGitTag := TJSONBool( Pair.JsonValue ).AsBoolean;
+      end
       else if Assigned( AWarn ) then
         AWarn( Format( '%s: unknown key "%s" ignored', [ ExtractFileName( AConfigFile ), Key ] ) );
     end;
@@ -379,6 +411,8 @@ begin
     '  --dxcomply=<file>         DX.Comply bom.json whose unit hashes are merged into the SBOM',
     '  --delphi=<dir>            Delphi installation to use (default: the project''s version)',
     '  --product-version=<ver>   Version for the application (default: from the .dproj)',
+    '  --version-from-git-tag    Version from the newest git tag reachable in the project folder',
+    '                            (v1.2.3 gives 1.2.3); --product-version wins when both are given',
     '  --report=md|html|both|none  Write <Project>.sbom-report.md / .html beside the SBOM',
     '  --fail-on-unclassified    Exit 3 when any unit is missing from the SBOM',
     '  --validate-manifest       Check components.json only, then stop',
@@ -393,7 +427,7 @@ begin
     'Project config (' + ConfigFileName + '), every key optional; command-line options win:',
     '  { "manifest": "components.json", "output": "sbom", "map": "Win64\\Release\\App.map",',
     '    "dxcomply": "bom.json", "delphi": "C:\\...\\Studio\\37.0", "productVersion": "1.2.3",',
-    '    "report": "both", "failOnUnclassified": true, "checkOnline": false }',
+    '    "report": "both", "failOnUnclassified": true, "checkOnline": false, "versionFromGitTag": true }',
     '  Relative paths are resolved from the config file''s folder.',
     '',
     'Exit codes:',
@@ -521,6 +555,34 @@ begin
       else if ( ALevel = llWarning ) or ( not Quiet ) then
         AOut( FormatLogMessage( ALevel, AMessage ) );
     end;
+
+  // The newest git tag beats a productVersion from the config file, but never --product-version
+  if CLI.VersionFromGitTag and ( not CLI.ValidateManifestOnly ) then
+  begin
+    if csProductVersion in CLI.Explicit then
+      LogProc( llInfo, '--product-version is given, so the git tag is not used' )
+    else
+    begin
+      var ProjectDir := ExtractFileDir( CLI.Options.ProjectFile );
+      var Tag: string;
+
+      if Assigned( GitTagSource ) then
+        Tag         := GitTagSource( ProjectDir )
+      else
+        Tag         := LatestGitTag( ProjectDir );
+
+      var TagVersion := TagToVersion( Tag );
+
+      if TagVersion = '' then
+        LogProc( llWarning, Format( 'No git tag with a version is reachable in %s (git missing, not a work tree, or no tag) — ' +
+            'the version comes from the config file or the .dproj', [ ProjectDir ] ) )
+      else
+      begin
+        CLI.Options.VersionOverride := TagVersion;
+        LogProc( llInfo, Format( 'Product version %s from git tag %s', [ TagVersion, Tag ] ) );
+      end;
+    end;
+  end;
 
   // MSXML reads the .dproj; S_FALSE (already initialised on this thread) still needs the matching call
   var ComInitialised := Succeeded( CoInitializeEx( nil, COINIT_APARTMENTTHREADED ) );
