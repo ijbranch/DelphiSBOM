@@ -38,6 +38,7 @@ uses
   TestReportWriter in 'TestReportWriter.pas',
   uCommandLine in '..\Source\uCommandLine.pas',
   TestCommandLine in 'TestCommandLine.pas',
+  uGit in '..\Source\uGit.pas',
   uOnlineCheck in '..\Source\uOnlineCheck.pas',
   TestOnlineCheck in 'TestOnlineCheck.pas';
 

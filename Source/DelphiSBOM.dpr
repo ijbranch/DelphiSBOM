@@ -19,6 +19,7 @@ uses
   uMapFile in 'uMapFile.pas',
   uSBOMValidator in 'uSBOMValidator.pas',
   uReportWriter in 'uReportWriter.pas',
+  uGit in 'uGit.pas',
   uOnlineCheck in 'uOnlineCheck.pas',
   uOnlineCheckForm in 'uOnlineCheckForm.pas';
 

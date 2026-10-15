@@ -29,6 +29,7 @@ uses
   uReportWriter in '..\Source\uReportWriter.pas',
   uSBOMEngine in '..\Source\uSBOMEngine.pas',
   uCommandLine in '..\Source\uCommandLine.pas',
+  uGit in '..\Source\uGit.pas',
   uOnlineCheck in '..\Source\uOnlineCheck.pas';
 
 begin
