@@ -28,6 +28,12 @@ type
     FLog: TLogProc;
 
     function ParseSourceUnits( const ASourceFile: string; out AOwnCodeUnits: TArray<string> ): TArray<string>;
+    /// <summary>
+    ///   The text of the first AKeyword clause of AContent, comments stripped, up to its semicolon.
+    /// </summary>
+    /// <param name="AContent">The source text.</param>
+    /// <param name="AKeyword">The lower-case keyword: 'uses' or 'contains'.</param>
+    /// <returns>The clause without the keyword and the semicolon, or '' when there is none.</returns>
     function ExtractClauseBlock( const AContent: string; const AKeyword: string ): string;
     function SplitUnitNames( const AClauseBlock: string; out AOwnCodeUnits: TArray<string> ): TArray<string>;
     procedure ParseDprojMetadata( const ADprojFile: string; var AInfo: TProjectInfo; out AMainSource: string );
@@ -59,6 +65,16 @@ type
 /// <param name="AProjVer">The ProjectVersion element value, e.g. '20.4'.</param>
 /// <returns>The BDS version, e.g. '37.0', or ''.</returns>
 function MapProjectVersionToBDSVersion( const AProjVer: string ): string;
+
+/// <summary>
+///   The unit names in every uses clause of a unit's source, interface and implementation alike, each
+///   once, in the order they first appear. Comments and compiler directives are stripped first, so units
+///   from every {$IF...} branch are included. An 'in' file reference is ignored, and an entry that is not
+///   a unit name is skipped.
+/// </summary>
+/// <param name="ASource">The text of a .pas file.</param>
+/// <returns>The units it uses.</returns>
+function ExtractUsedUnits( const ASource: string ): TArray<string>;
 
 implementation
 
@@ -194,6 +210,115 @@ begin
     Result          := Parts.ToArray;
   finally
     Parts.Free;
+  end;
+
+end;
+
+/// <summary>
+///   The text between the next whole-word AKeyword at or after ASearchPos and the semicolon that ends it
+///   (a semicolon inside a string literal does not). ASearchPos moves past that semicolon, or to 0 when
+///   there is no further clause; the result is '' then.
+/// </summary>
+/// <param name="ACleaned">Source text with comments stripped.</param>
+/// <param name="ALower">ACleaned in lower case.</param>
+/// <param name="AKeyword">The lower-case keyword, e.g. 'uses'.</param>
+/// <param name="ASearchPos">Where to start; updated as described.</param>
+/// <returns>The clause text, without the keyword and the semicolon.</returns>
+function NextClauseBlock( const ACleaned, ALower, AKeyword: string; var ASearchPos: Integer ): string;
+begin
+
+  Result            := '';
+  var KeyLen        := AKeyword.Length;
+
+  while ASearchPos > 0 do
+  begin
+    var Pos1        := PosEx( AKeyword, ALower, ASearchPos );
+
+    if Pos1 = 0 then Break;
+
+    // Check word boundary: character before and after must not be alphanumeric/underscore
+    var BeforeOk    := ( Pos1 = 1 ) or not CharInSet( ALower[ Pos1 - 1 ], [ 'a'..'z', '0'..'9', '_' ] );
+    var AfterPos    := Pos1 + KeyLen;
+    var AfterOk     := ( AfterPos > Length( ALower ) ) or not CharInSet( ALower[ AfterPos ], [ 'a'..'z', '0'..'9', '_' ] );
+
+    if BeforeOk and AfterOk then
+    begin
+      // Find the terminating semicolon, skipping semicolons inside string literals
+      var I         := AfterPos;
+      var InString  := False;
+
+      while I <= Length( ACleaned ) do
+      begin
+        if ACleaned[ I ] = '''' then
+          InString  := not InString
+        else if ( ACleaned[ I ] = ';' ) and ( not InString ) then
+        begin
+          ASearchPos := I + 1;
+          Exit( Copy( ACleaned, AfterPos, I - AfterPos ) );
+        end;
+
+        Inc( I );
+      end;
+
+      Break;
+    end;
+
+    ASearchPos      := Pos1 + KeyLen;
+  end;
+
+  ASearchPos        := 0;
+
+end;
+
+/// <summary>
+///   AText with the inside of every string literal blanked, so the word 'uses' or a semicolon in a string
+///   is never read as code. Positions are unchanged.
+/// </summary>
+function BlankStringLiterals( const AText: string ): string;
+begin
+
+  Result            := AText;
+  var InString      := False;
+
+  for var I := 1 to Length( Result ) do
+    if Result[ I ] = '''' then
+      InString      := not InString
+    else if InString then
+      Result[ I ]   := ' ';
+
+end;
+
+function ExtractUsedUnits( const ASource: string ): TArray<string>;
+begin
+
+  // Unit names are never in strings: only an 'in' file name is, and it is ignored
+  var Cleaned       := BlankStringLiterals( StripComments( ASource ) );
+  var LowerContent  := LowerCase( Cleaned );
+  var EntryRegex    := TRegEx.Create( '^\s*([A-Za-z0-9_.]+)' );
+  var Seen          := TDictionary<string, Boolean>.Create( TIStringComparer.Ordinal );
+  var Units         := TList<string>.Create;
+  try
+    var SearchPos   := 1;
+
+    while SearchPos > 0 do
+    begin
+      var Block     := NextClauseBlock( Cleaned, LowerContent, 'uses', SearchPos );
+
+      if SearchPos = 0 then Break;
+
+      for var Part in SplitOutsideQuotes( Block ) do
+      begin
+        var Match   := EntryRegex.Match( Part );
+
+        if Match.Success and IsValidUnitName( Match.Groups[ 1 ].Value ) and Seen.TryAdd( Match.Groups[ 1 ].Value, True ) then
+          Units.Add( Match.Groups[ 1 ].Value );
+      end;
+    end;
+
+    Result          := Units.ToArray;
+  finally
+    Units.Free;
+    Seen.Free;
   end;
 
 end;
@@ -570,50 +695,10 @@ end;
 function TProjectParser.ExtractClauseBlock( const AContent: string; const AKeyword: string ): string;
 begin
 
-  Result            := '';
-
   // Strip comments first so the keyword in comments is not matched
   var Cleaned       := StripComments( AContent );
-  var LowerContent  := LowerCase( Cleaned );
-  var KeyLen        := AKeyword.Length;
   var SearchPos     := 1;
-
-  // Find the keyword as a whole word (not part of an identifier)
-  while SearchPos > 0 do
-  begin
-    var Pos1        := PosEx( AKeyword, LowerContent, SearchPos );
-
-    if Pos1 = 0 then Exit;
-
-    // Check word boundary: character before and after must not be alphanumeric/underscore
-    var BeforeOk    := ( Pos1 = 1 ) or not CharInSet( LowerContent[ Pos1 - 1 ], [ 'a'..'z', '0'..'9', '_' ] );
-    var AfterPos    := Pos1 + KeyLen;
-    var AfterOk     := ( AfterPos > Length( LowerContent ) ) or not CharInSet( LowerContent[ AfterPos ], [ 'a'..'z', '0'..'9', '_' ] );
-
-    if BeforeOk and AfterOk then
-    begin
-      // Find the terminating semicolon, skipping semicolons inside string literals
-      var I         := AfterPos;
-      var InString  := False;
-
-      while I <= Length( Cleaned ) do
-      begin
-        if Cleaned[ I ] = '''' then
-          InString  := not InString
-        else if ( Cleaned[ I ] = ';' ) and ( not InString ) then
-        begin
-          Result    := Copy( Cleaned, AfterPos, I - AfterPos );
-          Exit;
-        end;
-
-        Inc( I );
-      end;
-
-      Exit;
-    end;
-
-    SearchPos       := Pos1 + KeyLen;
-  end;
+  Result            := NextClauseBlock( Cleaned, LowerCase( Cleaned ), AKeyword, SearchPos );
 
 end;
 
