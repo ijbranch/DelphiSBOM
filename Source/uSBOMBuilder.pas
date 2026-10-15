@@ -34,12 +34,15 @@ type
     /// <param name="AManifest">The loaded components.json.</param>
     /// <param name="AVersionOverride">If non-empty, replaces the version from the .dproj.</param>
     /// <param name="AEvidence">Optional per-unit hashes from DX.Comply.</param>
+    /// <param name="ALibraryDependencies">What each library uses, read from its source; an edge to a component
+    ///   that is not in the SBOM is left out.</param>
     /// <returns>The pretty-printed CycloneDX 1.5 JSON document.</returns>
     function Build( const AProjectInfo: TProjectInfo;
       const AClassifiedUnits: TArray<TClassifiedUnit>;
       const AManifest: TManifest;
       const AVersionOverride: string;
-      const AEvidence: TArray<TUnitEvidence> ): string;
+      const AEvidence: TArray<TUnitEvidence>;
+      const ALibraryDependencies: TArray<TLibraryDependency> = nil ): string;
 
     /// <summary>
     ///   Builds the SBOM and writes it as UTF-8 without a BOM to &lt;ProjectName&gt;.cdx.json.
@@ -50,6 +53,7 @@ type
     /// <param name="AVersionOverride">If non-empty, replaces the version from the .dproj.</param>
     /// <param name="AOutputDir">Output directory; empty means the project directory.</param>
     /// <param name="AEvidence">Optional per-unit hashes from DX.Comply.</param>
+    /// <param name="ALibraryDependencies">What each library uses, read from its source.</param>
     /// <returns>The path of the written file.</returns>
     /// <exception cref="Exception">The output directory does not exist or the file cannot be written.</exception>
     function BuildAndSave( const AProjectInfo: TProjectInfo;
@@ -57,7 +61,8 @@ type
       const AManifest: TManifest;
       const AVersionOverride: string;
       const AOutputDir: string;
-      const AEvidence: TArray<TUnitEvidence> ): string;
+      const AEvidence: TArray<TUnitEvidence>;
+      const ALibraryDependencies: TArray<TLibraryDependency> = nil ): string;
   end;
 
 /// <summary>
@@ -129,7 +134,8 @@ function TSBOMBuilder.Build( const AProjectInfo: TProjectInfo;
   const AClassifiedUnits: TArray<TClassifiedUnit>;
   const AManifest: TManifest;
   const AVersionOverride: string;
-  const AEvidence: TArray<TUnitEvidence> ): string;
+  const AEvidence: TArray<TUnitEvidence>;
+  const ALibraryDependencies: TArray<TLibraryDependency> ): string;
 
 // Adds a "components" array of evidence sub-components (one per matched unit) to AOwner
   procedure AddEvidenceSubComponents( AOwner: TJSONObject; AClassification: TUnitClassification; AComponentIndex: Integer );
@@ -195,6 +201,7 @@ begin
   // bom-refs must be unique in the document: a repeated one gets a #2, #3 ... suffix
   var UsedRefs      := TDictionary<string, Boolean>.Create;
   var LibraryRefs   := TList<string>.Create;
+  var LibraryIndexes := TList<Integer>.Create; // The manifest index of each entry of LibraryRefs
 
   var UniqueRef     :=
     function( const ABase: string ): string
@@ -342,6 +349,7 @@ begin
           CompRef   := UniqueRef( 'component:' + IntToStr( CU.ComponentIndex ) );
 
         LibraryRefs.Add( CompRef );
+        LibraryIndexes.Add( CU.ComponentIndex );
 
         var CompObj := TJSONObject.Create;
         Components.AddElement( CompObj );
@@ -437,9 +445,9 @@ begin
       AddedComponents.Free;
     end;
 
-    // Dependency graph, two levels: the application uses the RTL and every library; the RTL uses
-    // nothing third-party. A library's own dependencies are unknown, so it has no entry — an entry
-    // with an empty dependsOn would claim it has none
+    // Dependency graph: the application uses the RTL and every library; the RTL uses nothing third-party.
+    // A library has an entry only when its source showed it using another library or the RTL. One whose
+    // source was not read has none: an entry with an empty dependsOn would claim it uses nothing
     var Dependencies := TJSONArray.Create;
     Root.AddPair( 'dependencies', Dependencies );
 
@@ -459,7 +467,57 @@ begin
     RTLDeps.AddPair( 'ref', RTLRef );
     RTLDeps.AddPair( 'dependsOn', TJSONArray.Create );
 
-    // The graph is incomplete: libraries' own dependencies are not resolved, and unclassified units
+    // Library-to-library edges, only between components in this document
+    for var L := 0 to LibraryIndexes.Count - 1 do
+      for var Dependency in ALibraryDependencies do
+      begin
+        if Dependency.ComponentIndex <> LibraryIndexes[ L ] then Continue;
+
+        var LibDependsOn: TJSONArray := nil;
+
+        for var Target in Dependency.DependsOn do
+        begin
+          var TargetRef := '';
+
+          if Target = RTLComponentIndex then
+            TargetRef := RTLRef
+          else if Target <> LibraryIndexes[ L ] then
+          begin
+            var TargetPos := LibraryIndexes.IndexOf( Target );
+
+            if TargetPos >= 0 then
+              TargetRef := LibraryRefs[ TargetPos ];
+          end;
+
+          if TargetRef = '' then Continue;
+
+          // dependsOn items must be unique (CycloneDX 1.5 schema)
+          var Listed := False;
+
+          if Assigned( LibDependsOn ) then
+            for var Item in LibDependsOn do
+              if Item.Value = TargetRef then
+                Listed := True;
+
+          if Listed then Continue;
+
+          if ( not Assigned( LibDependsOn ) ) then
+          begin
+            var LibDeps := TJSONObject.Create;
+            Dependencies.AddElement( LibDeps );
+            LibDeps.AddPair( 'ref', LibraryRefs[ L ] );
+
+            LibDependsOn := TJSONArray.Create;
+            LibDeps.AddPair( 'dependsOn', LibDependsOn );
+          end;
+
+          LibDependsOn.Add( TargetRef );
+        end;
+
+        Break;
+      end;
+
+    // The graph is incomplete: a library whose source was not read has no edges, and unclassified units
     // are left out. Same shape as DX.Comply writes, so the two tools' output line up
     var Compositions := TJSONArray.Create;
     Root.AddPair( 'compositions', Compositions );
@@ -475,6 +533,7 @@ begin
     Result          := Root.Format;
   finally
     Root.Free;
+    LibraryIndexes.Free;
     LibraryRefs.Free;
     UsedRefs.Free;
   end;
@@ -486,10 +545,11 @@ function TSBOMBuilder.BuildAndSave( const AProjectInfo: TProjectInfo;
   const AManifest: TManifest;
   const AVersionOverride: string;
   const AOutputDir: string;
-  const AEvidence: TArray<TUnitEvidence> ): string;
+  const AEvidence: TArray<TUnitEvidence>;
+  const ALibraryDependencies: TArray<TLibraryDependency> ): string;
 begin
 
-  var Json          := Build( AProjectInfo, AClassifiedUnits, AManifest, AVersionOverride, AEvidence );
+  var Json          := Build( AProjectInfo, AClassifiedUnits, AManifest, AVersionOverride, AEvidence, ALibraryDependencies );
 
   var EffectiveDir  := AOutputDir;
 
