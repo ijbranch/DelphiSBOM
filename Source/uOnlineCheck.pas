@@ -163,8 +163,9 @@ var
 implementation
 
 uses
-  Winapi.Windows, System.Classes, System.JSON, System.RegularExpressions, System.Net.HttpClient, System.Net.URLClient,
-  System.NetConsts;
+  System.Classes, System.JSON, System.RegularExpressions, System.Net.HttpClient, System.Net.URLClient,
+  System.NetConsts,
+  uGit;
 
 function ParseGitHubRepo( const AUrl: string; out AOwner, ARepo: string ): Boolean;
 begin
@@ -242,131 +243,15 @@ begin
 
 end;
 
-/// <summary>
-///   This process's environment as a Unicode environment block, with AOverrides (NAME=value) replacing
-///   any variable of the same name.
-/// </summary>
-function EnvironmentWith( const AOverrides: array of string ): string;
-begin
-
-  var Names         := TStringList.Create;
-  try
-    for var O in AOverrides do
-      Names.Add( UpperCase( Copy( O, 1, Pos( '=', O ) ) ) );
-
-    var Builder     := TStringBuilder.Create;
-    try
-      var Block     := GetEnvironmentStrings;
-      try
-        var P       := Block;
-
-        while P^ <> #0 do
-        begin
-          var Entry := string( P );
-
-          if Names.IndexOf( UpperCase( Copy( Entry, 1, Pos( '=', Entry ) ) ) ) < 0 then
-            Builder.Append( Entry ).Append( #0 );
-
-          Inc( P, Length( Entry ) + 1 );
-        end;
-      finally
-        FreeEnvironmentStrings( Block );
-      end;
-
-      for var O in AOverrides do
-        Builder.Append( O ).Append( #0 );
-
-      Builder.Append( #0 );
-      Result        := Builder.ToString;
-    finally
-      Builder.Free;
-    end;
-  finally
-    Names.Free;
-  end;
-
-end;
-
 function GitCredentialToken: string;
 begin
 
-  Result            := '';
+  var Output: string;
 
-  var Security: TSecurityAttributes;
-  Security.nLength  := SizeOf( Security );
-  Security.lpSecurityDescriptor := nil;
-  Security.bInheritHandle := True;
-
-  var InRead, InWrite, OutRead, OutWrite: THandle;
-
-  if ( not CreatePipe( InRead, InWrite, @Security, 0 ) ) then Exit;
-  try
-    if ( not CreatePipe( OutRead, OutWrite, @Security, 0 ) ) then Exit;
-    try
-      // Only the child's ends are inherited
-      SetHandleInformation( InWrite, HANDLE_FLAG_INHERIT, 0 );
-      SetHandleInformation( OutRead, HANDLE_FLAG_INHERIT, 0 );
-
-      var Startup   := Default( TStartupInfo );
-      Startup.cb    := SizeOf( Startup );
-      Startup.dwFlags := STARTF_USESTDHANDLES or STARTF_USESHOWWINDOW;
-      Startup.wShowWindow := SW_HIDE;
-      Startup.hStdInput := InRead;
-      Startup.hStdOutput := OutWrite;
-      Startup.hStdError := OutWrite;
-
-      // Never a sign-in window or a terminal prompt: a missing credential must give '', not a dialog
-      var Environment := EnvironmentWith( [ 'GCM_INTERACTIVE=never', 'GIT_TERMINAL_PROMPT=0' ] );
-      var Command   := 'git credential fill';
-      UniqueString( Command );
-
-      var Process: TProcessInformation;
-
-      if ( not CreateProcess( nil, PChar( Command ), nil, nil, True, CREATE_NO_WINDOW or CREATE_UNICODE_ENVIRONMENT,
-        PChar( Environment ), nil, Startup, Process ) ) then Exit;
-      try
-        CloseHandle( InRead );
-        InRead      := 0;
-        CloseHandle( OutWrite );
-        OutWrite    := 0;
-
-        var Request := UTF8Encode( 'protocol=https' + #10 + 'host=github.com' + #10 + #10 );
-        var Written: DWORD;
-        WriteFile( InWrite, Request[ 1 ], Length( Request ), Written, nil );
-        CloseHandle( InWrite );
-        InWrite     := 0;
-
-        // The answer is far smaller than the pipe buffer, so the child never blocks writing it
-        if WaitForSingleObject( Process.hProcess, 10000 ) <> WAIT_OBJECT_0 then
-        begin
-          TerminateProcess( Process.hProcess, 1 );
-          Exit;
-        end;
-
-        var Bytes: TBytes := nil;
-        var Buffer: array[ 0..4095 ] of Byte;
-        var Read: DWORD;
-
-        while ReadFile( OutRead, Buffer, SizeOf( Buffer ), Read, nil ) and ( Read > 0 ) do
-        begin
-          var Used  := Length( Bytes );
-          SetLength( Bytes, Used + Integer( Read ) );
-          Move( Buffer[ 0 ], Bytes[ Used ], Read );
-        end;
-
-        Result      := ParseCredentialOutput( TEncoding.UTF8.GetString( Bytes ) );
-      finally
-        CloseHandle( Process.hThread );
-        CloseHandle( Process.hProcess );
-      end;
-    finally
-      if OutRead <> 0 then CloseHandle( OutRead );
-      if OutWrite <> 0 then CloseHandle( OutWrite );
-    end;
-  finally
-    if InRead <> 0 then CloseHandle( InRead );
-    if InWrite <> 0 then CloseHandle( InWrite );
-  end;
+  if RunGit( 'credential fill', '', 'protocol=https' + #10 + 'host=github.com' + #10 + #10, Output ) then
+    Result          := ParseCredentialOutput( Output )
+  else
+    Result          := '';
 
 end;
 
