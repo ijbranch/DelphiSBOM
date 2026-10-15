@@ -449,12 +449,20 @@ begin
         Continue;
       end;
 
-      for var J := 0 to TJSONArray( DependsOn ).Count - 1 do
-      begin
-        var Target  := TJSONArray( DependsOn ).Items[ J ].Value;
+      // The schema requires unique items
+      var Targets   := TDictionary<string, Boolean>.Create;
+      try
+        for var J := 0 to TJSONArray( DependsOn ).Count - 1 do
+        begin
+          var Target := TJSONArray( DependsOn ).Items[ J ].Value;
 
-        if ( not FRefs.ContainsKey( Target ) ) then
-          Error( Format( '%s.dependsOn[%d]', [ ItemPath, J ] ), Format( '"%s" is not the bom-ref of any component', [ Target ] ) );
+          if ( not FRefs.ContainsKey( Target ) ) then
+            Error( Format( '%s.dependsOn[%d]', [ ItemPath, J ] ), Format( '"%s" is not the bom-ref of any component', [ Target ] ) )
+          else if ( not Targets.TryAdd( Target, True ) ) then
+            Error( Format( '%s.dependsOn[%d]', [ ItemPath, J ] ), Format( '"%s" is listed more than once', [ Target ] ) );
+        end;
+      finally
+        Targets.Free;
       end;
     end;
   finally
