@@ -47,6 +47,8 @@ and describe the partial state in the Next Action line.
   `--check-online`). Generation must never make a request. Tests reach it only through the seams:
   `TOnlineChecker.Create( Log, FakeGet )`, the `OnlineHttpOverride` variable (CLI tests), and the
   `DELPHISBOM_GITHUB_API` environment variable (`GuiChecks.ps1` serves a fake API on loopback)
+- `--version-from-git-tag` runs local git only (`uGit.LatestGitTag`, no network). Tests replace it through
+  `uCommandLine.GitTagSource`, except `TGitTests`, which builds a scratch repository with plumbing commands
 - The token is `GITHUB_TOKEN`, else the github.com credential from Git Credential Manager
   (`GitCredentialToken`, non-interactive), else none — and the stored credential is resolved ONLY when
   the API base is `https://api.github.com` (`ResolveGitHubToken`; test
@@ -66,13 +68,15 @@ and describe the partial state in the Next Action line.
                →  uRTLScanner                 RTL unit names
                →  uManifestLoader             components.json
                →  uUnitClassifier             RTL / third-party / own code
-               →  uLibraryDiscovery           .pas, then .dcu on the search and library path
+               →  uLibraryDiscovery           .pas, then .dcu on the search and library path;
+                                              library sources whose uses clauses give library edges
                →  uEvidenceMerger             DX.Comply hashes
                →  uSBOMBuilder                components, bom-refs, dependency graph
                →  uSBOMValidator              post-write check
                →  uReportWriter               HTML / Markdown reports
   opt-in, outside the pipeline:  uOnlineCheck (GitHub comparison) → uOnlineCheckForm (tick and apply)
-  shared: uTypes (records, SPDX/hash helpers), uTextFiles (encoding-safe read, atomic UTF-8 write)
+  shared: uTypes (records, SPDX/hash helpers), uTextFiles (encoding-safe read, atomic UTF-8 write),
+          uGit (git without a window: the stored GitHub credential, --version-from-git-tag)
 ```
 
 - **`uSBOMEngine`** is the UI-independent pipeline orchestrator. It has zero

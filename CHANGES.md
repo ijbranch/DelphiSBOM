@@ -2,6 +2,45 @@
 
 All project changes are documented here in reverse chronological order.
 
+## 2026-10-15 — Library Uses Edges, --version-from-git-tag, DX.Comply v2 Names [Added, Fixed]
+
+From a check of DX.Comply upstream (v2.0.0/v2.0.1, PRs #61, #65, #71).
+
+- **Added: library-to-library edges in the dependency graph.** For each manifest library's units in the
+  project, the `.pas` file is looked up on the compiler's paths (project folder, search path, IDE library
+  path; no drive scan), or for a unit compiled from a DCU folder, under that folder's library root, as library
+  discovery already does; its `uses` clauses are read; a unit used there that belongs to another library in
+  the SBOM, or to the RTL, becomes an edge in that library's own `dependencies` entry. A library whose source
+  was not read, or that uses nothing else, still has no entry, so nothing is claimed that was not seen; the
+  graph stays declared `incomplete`. The log says how many sources were read. **Why:** a library's own
+  dependencies were the graph's main gap (on the Future list); DX.Comply #61 records the same edges by the
+  same rule — `Source/uSBOMEngine.pas` (`ResolveLibraryDependencies`), `Source/uProjectParser.pas`
+  (`ExtractUsedUnits`), `Source/uLibraryDiscovery.pas` (`FindCompilerSources`), `Source/uSBOMBuilder.pas`,
+  `Source/uTypes.pas` (`TLibraryDependency`, `RTLComponentIndex`)
+- **Added: `--version-from-git-tag`** (and `"versionFromGitTag": true` in `.delphisbom.json`): the application
+  version from the newest git tag reachable in the project folder (`git describe --tags --abbrev=0`; `v2.1.0`
+  gives `2.1.0`). `--product-version` wins; the tag wins over a config `productVersion`; no tag gives a warning
+  and the usual version. Same precedence as DX.Comply #71 — `Source/uCommandLine.pas`, `Source/uGit.pas`
+- **Fixed: DX.Comply library-mode names never matched a unit.** DX.Comply v2's library mode names a file
+  component by its path in the release (`src\Otl\OtlTask.pas`); the merger now drops the folder before
+  matching — `Source/uEvidenceMerger.pas`
+- The post-write check reports a `dependsOn` value listed twice (the schema requires unique items), and the
+  builder never writes one — `Source/uSBOMValidator.pas`, `Source/uSBOMBuilder.pas`
+- Refactored: the process code that ran `git credential fill` is now `uGit.RunGit`, shared with the git tag
+  lookup; the search-path collection in library discovery is shared and cached per run, so its warnings are
+  not repeated — `Source/uGit.pas`, `Source/uOnlineCheck.pas`, `Source/uLibraryDiscovery.pas`; `uGit` added to
+  `Source/DelphiSBOM.dpr`/`.dproj`, `CLI/DelphiSBOMCLI.dpr`/`.dproj`, `Tests/DelphiSBOMTests.dpr`/`.dproj`
+- Real-data run (CLI, uses-clause mode, a copy of the manifest) over a large internal project: the source
+  of 16 of 16 third-party units was read (12 of 16 without the DCU-folder lookup) and four libraries got
+  edges, among them FastMM5 → RTL and EurekaLog 7 → RTL + FastMM5, each checked against the source; the
+  post-write check passed
+- Tests: 7 new (204 in all); 12 reintroduced defects, all caught — `Tests/TestEvidenceMerger.pas`,
+  `Tests/TestCommandLine.pas` (incl. `TGitTests`, which runs the real git), `Tests/TestProjectParser.pas`,
+  `Tests/TestSBOMBuilder.pas`, `Tests/TestSBOMValidator.pas`, `Tests/TestSBOMEngine.pas`
+- Docs: `Docs/CYCLONEDX-NOTES.md`, `Docs/UsersGuide.md`, `Docs/Help.md`, `Docs/CI-INTEGRATION.md` (the GitHub and
+  GitLab examples fetch tags and pass `--version-from-git-tag`), `README.md`, `Samples/delphisbom.sample.json`,
+  `THIRD-PARTY-NOTICES.md`, `CLAUDE.md`
+
 ## 2026-10-08 — Every Evidence Hash, Graph Completeness, Vendor Email [Added, Fixed]
 
 - **Fixed: only one hash per unit survived a DX.Comply merge.** The merger kept SHA-256 (else the first

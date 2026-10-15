@@ -418,17 +418,18 @@ The generated `.cdx.json` contains:
   RTL and third-party entries, each with the hashes DX.Comply lists (SHA-256,
   and SHA-512 where DX.Comply writes one)
 - **Dependencies**: every component has a `bom-ref`, and the `dependencies`
-  section records that your application uses the RTL and each library. A
-  `compositions` entry states that this graph is incomplete: which library
-  uses which is not recorded
+  section records that your application uses the RTL and each library, and,
+  where a library's source is on your search or library path (or beside the
+  DCU folder you compile it from), which other libraries and the RTL it uses. A `compositions` entry states that this graph
+  is incomplete: a library without source has no edges
 
 ### What is NOT in the SBOM
 
 - **Your own code** — own-code units are the application itself, not dependencies
 - **Individual RTL units** — the entire RTL is listed as one component
-- **Library-to-library dependencies** — the graph says your application uses
-  each library, not which libraries use which; a library's own dependencies are
-  left unstated rather than claimed to be none
+- **Dependencies of libraries without source** — a library shipped as DCUs
+  only, or whose source DelphiSBOM cannot find, has no dependency entry: its dependencies are left unstated rather than claimed to be
+  none
 
 ## The `components.json` Manifest
 
@@ -505,6 +506,9 @@ file and pass `--map` and `--fail-on-unclassified`, so a library added without a
 ```
 DelphiSBOMCLI MyApp.dproj --map=Win64\Release\MyApp.map --report=both --fail-on-unclassified
 ```
+
+`--version-from-git-tag` sets the application version from the newest git tag
+in the project folder (`v2.1.0` gives `2.1.0`); `--product-version` still wins.
 
 Complete `components.json` in the app first: the command line does not add
 libraries to it. See [CI-INTEGRATION.md](CI-INTEGRATION.md) for GitHub Actions and

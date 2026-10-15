@@ -160,19 +160,35 @@ application, and `component:<index>` for a manifest row with no name. A
 repeated value (two manifest rows with the same name and version) gets a
 `#2`, `#3`, ... suffix, since CycloneDX requires every `bom-ref` to be unique.
 
-The `dependencies` section has two levels:
+The `dependencies` section:
 
 ```json
 "dependencies": [
   { "ref": "application:MyApp@2.4.0.0",
-    "dependsOn": [ "pkg:delphi/embarcadero-rtl@37.0", "pkg:delphi/OmniThreadLibrary@3.7.8" ] },
-  { "ref": "pkg:delphi/embarcadero-rtl@37.0", "dependsOn": [] }
+    "dependsOn": [ "pkg:delphi/embarcadero-rtl@37.0", "pkg:delphi/OmniThreadLibrary@3.7.8",
+                   "pkg:delphi/Spring4D@2.0" ] },
+  { "ref": "pkg:delphi/embarcadero-rtl@37.0", "dependsOn": [] },
+  { "ref": "pkg:delphi/Spring4D@2.0", "dependsOn": [ "pkg:delphi/embarcadero-rtl@37.0" ] }
 ]
 ```
 
 The application depends on the RTL and on each library; the RTL depends on
-nothing third-party. A library has no entry: CycloneDX 1.5 reads an empty
-`dependsOn` as "has no dependencies", which DelphiSBOM cannot know.
+nothing third-party. A library's own entry comes from its source: for each of
+the library's units in the project, the `.pas` file is looked up on the paths
+the compiler searches (the project folder, the project search path and the IDE
+library path, each with its parent and subfolders — no drive scan); for a unit
+compiled from a DCU folder there, under the library's root (the folder above
+`Lib\Win64\Release` and similar build-output folders). Its `uses` clauses are read. A unit used there that belongs to another library in
+the SBOM, or to the RTL, is an edge. Units of the same library, own code,
+unclassified units and libraries not in the SBOM are not. The log says how many
+sources were read.
+
+A library gets no entry when none of its units' source was found, or when the
+source found uses no other library and not the RTL: CycloneDX 1.5 reads an empty
+`dependsOn` as "has no dependencies", which DelphiSBOM does not claim. A
+library shipped as DCUs only is a leaf. Library-to-library edges follow
+DX.Comply's rule (edges only where source was read, only between components
+already in the SBOM).
 
 Library units stay nested under their library when DX.Comply evidence is
 merged (see below); the graph does not replace that nesting.
@@ -183,8 +199,8 @@ The graph is declared incomplete, in the same shape DX.Comply writes:
 "compositions": [ { "aggregate": "incomplete", "dependencies": [ "application:MyApp@2.4.0.0" ] } ]
 ```
 
-Libraries' own dependencies are not resolved (see Known Limitations), and units
-that could not be classified are not listed, so "complete" would overstate it.
+A library whose source was not read has no edges (see Known Limitations), and
+units that could not be classified are not listed, so "complete" would overstate it.
 
 ### Vendor Contact
 
@@ -204,7 +220,7 @@ spelling, `licenses` items holding exactly one of `license`/`expression`, hash
 algorithms from the 1.5 enum with a digest of the right length, purls starting
 `pkg:<type>/`, external reference types, a supplier's `url` and `contact` being
 arrays, unique `bom-ref`s, dependency `ref`/`dependsOn` values that name a
-component, and composition `aggregate` values (the 1.5 enum) with
+component with no `dependsOn` value listed twice, and composition `aggregate` values (the 1.5 enum) with
 `assemblies`/`dependencies` that name a component. Problems are reported with
 their JSON path; the file is kept. This is not a full schema validation.
 
@@ -227,11 +243,17 @@ read as text: units in every `{$IFDEF}` branch are included, and units listed in
 detailed MAP file given as input replaces this list with the units the linker
 used, which has none of these gaps (it describes one build configuration).
 
-### Library-to-Library Dependencies Are Not Recorded
+### Library-to-Library Dependencies Are Partial
 
-The dependency graph has two levels (see above). Which library uses which
-cannot be read from the project alone, so libraries have no entries of their
-own: their dependencies are unknown, not empty.
+A library's edges come only from the source of its units that the project uses
+and that are found on the compiler's paths or under the library root of their
+DCU folder (see above). A library shipped as DCUs only, or whose source lies
+elsewhere, has no entry: its dependencies are unknown, not empty. Source found
+under a DCU folder's library root is assumed to match the DCUs. The uses clauses are read as text, so units in every `{$IFDEF}`
+branch count; an edge is still recorded only to a library that is in the SBOM.
+In uses-clause mode the project's unit list is the `.dpr` only, so a library
+used only by another library is not in the SBOM and gets no edge — give a MAP
+file to list every linked unit.
 
 ### Scope Prefix Stripping
 

@@ -37,6 +37,15 @@ nothing. It needs outbound access to `api.github.com`; set `GITHUB_TOKEN` (GitHu
 provides one) to lift the 60-requests-an-hour anonymous limit. Without it, the check falls back
 to a github.com credential in Git Credential Manager, which a build agent usually does not have.
 
+`--version-from-git-tag` (or `"versionFromGitTag": true`) takes the application version from
+the newest git tag reachable from the checked-out commit in the project folder
+(`git describe --tags --abbrev=0`); the version is the tag from its first digit, so `v2.1.0`
+gives `2.1.0`. `--product-version` wins when both are given; the tag wins over a
+`productVersion` in the config file. With no tag (git not installed, not a work tree, or no tag
+reachable) the log warns and the version comes from the config file or the `.dproj`. A shallow
+CI checkout may have no tags: fetch them (`fetch-depth: 0` in `actions/checkout`, or
+`git fetch --tags`).
+
 ## A project config instead of long command lines
 
 Put the settings in `.delphisbom.json` beside the project; the job then only names the
@@ -48,7 +57,8 @@ command line overrides the file.
     "map": "Win64\\Release\\MyApp.map",
     "output": "sbom",
     "report": "both",
-    "failOnUnclassified": true
+    "failOnUnclassified": true,
+    "versionFromGitTag": true
 }
 ```
 
@@ -65,6 +75,8 @@ jobs:
     runs-on: [ self-hosted, windows, delphi13 ]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the tags, for --version-from-git-tag
 
       - name: Build with a detailed map file
         shell: cmd
@@ -74,7 +86,7 @@ jobs:
 
       - name: Generate the SBOM
         shell: cmd
-        run: C:\Tools\DelphiSBOM\DelphiSBOMCLI.exe MyApp.dproj --map=Win64\Release\MyApp.map --report=both --fail-on-unclassified
+        run: C:\Tools\DelphiSBOM\DelphiSBOMCLI.exe MyApp.dproj --map=Win64\Release\MyApp.map --report=both --fail-on-unclassified --version-from-git-tag
 
       - uses: actions/upload-artifact@v4
         with:
@@ -90,9 +102,11 @@ jobs:
 sbom:
   stage: build
   tags: [ windows, delphi13 ]
+  variables:
+    GIT_DEPTH: 0  # the tags, for --version-from-git-tag
   script:
     - cmd /c '"C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat" && msbuild MyApp.dproj /t:Build /p:Config=Release /p:Platform=Win64 /p:DCC_MapFile=3'
-    - C:\Tools\DelphiSBOM\DelphiSBOMCLI.exe MyApp.dproj --map=Win64\Release\MyApp.map --report=both --fail-on-unclassified
+    - C:\Tools\DelphiSBOM\DelphiSBOMCLI.exe MyApp.dproj --map=Win64\Release\MyApp.map --report=both --fail-on-unclassified --version-from-git-tag
   artifacts:
     paths:
       - "*.cdx.json"

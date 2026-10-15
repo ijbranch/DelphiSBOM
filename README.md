@@ -50,8 +50,10 @@ that have no awareness of the Delphi ecosystem.
    copyright holder most of its source headers name; licence from LICENSE files)
 5. **Review & Save** — confirm discovered libraries in the app, then save to
    `components.json` with one click
-6. **Generate** a CycloneDX 1.5 JSON SBOM file with a dependency graph, check
-   the written file, and optionally write HTML and Markdown reports beside it
+6. **Generate** a CycloneDX 1.5 JSON SBOM file with a dependency graph — the
+   application's libraries and, where a library's source is found, which other
+   libraries it uses — check the written file, and optionally write HTML and
+   Markdown reports beside it
 
 An opt-in **online check** compares `components.json` with each library's
 GitHub repository — licence, latest release, archived — and lets you apply the
@@ -227,7 +229,8 @@ application's default layout (the app is DPI-unaware).
 ## Acknowledgements
 
 The MAP-file unit list, the command-line config precedence, the dependency
-graph, the post-write check and the reports follow approaches taken by
+graph and its library uses edges, the version from a git tag, the post-write
+check and the reports follow approaches taken by
 [DX.Comply](https://github.com/omonien/DX.Comply) by Olaf Monien (MIT). No
 DX.Comply code is included; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

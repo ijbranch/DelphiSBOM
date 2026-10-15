@@ -40,7 +40,7 @@ recognised third-party components with their versions.
 **SBOM check.** After writing, DelphiSBOM reads the file back and checks the
 parts of the CycloneDX 1.5 schema its output could break: format and version,
 serial number, component types and names, licence ids, hash algorithms and
-lengths, purls, unique `bom-ref`s and dependency references. Problems are
+lengths, purls, unique `bom-ref`s and dependency references (each listed once). Problems are
 logged as `[ERROR] SBOM check: ...` with the JSON path; the file is kept so it
 can be inspected. It is not a full schema validation — use an official
 CycloneDX validator for that.
