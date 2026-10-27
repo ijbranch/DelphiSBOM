@@ -604,7 +604,7 @@ begin
 
       if TagVersion = '' then
         LogProc( llWarning, Format( 'No git tag with a version is reachable in %s (git missing, not a work tree, or no tag) — ' +
-            'the version comes from the config file or the .dproj', [ ProjectDir ] ) )
+            'the version comes from the config file, else the built binary, else the .dproj', [ ProjectDir ] ) )
       else
       begin
         CLI.Options.VersionOverride := TagVersion;
