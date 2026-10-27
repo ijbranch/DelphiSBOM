@@ -137,11 +137,13 @@ type
     procedure UndescribableBinaryIsAWarning;
 
     /// <summary>
-    ///   Proves a binary whose file version differs from the version the SBOM states is warned about as a possibly
-    ///   stale build, with both versions named; Windows' notepad.exe serves as a file with a version resource.
+    ///   Proves the application version is the binary's own file version when none is given, so the SBOM's version
+    ///   and its hash describe the same build; and that a version given explicitly still wins, written as given, with
+    ///   a warning that the binary of another version may be a stale build.  Windows' notepad.exe (version 10 or later)
+    ///   serves as a file with a version resource; the project has no .dproj, so its own version would be 0.0.0.0.
     /// </summary>
     [Test]
-    procedure BinaryOfAnotherVersionIsWarnedAbout;
+    procedure VersionComesFromTheBinary;
 
     /// <summary>
     ///   Proves --validate-manifest exits 3 for an invalid manifest and 0 for a valid one.
@@ -184,7 +186,7 @@ type
 implementation
 
 uses
-  Winapi.Windows, System.SysUtils, System.Classes, System.IOUtils, System.JSON,
+  Winapi.Windows, System.SysUtils, System.Classes, System.IOUtils, System.JSON, System.RegularExpressions,
   uCommandLine, uOnlineCheck, uGit, uTextFiles;
 
 { TCommandLineTests }
@@ -477,7 +479,7 @@ begin
 
 end;
 
-procedure TCommandLineRunTests.BinaryOfAnotherVersionIsWarnedAbout;
+procedure TCommandLineRunTests.VersionComesFromTheBinary;
 begin
 
   var Notepad := TPath.Combine( GetEnvironmentVariable( 'SystemRoot' ), 'System32\notepad.exe' );
@@ -487,8 +489,42 @@ begin
   TDirectory.CreateDirectory( ExtractFilePath( Versioned ) );
   TFile.Copy( Notepad, Versioned, True );
 
+  // The version the written SBOM gives the application
+  var WrittenVersion :=
+    function: string
+    begin
+      var Root := TJSONObject.ParseJSONValue( ReadTextFile( FScratch.PathOf( 'Ok\sbom\Ok.cdx.json' ) ) ) as TJSONObject;
+      try
+        Result := Root.GetValue<string>( 'metadata.component.version' );
+      finally
+        Root.Free;
+      end;
+    end;
+
+  // No version given: the binary's
+  Assert.AreEqual( ExitOK, Run( [ FScratch.PathOf( 'Ok\Ok.dpr' ), '--binary=' + Versioned ] ), FErr );
+  var Version := WrittenVersion();
+  Assert.IsTrue( TRegEx.IsMatch( Version, '^\d+\.\d+\.\d+\.\d+$' ), Version + ' is not a four-part file version' );
+  Assert.IsTrue( StrToInt( Version.Split( [ '.' ] )[ 0 ] ) >= 10, Version + ' is not notepad''s (10 or later)' );
+  Assert.IsFalse( ( FOut + FErr ).Contains( 'stale build' ), 'A version taken from the binary was warned about' );
+  Assert.Contains( FOut + FErr, 'Application version ' + Version + ' taken from the binary (the .dproj gives none)' );
+
+  // A named binary whose version differs from the .dproj's is warned about: it may not be the release's
+  WriteUtf8File( FScratch.PathOf( 'Ver\Ver.dpr' ), 'program Ver;' + sLineBreak + 'begin end.' );
+  WriteUtf8File( FScratch.PathOf( 'Ver\Ver.dproj' ),
+    '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"><PropertyGroup><ProjectVersion>20.3</ProjectVersion>' +
+    '<MainSource>Ver.dpr</MainSource><VerInfo_MajorVer>1</VerInfo_MajorVer><VerInfo_MinorVer>2</VerInfo_MinorVer>' +
+    '<VerInfo_Release>3</VerInfo_Release><VerInfo_Build>4</VerInfo_Build></PropertyGroup>' +
+    '<ProjectExtensions><BorlandProject><Platforms><Platform value="Win64">True</Platform></Platforms></BorlandProject>' +
+    '</ProjectExtensions></Project>' );
+
+  Assert.AreEqual( ExitOK, Run( [ FScratch.PathOf( 'Ver\Ver.dproj' ), '--binary=' + Versioned ] ), FErr );
+  Assert.Contains( FOut + FErr, 'but the .dproj says 1.2.3.4' );
+
+  // A version given explicitly wins, and the binary of another version is warned about
   Assert.AreEqual( ExitOK, Run( [ FScratch.PathOf( 'Ok\Ok.dpr' ), '--binary=' + Versioned, '--product-version=0.0.0.1' ] ), FErr );
-  Assert.Contains( FOut + FErr, 'Versioned.exe has file version' );
+  Assert.AreEqual( '0.0.0.1', WrittenVersion() );
+  Assert.Contains( FOut + FErr, 'Versioned.exe has file version ' + Version );
   Assert.Contains( FOut + FErr, 'gives the application version 0.0.0.1' );
 
 end;
