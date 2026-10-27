@@ -1,5 +1,5 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
@@ -26,6 +26,13 @@ type
   private
     FLog: TProc<TLogLevel, string>;
 
+    /// <summary>
+    ///   Logs a warning for each problem in one component entry: a missing name, version, vendor or licence, an
+    ///   unrecognised licence, a purl that is not a package URL, an email that is not an email address, an unknown type,
+    ///   no units_prefix or units_exact, and a prefix shorter than MinPrefixLength.
+    /// </summary>
+    /// <param name="AComp">The component as read.</param>
+    /// <param name="AIndex">Its position in the components array, for the message.</param>
     procedure ValidateComponent( const AComp: TComponentEntry; AIndex: Integer );
     function ReadString( AObject: TJSONObject; const AName, ADefault, AContext: string ): string;
     function ReadStringArray( AObject: TJSONObject; const AName, AContext: string ): TArray<string>;
@@ -135,7 +142,9 @@ begin
     Root.AddPair( 'supplier', Supplier );
     Supplier.AddPair( 'name', '' );
     Supplier.AddPair( 'url', '' );
+    Supplier.AddPair( 'email', '' );
 
+    Root.AddPair( 'application_licence', '' );
     Root.AddPair( 'components', TJSONArray.Create );
     Result          := Root.Format;
   finally
@@ -244,12 +253,21 @@ begin
     begin
       Result.Supplier.Name := ReadString( TJSONObject( SupplierVal ), 'name', '', 'Supplier' );
       Result.Supplier.URL := ReadString( TJSONObject( SupplierVal ), 'url', '', 'Supplier' );
+      Result.Supplier.Email := Trim( ReadString( TJSONObject( SupplierVal ), 'email', '', 'Supplier' ) );
 
       if Result.Supplier.Name = '' then
         Log( llWarning, 'Supplier name is empty' );
+
+      // The SBOM builder leaves out an email that is not an email address, so say so here
+      if ( Result.Supplier.Email <> '' ) and ( not IsEmailAddress( Result.Supplier.Email ) ) then
+        Log( llWarning, Format( 'Supplier: email "%s" is not an email address — it will be left out of the SBOM',
+            [ Result.Supplier.Email ] ) );
     end
     else
       Log( llWarning, 'Missing supplier object in manifest' );
+
+    // The licence of the application itself (BSI TR-03183-2 asks for every component's licence, the application's too)
+    Result.ApplicationLicence := Trim( ReadString( Root, 'application_licence', '', 'Manifest' ) );
 
     // Components array
     var CompVal     := Root.GetValue( 'components' );
@@ -276,6 +294,8 @@ begin
           Entry.Vendor := ReadString( CompObj, 'vendor', '', Context );
           Entry.VendorURL := ReadString( CompObj, 'vendor_url', '', Context );
           Entry.VendorEmail := Trim( ReadString( CompObj, 'vendor_email', '', Context ) );
+          Entry.CreatorEmail := Trim( ReadString( CompObj, 'creator_email', '', Context ) );
+          Entry.CreatorURL := Trim( ReadString( CompObj, 'creator_url', '', Context ) );
           Entry.Licence := ReadString( CompObj, 'licence', '', Context );
           Entry.LicenceURL := ReadString( CompObj, 'licence_url', '', Context );
           Entry.CompType := ReadString( CompObj, 'type', 'library', Context );
@@ -382,6 +402,10 @@ begin
   if ( AComp.VendorEmail <> '' ) and ( not IsEmailAddress( AComp.VendorEmail ) ) then
     Log( llWarning, Format( '%s: vendor_email "%s" is not an email address — it will be left out of the SBOM',
         [ Prefix, AComp.VendorEmail ] ) );
+
+  if ( AComp.CreatorEmail <> '' ) and ( not IsEmailAddress( AComp.CreatorEmail ) ) then
+    Log( llWarning, Format( '%s: creator_email "%s" is not an email address — it will be left out of the SBOM',
+        [ Prefix, AComp.CreatorEmail ] ) );
 
   // Validate component type (the SBOM builder lower-cases it, and falls back to library)
   var ValidTypes: TArray<string> := [ 'library', 'framework', 'application' ];
