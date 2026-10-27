@@ -45,14 +45,16 @@ type
     /// <summary>
     ///   The deployable binary: ABinaryFile when given, else where the .dproj puts a Release build.  A file that
     ///   exists is hashed with SHA-512.  One that does not exist, is empty or cannot be opened (a linker or scanner
-    ///   holding it) is logged, and the SBOM then goes without file data rather than the run failing.  A file version
-    ///   that differs from the version the SBOM gives the application is warned about: the file may be a stale build.
+    ///   holding it) is logged, and the SBOM then goes without file data rather than the run failing.  The file's
+    ///   version resource is read; when it differs from a version given explicitly, the file may be a stale build and
+    ///   that is warned about.
     /// </summary>
     /// <param name="ABinaryFile">The binary named by the caller ('' = the project's Release output).</param>
     /// <param name="AProjectInfo">The parsed project, whose BinaryFile is the default.</param>
-    /// <param name="AVersion">The application version the SBOM states.</param>
-    /// <returns>The file's name and SHA-512; FileName is '' when there is no binary to describe.</returns>
-    function DescribeBinary( const ABinaryFile: string; const AProjectInfo: TProjectInfo; const AVersion: string ): TBinaryInfo;
+    /// <param name="AExplicitVersion">The application version given explicitly ('' = none given).</param>
+    /// <returns>The file's name, SHA-512 and file version; FileName is '' when there is no binary to describe.</returns>
+    function DescribeBinary( const ABinaryFile: string; const AProjectInfo: TProjectInfo;
+      const AExplicitVersion: string ): TBinaryInfo;
   public
     constructor Create( ALogProc: TProc<TLogLevel, string> );
 
@@ -215,7 +217,8 @@ begin
 
 end;
 
-function TSBOMEngine.DescribeBinary( const ABinaryFile: string; const AProjectInfo: TProjectInfo; const AVersion: string ): TBinaryInfo;
+function TSBOMEngine.DescribeBinary( const ABinaryFile: string; const AProjectInfo: TProjectInfo;
+  const AExplicitVersion: string ): TBinaryInfo;
 begin
 
   Result            := Default( TBinaryInfo );
@@ -273,11 +276,38 @@ begin
 
   Result.FileName   := ExtractFileName( BinaryFile );
 
+  // A resource of all zeros names no version
   var FileVersion   := FileVersionOf( BinaryFile );
 
-  if VersionsDiffer( FileVersion, AVersion ) then
-    Log( llWarning, Format( 'Built binary %s has file version %s, but the SBOM gives the application version %s — a stale build, ' +
-      'or a version set elsewhere: check that the hash describes the release', [ ExtractFileName( BinaryFile ), FileVersion, AVersion ] ) );
+  if FileVersion = '0.0.0.0' then
+    FileVersion     := '';
+
+  Result.FileVersion := FileVersion;
+
+  // A version given explicitly is written as given, so a binary of another version may be a stale build.  Without one
+  // the binary's version is written: the .dproj's build number has usually moved on since the build
+  if AExplicitVersion <> '' then
+  begin
+    if VersionsDiffer( FileVersion, AExplicitVersion ) then
+      Log( llWarning, Format( 'Built binary %s has file version %s, but the SBOM gives the application version %s — a stale build, ' +
+        'or a version set elsewhere: check that the hash describes the release', [ ExtractFileName( BinaryFile ), FileVersion,
+        AExplicitVersion ] ) );
+  end
+  else if FileVersion <> '' then
+  begin
+    if AProjectInfo.ProjectVersion = '' then
+      Log( llInfo, Format( 'Application version %s taken from the binary (the .dproj gives none)', [ FileVersion ] ) )
+    else if VersionsDiffer( FileVersion, AProjectInfo.ProjectVersion ) then
+    begin
+      // The Release output is normally a build behind the .dproj; a binary the caller named may be any file
+      if ABinaryFile <> '' then
+        Log( llWarning, Format( 'Application version %s taken from %s, but the .dproj says %s — check that it is the release''s binary',
+          [ FileVersion, ExtractFileName( BinaryFile ), AProjectInfo.ProjectVersion ] ) )
+      else
+        Log( llInfo, Format( 'Application version %s taken from the binary; the .dproj says %s (build auto-increment moves it on after ' +
+          'each build)', [ FileVersion, AProjectInfo.ProjectVersion ] ) );
+    end;
+  end;
 
   var Age: TDateTime;
 
@@ -573,8 +603,14 @@ begin
   end;
 
   // Step 4c: the deployable binary the application component describes (BSI TR-03183-2: filename and SHA-512)
-  Result.Binary     := DescribeBinary( AOptions.BinaryFile, Result.ProjectInfo,
-    EffectiveProductVersion( AOptions.VersionOverride, Result.ProjectInfo.ProjectVersion ) );
+  Result.Binary     := DescribeBinary( AOptions.BinaryFile, Result.ProjectInfo, AOptions.VersionOverride );
+
+  // The application version: one given explicitly (--product-version, a git tag, the form's field), else the binary's
+  // own, which BSI TR-03183-2 asks to be kept as its creator set it, else the .dproj's
+  var Version       := AOptions.VersionOverride;
+
+  if Version = '' then
+    Version         := Result.Binary.FileVersion;
 
   // Step 5: Build and save SBOM
   var Builder       := TSBOMBuilder.Create( FLog );
@@ -584,7 +620,7 @@ begin
       Result.ProjectInfo,
       Result.ClassifiedUnits,
       Result.Manifest,
-      AOptions.VersionOverride,
+      Version,
       AOptions.OutputDir,
       Result.Evidence,
       Result.LibraryDependencies
@@ -593,7 +629,7 @@ begin
     Builder.Free;
   end;
 
-  Result.ProductVersion := EffectiveProductVersion( AOptions.VersionOverride, Result.ProjectInfo.ProjectVersion );
+  Result.ProductVersion := EffectiveProductVersion( Version, Result.ProjectInfo.ProjectVersion );
 
   // Step 5a: check the file as written. A problem is reported, not fatal: the SBOM is kept so it can be inspected
   Result.ValidationErrors := CheckSBOM( ReadTextFile( Result.OutputFile ) );
