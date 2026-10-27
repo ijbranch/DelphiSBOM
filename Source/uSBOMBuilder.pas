@@ -1,9 +1,9 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
-  uSBOMBuilder.pas — Assembles and emits CycloneDX 1.5 JSON SBOM
+  uSBOMBuilder.pas — Assembles and emits CycloneDX 1.6 JSON SBOM, with the data fields of BSI TR-03183-2 v2.1.0
   Dependency graph and compositions shape after DX.Comply (Olaf Monien, MIT) — see THIRD-PARTY-NOTICES.md
 *)
 unit uSBOMBuilder;
@@ -16,15 +16,23 @@ uses
 
 type
   /// <summary>
-  ///   Builds a CycloneDX 1.5 JSON SBOM from classified units and manifest data.
+  ///   Builds a CycloneDX 1.6 JSON SBOM from classified units and manifest data.
   /// </summary>
   TSBOMBuilder = class
   private
     FLog: TProc<TLogLevel, string>;
+    /// <summary>The built binary the application component describes (FileName '' = none).</summary>
+    FBinary: TBinaryInfo;
 
     procedure Log( ALevel: TLogLevel; const AMessage: string );
   public
     constructor Create( ALogProc: TProc<TLogLevel, string> );
+
+    /// <summary>
+    ///   The built binary: when its FileName is set, the application component gets its file name, its SHA-512 and the
+    ///   BSI TR-03183-2 file properties.  Unset, they are left out rather than guessed.
+    /// </summary>
+    property Binary: TBinaryInfo read FBinary write FBinary;
 
     /// <summary>
     ///   Builds the SBOM JSON string from project info, classified units, and manifest.
@@ -36,7 +44,7 @@ type
     /// <param name="AEvidence">Optional per-unit hashes from DX.Comply.</param>
     /// <param name="ALibraryDependencies">What each library uses, read from its source; an edge to a component
     ///   that is not in the SBOM is left out.</param>
-    /// <returns>The pretty-printed CycloneDX 1.5 JSON document.</returns>
+    /// <returns>The pretty-printed CycloneDX 1.6 JSON document.</returns>
     function Build( const AProjectInfo: TProjectInfo;
       const AClassifiedUnits: TArray<TClassifiedUnit>;
       const AManifest: TManifest;
@@ -90,6 +98,29 @@ begin
         Builder.Append( Char( B ) )
       else
         Builder.Append( '%' ).Append( IntToHex( B, 2 ) );
+
+    Result          := Builder.ToString;
+  finally
+    Builder.Free;
+  end;
+
+end;
+
+/// <summary>
+///   A file name as a relative IRI-reference (RFC 3987): the characters an IRI may not hold (space, '"', '<', '>',
+///   '\', '^', '`', '{', '|', '}', and '%', '#' and '?', which would change its meaning) become %XX of their UTF-8 bytes.
+///   Other characters, non-ASCII ones included, are kept.
+/// </summary>
+function IriReferenceOf( const AFileName: string ): string;
+begin
+
+  var Builder       := TStringBuilder.Create;
+  try
+    for var C in AFileName do
+      if CharInSet( C, [ ' ', '"', '<', '>', '\', '^', '`', '{', '|', '}', '%', '#', '?' ] ) or ( Ord( C ) < $20 ) then
+        Builder.Append( '%' ).Append( IntToHex( Ord( C ), 2 ) )
+      else
+        Builder.Append( C );
 
     Result          := Builder.ToString;
   finally
@@ -196,6 +227,122 @@ function TSBOMBuilder.Build( const AProjectInfo: TProjectInfo;
 
   end;
 
+  // Adds the component creator as "manufacturer" (CycloneDX 1.6). BSI TR-03183-2 asks for the creator's email, or a
+  // URL when there is no email, so an email wins and the URL is written only without one
+  procedure AddManufacturer( AOwner: TJSONObject; const AName, AEmail, AURL: string );
+  begin
+
+    var Email       := Trim( AEmail );
+
+    if ( not IsEmailAddress( Email ) ) then
+      Email         := '';
+
+    var URL         := Trim( AURL );
+
+    if ( Email = '' ) and ( URL = '' ) then Exit;
+
+    var Manufacturer := TJSONObject.Create;
+    AOwner.AddPair( 'manufacturer', Manufacturer );
+
+    if Trim( AName ) <> '' then
+      Manufacturer.AddPair( 'name', Trim( AName ) );
+
+    if Email <> '' then
+    begin
+      var ContactArr := TJSONArray.Create;
+      Manufacturer.AddPair( 'contact', ContactArr );
+
+      var ContactObj := TJSONObject.Create;
+      ContactArr.AddElement( ContactObj );
+      ContactObj.AddPair( 'email', Email );
+    end
+    else
+    begin
+      var UrlArr    := TJSONArray.Create;
+      Manufacturer.AddPair( 'url', UrlArr );
+      UrlArr.Add( URL );
+    end;
+
+  end;
+
+  // Adds "licenses": license.id is an SPDX enum, so only recognised identifiers go there.  Each entry is acknowledged
+  // "concluded": the licence under which the component is distributed (BSI TR-03183-2 distribution licence)
+  procedure AddLicences( AOwner: TJSONObject; const AValue, AURL: string );
+  begin
+
+    var Licence     := '';
+    var LicenceKind := ClassifyLicence( AValue, Licence );
+
+    case LicenceKind of
+      lkSPDX, lkName:
+        begin
+          var LicArray := TJSONArray.Create;
+          AOwner.AddPair( 'licenses', LicArray );
+
+          var LicWrapper := TJSONObject.Create;
+          LicArray.AddElement( LicWrapper );
+
+          var LicObj := TJSONObject.Create;
+          LicWrapper.AddPair( 'license', LicObj );
+
+          if LicenceKind = lkSPDX then
+            LicObj.AddPair( 'id', Licence )
+          else
+            LicObj.AddPair( 'name', Licence );
+
+          LicObj.AddPair( 'acknowledgement', 'concluded' );
+
+          if AURL <> '' then
+            LicObj.AddPair( 'url', AURL );
+        end;
+
+      lkExpression:
+        begin
+          var LicArray := TJSONArray.Create;
+          AOwner.AddPair( 'licenses', LicArray );
+
+          var ExprObj := TJSONObject.Create;
+          LicArray.AddElement( ExprObj );
+          ExprObj.AddPair( 'expression', Licence );
+          ExprObj.AddPair( 'acknowledgement', 'concluded' );
+        end;
+    end;
+
+  end;
+
+  // Adds one name/value pair to the component's "properties", creating the array on first use
+  procedure AddProperty( AOwner: TJSONObject; const AName, AValue: string );
+  begin
+
+    var Props       := AOwner.GetValue( 'properties' ) as TJSONArray;
+
+    if ( not Assigned( Props ) ) then
+    begin
+      Props         := TJSONArray.Create;
+      AOwner.AddPair( 'properties', Props );
+    end;
+
+    var Prop        := TJSONObject.Create;
+    Props.AddElement( Prop );
+    Prop.AddPair( 'name', AName );
+    Prop.AddPair( 'value', AValue );
+
+  end;
+
+  // Adds one hashes entry holding a SHA-512 digest
+  procedure AddSHA512( AOwner: TJSONObject; const ADigest: string );
+  begin
+
+    var HashArr     := TJSONArray.Create;
+    AOwner.AddPair( 'hashes', HashArr );
+
+    var HashObj     := TJSONObject.Create;
+    HashArr.AddElement( HashObj );
+    HashObj.AddPair( 'alg', 'SHA-512' );
+    HashObj.AddPair( 'content', ADigest );
+
+  end;
+
 begin
 
   // bom-refs must be unique in the document: a repeated one gets a #2, #3 ... suffix
@@ -223,7 +370,7 @@ begin
   var Root          := TJSONObject.Create;
   try
     Root.AddPair( 'bomFormat', 'CycloneDX' );
-    Root.AddPair( 'specVersion', '1.5' );
+    Root.AddPair( 'specVersion', '1.6' );
     var GuidStr     := TGUID.NewGuid.ToString;
     GuidStr         := StringReplace( GuidStr, '{', '', [ rfReplaceAll ] );
     GuidStr         := StringReplace( GuidStr, '}', '', [ rfReplaceAll ] );
@@ -255,6 +402,9 @@ begin
     ToolComp.AddPair( 'supplier', ToolSupplier );
     ToolSupplier.AddPair( 'name', 'DelphiSBOM Contributors' );
 
+    // Metadata > manufacturer: the creator of the SBOM (BSI TR-03183-2), who is the application's supplier
+    AddManufacturer( Metadata, AManifest.Supplier.Name, AManifest.Supplier.Email, AManifest.Supplier.URL );
+
     // Metadata > component (the application being described)
     var EffectiveVersion := EffectiveProductVersion( AVersionOverride, AProjectInfo.ProjectVersion );
     var AppRef      := UniqueRef( 'application:' + AProjectInfo.ProjectName + '@' + EffectiveVersion );
@@ -278,6 +428,32 @@ begin
         SupplierObj.AddPair( 'url', UrlArray );
         UrlArray.Add( AManifest.Supplier.URL );
       end;
+    end;
+
+    // The application's creator is its supplier
+    AddManufacturer( MainComp, AManifest.Supplier.Name, AManifest.Supplier.Email, AManifest.Supplier.URL );
+    AddLicences( MainComp, AManifest.ApplicationLicence, '' );
+
+    // The deployable file (BSI TR-03183-2 section 8.1.6: a binary with statically linked libraries is an unstructured,
+    // executable file).  Its SHA-512 goes in a distribution reference, where the TR's mapping puts it, whose url is the
+    // file name (an IRI-reference) since the file has no download location of its own; component hashes carry it too
+    if FBinary.FileName <> '' then
+    begin
+      AddSHA512( MainComp, FBinary.SHA512 );
+
+      var ExtRefArray := TJSONArray.Create;
+      MainComp.AddPair( 'externalReferences', ExtRefArray );
+
+      var ExtRef    := TJSONObject.Create;
+      ExtRefArray.AddElement( ExtRef );
+      ExtRef.AddPair( 'type', 'distribution' );
+      ExtRef.AddPair( 'url', IriReferenceOf( FBinary.FileName ) );
+      AddSHA512( ExtRef, FBinary.SHA512 );
+
+      AddProperty( MainComp, 'bsi:component:filename', FBinary.FileName );
+      AddProperty( MainComp, 'bsi:component:executable', 'executable' );
+      AddProperty( MainComp, 'bsi:component:archive', 'no archive' );
+      AddProperty( MainComp, 'bsi:component:structured', 'unstructured' );
     end;
 
     // Components array
@@ -304,6 +480,8 @@ begin
     RTLComp.AddPair( 'supplier', RTLSupplier );
     RTLSupplier.AddPair( 'name', 'Embarcadero Technologies' );
 
+    AddManufacturer( RTLComp, 'Embarcadero Technologies', '', RTLCreatorURL );
+    AddLicences( RTLComp, RTLLicence, '' );
     RTLComp.AddPair( 'purl', RTLPurl );
 
     // Attach per-unit evidence from DX.Comply if available
@@ -387,41 +565,15 @@ begin
           end;
         end;
 
-        // Licences: license.id is an SPDX enum, so only recognised identifiers go there
-        var Licence := '';
-        var LicenceKind := ClassifyLicence( Entry.Licence, Licence );
+        // The creator (BSI TR-03183-2 section 3.2.9 separates it from the vendor); without creator fields the vendor
+        // is taken to be the creator, as it is for most libraries
+        // A creator_email that is not an email address does not count, so the vendor still stands in for it
+        if IsEmailAddress( Entry.CreatorEmail ) or ( Entry.CreatorURL <> '' ) then
+          AddManufacturer( CompObj, '', Entry.CreatorEmail, Entry.CreatorURL )
+        else
+          AddManufacturer( CompObj, Entry.Vendor, Entry.VendorEmail, Entry.VendorURL );
 
-        case LicenceKind of
-          lkSPDX, lkName:
-            begin
-              var LicArray := TJSONArray.Create;
-              CompObj.AddPair( 'licenses', LicArray );
-
-              var LicWrapper := TJSONObject.Create;
-              LicArray.AddElement( LicWrapper );
-
-              var LicObj := TJSONObject.Create;
-              LicWrapper.AddPair( 'license', LicObj );
-
-              if LicenceKind = lkSPDX then
-                LicObj.AddPair( 'id', Licence )
-              else
-                LicObj.AddPair( 'name', Licence );
-
-              if Entry.LicenceURL <> '' then
-                LicObj.AddPair( 'url', Entry.LicenceURL );
-            end;
-
-          lkExpression:
-            begin
-              var LicArray := TJSONArray.Create;
-              CompObj.AddPair( 'licenses', LicArray );
-
-              var ExprObj := TJSONObject.Create;
-              LicArray.AddElement( ExprObj );
-              ExprObj.AddPair( 'expression', Licence );
-            end;
-        end;
+        AddLicences( CompObj, Entry.Licence, Entry.LicenceURL );
 
         // External references
         if Entry.VendorURL <> '' then
@@ -445,9 +597,10 @@ begin
       AddedComponents.Free;
     end;
 
-    // Dependency graph: the application uses the RTL and every library; the RTL uses nothing third-party.
-    // A library has an entry only when its source showed it using another library or the RTL. One whose
-    // source was not read has none: an entry with an empty dependsOn would claim it uses nothing
+    // Dependency graph: the application uses the RTL and every library; the RTL uses nothing third-party.  Every
+    // component has an entry, an empty dependsOn included, as CycloneDX 1.6 and BSI TR-03183-2 require; a library's
+    // dependsOn lists what its source showed it using.  The composition below declares the graph incomplete, so an
+    // empty list is not a claim that a library uses nothing
     var Dependencies := TJSONArray.Create;
     Root.AddPair( 'dependencies', Dependencies );
 
@@ -469,11 +622,17 @@ begin
 
     // Library-to-library edges, only between components in this document
     for var L := 0 to LibraryIndexes.Count - 1 do
+    begin
+      var LibDeps   := TJSONObject.Create;
+      Dependencies.AddElement( LibDeps );
+      LibDeps.AddPair( 'ref', LibraryRefs[ L ] );
+
+      var LibDependsOn := TJSONArray.Create;
+      LibDeps.AddPair( 'dependsOn', LibDependsOn );
+
       for var Dependency in ALibraryDependencies do
       begin
         if Dependency.ComponentIndex <> LibraryIndexes[ L ] then Continue;
-
-        var LibDependsOn: TJSONArray := nil;
 
         for var Target in Dependency.DependsOn do
         begin
@@ -491,34 +650,25 @@ begin
 
           if TargetRef = '' then Continue;
 
-          // dependsOn items must be unique (CycloneDX 1.5 schema)
+          // dependsOn items must be unique (CycloneDX 1.6 schema)
           var Listed := False;
 
-          if Assigned( LibDependsOn ) then
-            for var Item in LibDependsOn do
-              if Item.Value = TargetRef then
-                Listed := True;
+          for var Item in LibDependsOn do
+            if Item.Value = TargetRef then
+              Listed := True;
 
           if Listed then Continue;
-
-          if ( not Assigned( LibDependsOn ) ) then
-          begin
-            var LibDeps := TJSONObject.Create;
-            Dependencies.AddElement( LibDeps );
-            LibDeps.AddPair( 'ref', LibraryRefs[ L ] );
-
-            LibDependsOn := TJSONArray.Create;
-            LibDeps.AddPair( 'dependsOn', LibDependsOn );
-          end;
 
           LibDependsOn.Add( TargetRef );
         end;
 
         Break;
       end;
+    end;
 
-    // The graph is incomplete: a library whose source was not read has no edges, and unclassified units
-    // are left out. Same shape as DX.Comply writes, so the two tools' output line up
+    // The graph is incomplete: a library whose source was not read has no edges, and unclassified units are left
+    // out.  It names every component so each one's completeness is stated (BSI TR-03183-2 section 5.2.2); DX.Comply
+    // writes the same shape for the application alone
     var Compositions := TJSONArray.Create;
     Root.AddPair( 'compositions', Compositions );
 
@@ -529,6 +679,10 @@ begin
     var CompositionDeps := TJSONArray.Create;
     Composition.AddPair( 'dependencies', CompositionDeps );
     CompositionDeps.Add( AppRef );
+    CompositionDeps.Add( RTLRef );
+
+    for var Ref in LibraryRefs do
+      CompositionDeps.Add( Ref );
 
     Result          := Root.Format;
   finally
