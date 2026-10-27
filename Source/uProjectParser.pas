@@ -1,5 +1,5 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
@@ -36,9 +36,26 @@ type
     /// <returns>The clause without the keyword and the semicolon, or '' when there is none.</returns>
     function ExtractClauseBlock( const AContent: string; const AKeyword: string ): string;
     function SplitUnitNames( const AClauseBlock: string; out AOwnCodeUnits: TArray<string> ): TArray<string>;
+    /// <summary>
+    ///   Reads a .dproj evaluated for Release on its target platform: the Delphi version, the platform, the version
+    ///   info, the unit search paths and where the binary is written.
+    /// </summary>
+    /// <param name="ADprojFile">The .dproj to read.</param>
+    /// <param name="AInfo">The project information to fill in.</param>
+    /// <param name="AMainSource">Receives the .dproj's MainSource ('' when it has none).</param>
     procedure ParseDprojMetadata( const ADprojFile: string; var AInfo: TProjectInfo; out AMainSource: string );
     function SelectPlatform( const ARoot: IXMLNode ): string;
     procedure EvaluatePropertyGroups( const ARoot: IXMLNode; AProps: TDictionary<string, string> );
+    /// <summary>
+    ///   Where a Release build of the evaluated platform writes its binary.
+    /// </summary>
+    /// <param name="ADprojFile">The .dproj, whose folder relative output paths are resolved against.</param>
+    /// <param name="AMainSource">The .dproj's MainSource, which names the binary.</param>
+    /// <param name="AProps">The .dproj's properties evaluated for Release and the target platform.</param>
+    /// <param name="ARawXml">The .dproj's XML as written, searched for macros the expansion turned into ''.</param>
+    /// <returns>The full path of the binary (it may not exist), or '' when a macro leaves it unknown.</returns>
+    function ReleaseBinaryFile( const ADprojFile, AMainSource: string; AProps: TDictionary<string, string>;
+      const ARawXml: string ): string;
     function FindNodeText( const ANode: IXMLNode; const AName: string ): string;
     function FindNode( const ANode: IXMLNode; const AName: string ): IXMLNode;
 
@@ -852,9 +869,117 @@ begin
 
       Log( llInfo, Format( 'Found %d search paths', [ Length( AInfo.SearchPaths ) ] ) );
     end;
+
+    // An unknown macro (an IDE-only environment variable, or $(Auto) for {$LIBSUFFIX AUTO}) has been expanded to ''
+    // with the other unknown names, so the raw XML is passed to find them
+    AInfo.BinaryFile := ReleaseBinaryFile( ADprojFile, AMainSource, Props, Root.XML );
   finally
     Props.Free;
   end;
+
+end;
+
+/// <summary>
+///   Where a Release build of the evaluated platform writes its binary: DCC_ExeOutput (DCC_BplOutput for a package)
+///   joined to DllPrefix, the main source's name and DllSuffix (a package's or library's {$LIBPREFIX} / {$LIBSUFFIX}),
+///   and the extension its AppType gives, or the main source's {$E} directive.  An output folder or affix that holds a
+///   macro the parser cannot resolve (the default $(BDSCOMMONDIR)\Bpl of a package, $(Auto), an IDE-only environment
+///   variable) gives '' rather than a guessed path.
+/// </summary>
+function TProjectParser.ReleaseBinaryFile( const ADprojFile, AMainSource: string; AProps: TDictionary<string, string>;
+  const ARawXml: string ): string;
+begin
+
+  Result            := '';
+
+  var AppType       := '';
+  AProps.TryGetValue( 'AppType', AppType );
+
+  var IsPackage     := SameText( AppType, 'Package' ) or SameText( ExtractFileExt( AMainSource ), '.dpk' );
+  var IsLibrary     := SameText( AppType, 'Library' );
+  var Extension     := '.exe';
+  var OutputTag     := 'DCC_ExeOutput';
+
+  if IsPackage then
+  begin
+    Extension       := '.bpl';
+    OutputTag       := 'DCC_BplOutput';
+  end
+  else if IsLibrary then
+    Extension       := '.dll';
+
+  var ProjectDir    := ExtractFilePath( ADprojFile );
+
+  // {$E cpl} / {$EXTENSION ocx} in the main source replaces the extension
+  var MainSourceFile := TPath.Combine( ProjectDir, AMainSource );
+
+  if ( AMainSource <> '' ) and FileExists( MainSourceFile ) then
+  begin
+    // The raw text: stripping comments would strip the directive too
+    var Match       := TRegEx.Match( ReadTextFile( MainSourceFile ), '\{\$(E|EXTENSION)\s+([A-Za-z0-9_]+)\s*\}', [ roIgnoreCase ] );
+
+    if Match.Success then
+      Extension     := '.' + Match.Groups[ 2 ].Value;
+  end;
+
+  var OutputDir     := '';
+  AProps.TryGetValue( OutputTag, OutputDir );
+  OutputDir         := Trim( OutputDir );
+
+  var BaseName      := ChangeFileExt( ExtractFileName( AMainSource ), '' );
+
+  if BaseName = '' then
+    BaseName        := TPath.GetFileNameWithoutExtension( ADprojFile );
+
+  // The affixes of {$LIBPREFIX} / {$LIBSUFFIX}, which apply to packages and libraries
+  var Prefix        := '';
+  var Suffix        := '';
+  var Tags: TArray<string> := [ OutputTag ];
+
+  if IsPackage or IsLibrary then
+  begin
+    AProps.TryGetValue( 'DllPrefix', Prefix );
+    AProps.TryGetValue( 'DllSuffix', Suffix );
+    Tags            := Tags + [ 'DllPrefix', 'DllSuffix' ];
+  end;
+
+  // A package without DCC_BplOutput goes to the IDE's $(BDSCOMMONDIR)\Bpl, not to the project folder
+  if IsPackage and ( OutputDir = '' ) then
+  begin
+    Log( llInfo, 'The package goes to the IDE''s default output folder, which cannot be resolved here — pass the built binary to describe it' );
+    Exit;
+  end;
+
+  // Unknown macros were expanded to '', so the raw values are searched for a name that is neither a property nor an
+  // environment variable of this process
+  for var Tag in Tags do
+    for var Value in TRegEx.Matches( ARawXml, '<' + Tag + '>([^<]*)</' + Tag + '>' ) do
+      for var Macro in TRegEx.Matches( Value.Groups[ 1 ].Value, '\$\(([^)]+)\)' ) do
+      begin
+        var Name    := Macro.Groups[ 1 ].Value;
+
+        if ( not AProps.ContainsKey( Name ) ) and ( GetEnvironmentVariable( Name ) = '' ) then
+        begin
+          Log( llInfo, Format( '%s uses $(%s), which cannot be resolved outside the IDE — pass the built binary to describe it',
+              [ Tag, Name ] ) );
+          Exit;
+        end;
+      end;
+
+  // A BDS macro is kept as written by the expansion, and is as unresolvable
+  if OutputDir.Contains( '$(' ) or Prefix.Contains( '$(' ) or Suffix.Contains( '$(' ) then
+  begin
+    Log( llInfo, Format( 'Release output folder %s cannot be resolved outside the IDE — pass the built binary to describe it',
+        [ OutputDir ] ) );
+    Exit;
+  end;
+
+  if OutputDir = '' then
+    OutputDir       := ProjectDir
+  else if TPath.IsRelativePath( OutputDir ) then
+    OutputDir       := TPath.Combine( ProjectDir, OutputDir );
+
+  Result            := TPath.GetFullPath( TPath.Combine( OutputDir, Prefix + BaseName + Suffix + Extension ) );
 
 end;
 
