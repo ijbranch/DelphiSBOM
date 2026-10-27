@@ -38,12 +38,22 @@ file), the result of the SBOM check, and the reports written. Then all
 recognised third-party components with their versions.
 
 **SBOM check.** After writing, DelphiSBOM reads the file back and checks the
-parts of the CycloneDX 1.5 schema its output could break: format and version,
+parts of the CycloneDX 1.6 schema its output could break: format and version,
 serial number, component types and names, licence ids, hash algorithms and
 lengths, purls, unique `bom-ref`s and dependency references (each listed once). Problems are
 logged as `[ERROR] SBOM check: ...` with the JSON path; the file is kept so it
 can be inspected. It is not a full schema validation — use an official
 CycloneDX validator for that.
+
+**BSI TR-03183-2 check.** Then the file is checked for the data fields BSI
+TR-03183-2 v2.1.0 requires (the German BSI's technical guideline for SBOMs
+under the EU Cyber Resilience Act).  Each field missing is logged as
+`[WARNING] BSI TR-03183-2: <rule ID> <component>: ...`, for example
+`TR-5.2.2-LICENCE` for a component with no licence, or `TR-5.2.2-HASH` when no
+built binary was found.  The findings are advice and never fail the run; most
+are completed in `components.json` (`supplier.email`, `application_licence`,
+`creator_email` / `creator_url`, `licence`).  The rule IDs are listed in
+`Docs/CYCLONEDX-NOTES.md`.
 
 ### Discovery Panel (Right)
 
@@ -106,7 +116,7 @@ manually marked as own code using the **Mark as Own Code** button.
 Shows timestamped messages during processing:
 
 - `[INFO]` — normal progress messages
-- `[WARNING]` — non-fatal issues (e.g. missing manifest, RTL scan unavailable)
+- `[WARNING]` — non-fatal issues (e.g. missing manifest, RTL scan unavailable, built binary not found, BSI TR-03183-2 findings)
 - `[ERROR]` — fatal errors that prevented completion
 
 After classification, an `[INFO]` message is logged for each `components.json`
@@ -176,6 +186,26 @@ The discovery scanner excludes directories containing `.dpr` or `.dproj` files. 
 
 **Fix:** Click **Edit...** and set Include to No for that library, or do not click Save & Regenerate. The incorrectly identified library will not be saved. On the next run with an updated `components.json`, those units will be classified correctly or remain unclassified.
 
+### "Built binary ... not found" or "No built binary to describe"
+
+The application component describes the deployable file: its name and SHA-512.
+DelphiSBOM looks for it where the `.dproj` puts a **Release** build of the
+target platform (`DCC_ExeOutput`; `DCC_BplOutput` for a package).  When the file
+is not there, or the output folder cannot be worked out (a package on the IDE's
+default `$(BDSCOMMONDIR)\Bpl`, a `$(Auto)` library suffix, or a folder naming an
+IDE-only environment variable), the file name and hash are left out, never
+guessed, and the BSI TR-03183-2 check reports them missing.  The same happens,
+with its own warning, when the file is empty ("is empty") or another program
+holds it ("could not be opened").
+
+A warning that the binary "has file version X, but the SBOM gives the
+application version Y" means the file may be a stale build: rebuild Release, or
+check that the version you gave (`--product-version`, a git tag) is the
+release's.
+
+**Fix:** build the Release configuration first, then Generate again.  From the
+command line, `--binary=<file>` names the binary instead.
+
 ### "Could not create output file"
 
 The output `.exe` or `.cdx.json` file is locked by another process.
@@ -196,11 +226,14 @@ If your library uses a non-standard licence file name or format, the licence fie
 
 ### Licence written as a "name" instead of an SPDX id
 
-CycloneDX 1.5 only accepts recognised SPDX identifiers in `license.id`. A value
+CycloneDX 1.6 only accepts recognised SPDX identifiers in `license.id`. A value
 DelphiSBOM does not recognise (e.g. `"MPL 1.1"` with a space) is written as
 `license.name` so the SBOM stays valid, and Validate Manifest warns about it.
-Values containing `OR`, `AND` or `WITH` (e.g. `"MPL-1.1 OR LGPL-2.1-or-later"`)
-are written as an SPDX `expression`.
+Values containing `OR`, `AND` or `WITH` (e.g. `"MPL-1.1 OR LGPL-2.1-or-later"`),
+and `LicenseRef-` identifiers (e.g. `"LicenseRef-scancode-commercial-license"`),
+are written as an SPDX `expression`.  BSI TR-03183-2 asks for an identifier, so
+the TR check reports a `name` as `TR-6.1-LICENCE`: use the SPDX identifier, a
+`LicenseRef-scancode-` key from ScanCode LicenseDB, or a `LicenseRef-` of your own.
 
 ## Files Read and Written
 
@@ -208,10 +241,10 @@ DelphiSBOM never modifies your project source files (`.dpr`, `.dproj`, `.pas`).
 
 ### Output: `<ProjectName>.cdx.json`
 
-The generated CycloneDX 1.5 SBOM. This is the file you submit for compliance
+The generated CycloneDX 1.6 SBOM. This is the file you submit for compliance
 purposes. Written to the output directory (defaults to the project directory).
-Conforms to the specification at https://cyclonedx.org/docs/1.5/json/. Checked
-after writing (see **SBOM check** above).
+Conforms to the specification at https://cyclonedx.org/docs/1.6/json/. Checked
+after writing (see **SBOM check** and **BSI TR-03183-2 check** above).
 
 ### Output (optional): `<ProjectName>.sbom-report.html` and `.md`
 

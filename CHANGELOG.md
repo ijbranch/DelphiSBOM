@@ -1,6 +1,33 @@
-# DelphiSBOM — Change Log
+# Changelog
 
-All project changes are documented here in reverse chronological order.
+All notable changes to DelphiSBOM are recorded here, newest first.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Until 2026-10-28 this file was `CHANGES.md`, in a format of its own; those sections are kept as written below the
+`[Unreleased]` section.
+
+## [Unreleased]
+
+### Added
+
+- (2026-10-28) **The creators BSI TR-03183-2 v2.1.0 requires.**  `metadata.manufacturer` (the SBOM's creator) and the application's `manufacturer` come from the manifest's `supplier` (new `supplier.email`, else `supplier.url`); each library's `manufacturer` from the new `creator_email` / `creator_url`, else from `vendor_email` / `vendor_url`.  An email wins over a URL, as the TR asks.  **Why:** TR 3.2.9 separates the creator from the vendor, and CycloneDX 1.6's `manufacturer` is where its mapping puts the creator — `uSBOMBuilder.pas`, `uManifestLoader.pas`, `uTypes.pas`
+- (2026-10-28) **The deployable binary.**  The parser locates the Release output (`DCC_ExeOutput`, or `DCC_BplOutput` for a package; `DllPrefix` / `DllSuffix` for a package or library; the `AppType`'s extension, or the main source's `{$E}`); `--binary=<file>` (or `"binary"` in the config) names it instead.  An existing binary gives the application its SHA-512, in `hashes` and in a `distribution` external reference named by the file, and the `bsi:component:filename`, `executable`, `archive` and `structured` properties of an unstructured executable.  No binary, an empty one, or one another program holds: a warning, and none of these is written; a file version that differs from the stated version is warned about as a possibly stale build — `uProjectParser.pas`, `uSBOMEngine.pas`, `uSBOMBuilder.pas`, `uCommandLine.pas`, `DelphiSBOMCLI.dpr`
+- (2026-10-28) **Licences for every component.**  Each licence is acknowledged `concluded` (the TR's distribution licence); the application gets the manifest's new `application_licence`; the RTL gets `LicenseRef-DelphiSBOM-Embarcadero-RAD-Studio-EULA` (neither SPDX nor ScanCode LicenseDB has an identifier for it) and Embarcadero's web page as its creator — `uSBOMBuilder.pas`, `uTypes.pas`
+- (2026-10-28) **The BSI TR-03183-2 check.**  `CheckTR03183` reports each requirement an SBOM does not meet, led by a rule ID (`TR-5.2.2-CREATOR`, `TR-6.1-LICENCE`, ...), for the application and every top-level component; file fields apply to the application and to a component that names a file, not to a statically linked library (a logical component, TR 3.2.1); an expression must have SPDX syntax.  The run logs the findings as warnings; `--fail-on-tr` (or `"failOnTr"`) turns them into exit 3 — `uSBOMValidator.pas`, `uSBOMEngine.pas`, `uCommandLine.pas`
+- (2026-10-28) Tests: 64 new (268 in all), among them the TR fixture (one rule broken per case in a conforming document), the builder's TR output conforming with and without a binary, SHA-512 checked against the FIPS 180-2 vector for "abc", and empty, locked and other-version binaries; eight mutations of the new code each turned the tests meant for it red — `TestSBOMValidator.pas`, `TestSBOMBuilder.pas`, `TestSBOMEngine.pas`, `TestProjectParser.pas`, `TestManifestLoader.pas`, `TestCommandLine.pas`, `TestTypes.pas`
+- (2026-10-28) The gap analysis and design against TR-03183-2 v2.1.0, measured field by field — `TR-03183-2-v2.1-GAP.md`
+
+### Changed
+
+- (2026-10-28) **The change log is `CHANGELOG.md` in Keep a Changelog form** (was `CHANGES.md`), as the repository's other projects keep theirs; the earlier sections are kept as written — `CHANGES.md`, `CLAUDE.md`, `PROGRESS.md`
+- (2026-10-28) **The output is CycloneDX 1.6** (was 1.5).  BSI TR-03183-2 v2.1.0 (2025-08-20) raised its minimum to 1.6, so every SBOM written until now failed it before any field was looked at.  The post-write check moved to the 1.6 enums: the `cryptographic-asset` component type, the `source-distribution`, `electronic-signature`, `digital-signature` and `rfc-9116` external reference types, licence `acknowledgement`, `manufacturer` objects, and an expression as the only item of `licenses` — `uSBOMBuilder.pas`, `uSBOMValidator.pas`
+- (2026-10-28) **Every component is in the dependency graph**, with an empty `dependsOn` when nothing is known of its uses, and the `incomplete` composition names every component rather than the application alone.  **Why:** CycloneDX 1.6 and the TR require each component in the graph and its completeness stated; the composition, not an absent entry, now says the graph is incomplete — `uSBOMBuilder.pas`
+- (2026-10-28) **A `LicenseRef-` licence is written as an expression**, not as a licence name: it is an SPDX identifier of its own (SPDX Annex B), and TR 6.1 counts a name as unidentified — `uTypes.pas`
+- (2026-10-28) The header line of every unit, and the help text and report, name CycloneDX 1.6 — `uDelphiInstall.pas`, `uEvidenceMerger.pas`, `uGit.pas`, `uLibraryDiscovery.pas`, `uLibraryEditor.pas`, `uMainForm.pas`, `uMapFile.pas`, `uOnlineCheck.pas`, `uOnlineCheckForm.pas`, `uRTLScanner.pas`, `uReportWriter.pas`, `uSettings.pas`, `uTextFiles.pas`, `uUnitClassifier.pas`, `TestDelphiInstall.pas`, `TestEvidenceMerger.pas`, `TestLibraryDiscovery.pas`, `TestMapFile.pas`, `TestOnlineCheck.pas`, `TestReportWriter.pas`, `TestSupport.pas`, `TestTextFiles.pas`, `TestUnitClassifier.pas`
+- (2026-10-28) Docs for CycloneDX 1.6 and the TR: the new manifest keys, LicenseRef- identifiers instead of `Commercial` / `Proprietary` for a TR-conformant SBOM, the binary, the new options and warnings — `README.md`, `CLAUDE.md`, `PROGRESS.md`, `SCHEMA.md`, `CYCLONEDX-NOTES.md`, `Help.md`, `UsersGuide.md`, `CI-INTEGRATION.md`, `components.sample.json`, `delphisbom.sample.json`
+
+### Fixed
+
+- (2026-10-28) From an adversarial review before commit: a binary that is empty or held exclusively by a linker or scanner failed the whole run or would have given a meaningless hash (now a warning); an output folder or affix naming a macro the parser cannot resolve (`$(Auto)`, an IDE-only environment variable) gave a path with the macro dropped (now no binary); free text written as an expression ("Apache License 2.0 or later") passed TR 6.1; a composition's `assemblies` counted as stating dependency completeness; spec versions such as `1.6.1` or `2` were reported as too old, and `vulnerabilities` given as an object was not reported; an invalid `creator_email` with no `creator_url` left the component with no creator instead of falling back to the vendor; a binary name with a space or `#` made the distribution reference an invalid IRI-reference — `uSBOMEngine.pas`, `uProjectParser.pas`, `uSBOMValidator.pas`, `uSBOMBuilder.pas`
 
 ## 2026-10-15 — Library Uses Edges, --version-from-git-tag, DX.Comply v2 Names [Added, Fixed]
 

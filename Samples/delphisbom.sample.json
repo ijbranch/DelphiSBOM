@@ -7,5 +7,7 @@
     "report": "both",
     "failOnUnclassified": true,
     "checkOnline": false,
-    "versionFromGitTag": false
+    "versionFromGitTag": false,
+    "binary": "Win64\\Release\\MyApp.exe",
+    "failOnTr": false
 }

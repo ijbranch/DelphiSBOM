@@ -3,9 +3,10 @@
 ## Project Overview
 
 DelphiSBOM is a free, open-source VCL desktop application that generates
-CycloneDX 1.5 Software Bill of Materials (SBOM) files from Delphi projects.
+CycloneDX 1.6 Software Bill of Materials (SBOM) files from Delphi projects.
 It parses `.dpr`/`.dproj` files, classifies units (RTL, third-party, own code),
-and outputs a standards-compliant JSON SBOM.
+and outputs a standards-compliant JSON SBOM, checked for the data fields of
+BSI TR-03183-2 v2.1.0 (which requires CycloneDX 1.6 or later).
 
 **Repository:** GitHub (public) — https://github.com/ijbranch/DelphiSBOM
 **Licence:** MIT
@@ -63,7 +64,7 @@ and describe the partial state in the Next Action line.
   GUI  (Source/DelphiSBOM.dpr):   uMainForm, uSettings, uLibraryEditor  ─┐
   CLI  (CLI/DelphiSBOMCLI.dpr):   uCommandLine                          ─┤
                                                                          ▼
-  uSBOMEngine  →  uProjectParser / uMapFile   unit list (uses clause, or the linker's MAP file)
+  uSBOMEngine  →  uProjectParser / uMapFile   unit list (uses clause, or the linker's MAP file); the Release binary
                →  uDelphiInstall              Delphi installation for the project's version
                →  uRTLScanner                 RTL unit names
                →  uManifestLoader             components.json
@@ -72,7 +73,7 @@ and describe the partial state in the Next Action line.
                                               library sources whose uses clauses give library edges
                →  uEvidenceMerger             DX.Comply hashes
                →  uSBOMBuilder                components, bom-refs, dependency graph
-               →  uSBOMValidator              post-write check
+               →  uSBOMValidator              post-write check (CheckSBOM), BSI TR-03183-2 conformance (CheckTR03183)
                →  uReportWriter               HTML / Markdown reports
   opt-in, outside the pipeline:  uOnlineCheck (GitHub comparison) → uOnlineCheckForm (tick and apply)
   shared: uTypes (records, SPDX/hash helpers), uTextFiles (encoding-safe read, atomic UTF-8 write),
@@ -87,6 +88,9 @@ and describe the partial state in the Next Action line.
   No VCL dependencies.
 - **`uMainForm`** handles all UI concerns. It runs `uSBOMEngine` on a `TThread`
   descendant and marshals log lines and results back via `Synchronize`.
+- **BSI TR-03183-2 findings are advice:** the engine logs them as `[WARNING]` lines after the SBOM
+  check and never fails a GUI run on them; only the CLI's `--fail-on-tr` turns them into exit 3.
+  The binary's file name and SHA-512 are written only when the file exists — never guessed.
 - **`uCommandLine`** is the whole command-line mode (argument parsing, the
   `.delphisbom.json` project config, exit codes) behind `RunCommandLine`, which
   takes output callbacks so the suite tests it without a console. `CLI/DelphiSBOMCLI.dpr`
@@ -128,7 +132,8 @@ and describe the partial state in the Next Action line.
 - **XML:** `Xml.XMLDoc` and `Xml.XMLIntf` for `.dproj` parsing
 - **Error output:** `[ERROR]`, `[WARNING]`, `[INFO]` prefixed log messages
 - **Exit codes (CLI, `uCommandLine` constants):** 0 = success, 1 = usage error,
-  2 = file/parse error, 3 = validation error (SBOM check, invalid manifest, `--fail-on-unclassified`)
+  2 = file/parse error, 3 = validation error (SBOM check, invalid manifest, `--fail-on-unclassified`,
+  `--fail-on-tr`)
 
 ## Public Repository Rules
 
@@ -183,9 +188,10 @@ This repository will become public. The following rules apply now:
 |------|---------|
 | `PROGRESS.md` | Implementation progress tracker — read first, update last |
 | `DelphiSBOM_Refined_Plan.md` | Full implementation specification (v0.6) |
-| `CHANGES.md` | Project change log (reverse chronological) |
+| `CHANGELOG.md` | Project change log, Keep a Changelog form (`[Unreleased]` on top, entries "- (YYYY-MM-DD) ..."; the sections from before 2026-10-28, when it was `CHANGES.md`, are kept as written) |
 | `Docs/SCHEMA.md` | `components.json` schema reference |
-| `Docs/CYCLONEDX-NOTES.md` | CycloneDX 1.5 compliance notes and known limitations |
+| `Docs/CYCLONEDX-NOTES.md` | CycloneDX 1.6 compliance notes, BSI TR-03183-2 mapping and known limitations |
+| `Docs/TR-03183-2-v2.1-GAP.md` | BSI TR-03183-2 v2.1.0 gap analysis and design |
 | `Samples/components.sample.json` | Example manifest for onboarding (every field and licence form) |
 | `CLI/DelphiSBOMCLI.dproj` | Command-line exe (build Win64 Release) |
 | `Docs/CI-INTEGRATION.md` | Build-server use of the CLI (untested examples) |

@@ -3,14 +3,17 @@
   "last_updated": "2026-03-26",
   "supplier": {
     "name": "Your Company Name",
-    "url": "https://example.com"
+    "url": "https://example.com",
+    "email": "sbom@example.com"
   },
+  "application_licence": "LicenseRef-scancode-commercial-license",
   "components": [
     {
       "name": "OmniThreadLibrary",
       "version": "3.7.8",
       "vendor": "Primož Gabrijelčič",
       "vendor_url": "https://github.com/gabr42/OmniThreadLibrary",
+      "creator_url": "https://github.com/gabr42",
       "purl": "pkg:github/gabr42/OmniThreadLibrary@release-3.07.8",
       "licence": "BSD-3-Clause",
       "licence_url": "https://opensource.org/licenses/BSD-3-Clause",

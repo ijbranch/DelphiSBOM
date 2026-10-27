@@ -7,8 +7,10 @@ applications. An SBOM is a formal inventory of every component, library, and
 framework your application depends on — required by regulations such as the
 EU Cyber Resilience Act (effective December 2027).
 
-DelphiSBOM produces SBOMs in the **CycloneDX 1.5 JSON** format, a widely
-adopted open standard maintained by OWASP.
+DelphiSBOM produces SBOMs in the **CycloneDX 1.6 JSON** format, a widely
+adopted open standard maintained by OWASP, and checks each one for the data
+fields of **BSI TR-03183-2 v2.1.0** (see
+[BSI TR-03183-2 Conformance](#bsi-tr-03183-2-conformance)).
 
 Unlike generic SBOM tools, DelphiSBOM understands the Delphi ecosystem. It
 knows which units belong to the Embarcadero RTL, can discover third-party
@@ -122,11 +124,12 @@ Click **Generate SBOM**. The app runs the following pipeline in the background
    - Extracts metadata: library name from its runtime package or directory name,
      vendor from the copyright holder most of its source file headers name,
      licence from LICENSE files
-7. **Generates** the CycloneDX 1.5 JSON SBOM and writes it to the output
+7. **Generates** the CycloneDX 1.6 JSON SBOM, with the file name and SHA-512
+   of the Release binary when it has been built, and writes it to the output
    directory
 8. **Checks** the written file against the schema rules its output could break,
-   and writes the HTML and Markdown reports if you ticked **Write HTML and
-   Markdown reports**
+   then against the data fields BSI TR-03183-2 requires, and writes the HTML and
+   Markdown reports if you ticked **Write HTML and Markdown reports**
 
 ### Step 3: Review Results
 
@@ -284,7 +287,8 @@ The new version flows into the SBOM immediately. No other steps are needed.
 SBOMs from Delphi MAP file analysis. It produces per-unit file hashes with
 strong binary evidence, but sparse metadata (no vendor, licence, or PURL).
 
-DelphiSBOM produces the opposite: rich metadata but no binary evidence.
+DelphiSBOM produces the opposite: rich metadata but no per-unit binary evidence
+(only the SHA-512 of the built binary as a whole).
 Together, they produce a complete SBOM.
 
 ### How It Works
@@ -299,7 +303,7 @@ Together, they produce a complete SBOM.
 DelphiSBOM merges the hashes from DX.Comply into its own output — every hash
 DX.Comply lists for a unit (e.g. SHA-256 and SHA-512), in its order, each
 algorithm once (names such as `SHA256` are normalised to `SHA-256`; algorithms
-outside the CycloneDX 1.5 enum are skipped). Each RTL and third-party component gains a
+outside the CycloneDX 1.6 enum are skipped). Each RTL and third-party component gains a
 nested `components` array listing the individual units with their binary
 hashes and a `dxcomply:origin` property. Units match by name as written or
 scope-stripped (`SysUtils` matches `System.SysUtils.dcu`), and a unit DX.Comply
@@ -325,7 +329,7 @@ indirectly. They are not lost — they remain in DX.Comply's own `bom.json`.
 ### Without DX.Comply
 
 The DX.Comply field is entirely optional. If left blank, DelphiSBOM produces
-a standard SBOM with no binary hashes — fully valid and compliant.
+a standard SBOM with no per-unit hashes — fully valid and compliant.
 
 ## MAP Files (Optional)
 
@@ -396,40 +400,78 @@ supplier, licence and number of units, the units of each library, your own code,
 and — most useful while you are still completing `components.json` — the units not
 yet in the SBOM with the libraries found on disk for them.
 
+## BSI TR-03183-2 Conformance
+
+BSI TR-03183-2 is the German Federal Office for Information Security's technical
+guideline for SBOMs under the EU Cyber Resilience Act.  Version 2.1.0
+(2025-08-20) requires CycloneDX 1.6 or later and names the data fields an SBOM
+must hold.  After the SBOM check, DelphiSBOM checks the written file for them
+and logs each one missing as a `[WARNING]` led by its rule ID, e.g.
+
+```
+[WARNING] BSI TR-03183-2: TR-5.2.2-LICENCE components[2] "MyLib": no distribution licence (components.json: licence)
+```
+
+The findings are advice: the run still succeeds.  Most are data that only you
+can supply, in `components.json`:
+
+- **The SBOM's creator** — `supplier.email` (or `supplier.url` without one),
+  written as `metadata.manufacturer` and as the application's manufacturer
+- **The application's licence** — the top-level `application_licence`
+- **Each library's creator** — `creator_email` / `creator_url`; without them the
+  vendor (`vendor_email` / `vendor_url`) is taken to be the creator
+- **Each library's licence** — `licence`, as an SPDX identifier or a
+  `LicenseRef-` identifier rather than a free-text name
+- **The binary** — build the Release configuration before generating, so the
+  application's file name and SHA-512 can be recorded
+
+DelphiSBOM supplies the rest itself: the RTL's licence and creator, every
+licence acknowledged as the distribution licence (`concluded`), and a
+dependency entry for every component.  The rule IDs are listed in
+`Docs/CYCLONEDX-NOTES.md`; from the command line, `--fail-on-tr` makes any
+finding fail the build.
+
 ## Understanding the Output
 
 ### The SBOM File
 
 The generated `.cdx.json` contains:
 
-- **Metadata**: your application name, version, supplier, and the tool that
-  generated the SBOM
+- **Metadata**: your application name, version, supplier, creator
+  (`manufacturer`) and licence, the tool that generated the SBOM, and the SBOM's
+  creator; when the Release binary has been built, its file name and SHA-512
 - **Components**: a flat list of all third-party dependencies, each with:
   - Name and version
   - Supplier/vendor, with its contact email when the manifest gives a `vendor_email`
+  - Creator (`manufacturer`), from `creator_email` / `creator_url`, or else the
+    vendor's email or URL
   - Licence — an SPDX `id` when the value is a recognised SPDX identifier, an
-    SPDX `expression` when it contains `OR`/`AND`/`WITH`, otherwise a licence
-    `name` (e.g. `Commercial`, or `Proprietary` for your own or sole-use libraries)
+    SPDX `expression` when it contains `OR`/`AND`/`WITH` or is a `LicenseRef-`
+    identifier, otherwise a licence `name` (e.g. `Commercial`, or `Proprietary`
+    for your own or sole-use libraries); each acknowledged `concluded`, the
+    licence it is distributed under
   - Package URL (`pkg:delphi/<name>@<version>`, percent-encoded, so a space is `%20`)
   - External references (vendor website)
 - **Embarcadero Delphi RTL**: listed as a single framework component with
-  the Delphi version number
+  the Delphi version number, Embarcadero as creator, and the licence
+  `LicenseRef-DelphiSBOM-Embarcadero-RAD-Studio-EULA` (the RAD Studio licence
+  agreement has no SPDX identifier)
 - **Binary evidence** (when DX.Comply is used): nested sub-components under
   RTL and third-party entries, each with the hashes DX.Comply lists (SHA-256,
   and SHA-512 where DX.Comply writes one)
 - **Dependencies**: every component has a `bom-ref`, and the `dependencies`
   section records that your application uses the RTL and each library, and,
   where a library's source is on your search or library path (or beside the
-  DCU folder you compile it from), which other libraries and the RTL it uses. A `compositions` entry states that this graph
-  is incomplete: a library without source has no edges
+  DCU folder you compile it from), which other libraries and the RTL it uses. A `compositions` entry naming every component states that this graph
+  is incomplete: a library without source has an empty entry
 
 ### What is NOT in the SBOM
 
 - **Your own code** — own-code units are the application itself, not dependencies
 - **Individual RTL units** — the entire RTL is listed as one component
 - **Dependencies of libraries without source** — a library shipped as DCUs
-  only, or whose source DelphiSBOM cannot find, has no dependency entry: its dependencies are left unstated rather than claimed to be
-  none
+  only, or whose source DelphiSBOM cannot find, has an empty dependency entry, and the SBOM declares its dependencies incomplete rather than
+  claiming them to be none
 
 ## The `components.json` Manifest
 
@@ -470,6 +512,11 @@ Each component in the manifest has:
 | `type` | CycloneDX type | `"library"` or `"framework"` |
 | `units_prefix` | Unit name prefixes to match | `["Otl"]` |
 | `units_exact` | Exact unit names to match | `["GpLists", "GpStuff"]` |
+| `creator_email` / `creator_url` | Who created the library, when not the vendor (BSI TR-03183-2) | `"https://github.com/gabr42"` |
+
+At the top level, `supplier` (with `email`) names you as the SBOM's and the
+application's creator, and `application_licence` gives the application's own
+licence.
 
 ### Matching Rules
 
@@ -498,7 +545,8 @@ field before generating. This overrides whatever the `.dproj` contains.
 ### CI/CD Integration
 
 `DelphiSBOMCLI.exe` runs the same pipeline from a build script, with exit codes
-(0 success, 1 usage, 2 file or parse error, 3 validation error) and an optional
+(0 success, 1 usage, 2 file or parse error, 3 validation error, including
+`--fail-on-tr` with BSI TR-03183-2 findings) and an optional
 `.delphisbom.json` beside the project for its settings. Build with a detailed MAP
 file and pass `--map` and `--fail-on-unclassified`, so a library added without a
 `components.json` entry fails the build rather than slipping out of the SBOM:
@@ -509,6 +557,9 @@ DelphiSBOMCLI MyApp.dproj --map=Win64\Release\MyApp.map --report=both --fail-on-
 
 `--version-from-git-tag` sets the application version from the newest git tag
 in the project folder (`v2.1.0` gives `2.1.0`); `--product-version` still wins.
+`--binary=<file>` names the built binary to describe, instead of the `.dproj`'s
+Release output, and `--fail-on-tr` exits with 3 when the SBOM lacks a data field
+BSI TR-03183-2 requires.
 
 Complete `components.json` in the app first: the command line does not add
 libraries to it. See [CI-INTEGRATION.md](CI-INTEGRATION.md) for GitHub Actions and
@@ -635,7 +686,7 @@ Credential Manager, read locally and sent to `api.github.com` only.
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `<Project>.cdx.json` | Output directory | The generated CycloneDX 1.5 SBOM |
+| `<Project>.cdx.json` | Output directory | The generated CycloneDX 1.6 SBOM |
 | `<Project>.sbom-report.html` / `.md` | Beside the SBOM | Optional reports |
 | `components.json` | Project directory | Third-party library manifest (created on first save, updated on each save) |
 | `.delphisbom.json` | Project directory | Optional command-line settings; read only, never written |
@@ -661,6 +712,7 @@ modified.
 | **VCL** | Visual Component Library — Delphi's Windows UI framework |
 | **FMX** | FireMonkey — Delphi's cross-platform UI framework |
 | **EU CRA** | EU Cyber Resilience Act — regulation requiring SBOMs for digital products |
+| **BSI TR-03183-2** | German Federal Office for Information Security technical guideline naming the data fields of an SBOM for the EU CRA |
 | **NVD** | National Vulnerability Database — US government repository of vulnerability data |
 | **CVE** | Common Vulnerabilities and Exposures — standardised vulnerability identifiers |
 | **Dependency-Track** | OWASP tool for continuous SBOM analysis and vulnerability monitoring |

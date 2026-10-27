@@ -13,7 +13,8 @@ In practice that means a self-hosted build agent.
 
 1. **Build** the project with a detailed map file (`DCC_MapFile=3`), so DelphiSBOM reads
    the units the linker actually used — including units used only indirectly, and without
-   units excluded by `{$IFDEF}`s.
+   units excluded by `{$IFDEF}`s.  Build the Release configuration: the SBOM records the
+   file name and SHA-512 of the binary the `.dproj` puts there, as BSI TR-03183-2 asks.
 2. **Generate** with `--map`, and `--fail-on-unclassified` so a new, unrecorded library
    fails the build instead of silently missing from the SBOM.
 3. **Keep** `<Project>.cdx.json` (and the reports) as build artefacts of the release.
@@ -28,7 +29,18 @@ build agent's checkout may show `components.json` modified; commit those additio
 developer machine instead.
 
 Exit codes: `0` success, `1` usage error, `2` file or parse error, `3` validation error
-(the SBOM failed its check, or `--fail-on-unclassified` found units missing from it).
+(the SBOM failed its check, `--fail-on-unclassified` found units missing from it, or
+`--fail-on-tr` found BSI TR-03183-2 data fields missing).
+
+Every run also checks the SBOM against BSI TR-03183-2 v2.1.0 and logs each missing data
+field as a `[WARNING] BSI TR-03183-2: ...` line led by its rule ID.  It is advice unless
+`--fail-on-tr` (or `"failOnTr": true`) is given; then any finding exits with `3`.  Most
+findings are completed in `components.json` (`supplier.email`, `application_licence`, each
+library's `licence` and creator).  A missing binary is one: the file name and hash are left
+out, never guessed, when the Release output does not exist — or when it cannot be worked
+out, as for a package on the IDE's default `$(BDSCOMMONDIR)\Bpl` or with a `$(Auto)`
+suffix.  `--binary=<file>` (or `"binary"`) names the binary instead, e.g. when the build
+writes it elsewhere.
 
 `--check-online` (or `"checkOnline": true`) adds a comparison of `components.json` with each
 library's GitHub repository — licence, latest release, archived — to the build log as

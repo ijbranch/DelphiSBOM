@@ -17,8 +17,10 @@ Place `components.json` in the same directory as your `.dpr` / `.dproj` file.
   "last_updated": "YYYY-MM-DD",
   "supplier": {
     "name": "Your Company or Name",
-    "url": "https://example.com"
+    "url": "https://example.com",
+    "email": "sbom@example.com"
   },
+  "application_licence": "LicenseRef-scancode-commercial-license",
   "components": [
     {
       "name": "Library Name",
@@ -26,6 +28,8 @@ Place `components.json` in the same directory as your `.dpr` / `.dproj` file.
       "vendor": "Vendor Name",
       "vendor_url": "https://vendor.example.com",
       "vendor_email": "sales@vendor.example.com",
+      "creator_email": "author@example.com",
+      "creator_url": "https://github.com/author/library",
       "licence": "MIT",
       "licence_url": "https://opensource.org/licenses/MIT",
       "type": "library",
@@ -47,7 +51,8 @@ Place `components.json` in the same directory as your `.dpr` / `.dproj` file.
 |-------|----------|-------------|
 | `schema_version` | Yes | Must be `"1.0"` (any other value is warned about and read as 1.0) |
 | `last_updated` | Yes | ISO date (`YYYY-MM-DD`) of last manifest update |
-| `supplier` | Yes | Object with `name` (required) and `url` (optional) identifying the application's publisher |
+| `supplier` | Yes | Object with `name` (required), `url` and `email` (optional) identifying the application's publisher.  The supplier is also written as the creator of the SBOM (`metadata.manufacturer`) and of the application, which BSI TR-03183-2 requires: the `email` is used when it is set, else the `url`.  An `email` that is not an email address is warned about and left out |
+| `application_licence` | No | The licence under which the application itself is distributed, written as the application component's licence (BSI TR-03183-2 requires one).  Same forms as a component's `licence`; for your own commercial product use `"LicenseRef-scancode-commercial-license"` or a `LicenseRef-<your name>-<licence>` identifier |
 | `own_code_units` | No | Array of unit names that are your own project code (not third-party). These are classified as own code and excluded from the SBOM components list. An exact name listed here beats any `units_prefix` rule. Auto-populated by the app for units in the project directory and in sibling directories that do not look like a library, and via the "Mark as Own Code" button |
 | `own_code_prefixes` | No | Array of unit name prefixes that classify as own code (case-insensitive). Any unit whose name starts with a listed prefix is treated as own code. Useful for internal shared libraries (e.g. `"gll"` matches `gllFunctions`, `gllDateTimeHelpers`, etc.). Applied after `units_prefix`; prefixes shorter than 3 characters are warned about |
 
@@ -65,8 +70,10 @@ treated as missing.
 | `version` | Yes | Version string (e.g. `"3.7.8"`, `"2.x"`) |
 | `vendor` | Yes | Library author or vendor name |
 | `vendor_url` | No | URL to the library's home page or repository. A GitHub repository URL (`https://github.com/owner/repo`) lets the opt-in online check compare the entry's licence and version with GitHub |
-| `vendor_email` | No | Contact email of the vendor, emitted as the component's `supplier.contact[0].email` (BSI TR-03183-2 asks for the component creator's email or URL). A value that is not an email address is warned about and left out of the SBOM |
-| `licence` | Yes | SPDX licence identifier (e.g. `"MIT"`, `"BSD-3-Clause"`), an SPDX expression (e.g. `"MPL-1.1 OR LGPL-2.1-or-later"`), or a plain name such as `"Commercial"`. Recognised identifiers are emitted as `license.id`, expressions as `expression`, anything else as `license.name` (Validate Manifest warns about unrecognised values other than `Commercial` and `Proprietary`) |
+| `vendor_email` | No | Contact email of the vendor, emitted as the component's `supplier.contact[0].email`. A value that is not an email address is warned about and left out of the SBOM |
+| `creator_email` | No | Email of the entity that created and maintains the library, emitted as the component's `manufacturer` (BSI TR-03183-2's component creator).  Set it, or `creator_url`, when the creator is not the vendor (a reseller, or a fork); without either the vendor is taken to be the creator and `vendor_email`, else `vendor_url`, is written instead.  An email wins over a URL, and a value that is not an email address is warned about and left out |
+| `creator_url` | No | Web page of the library's creator (e.g. its repository), emitted as `manufacturer.url` when there is no `creator_email` |
+| `licence` | Yes | SPDX licence identifier (e.g. `"MIT"`, `"BSD-3-Clause"`), an SPDX expression (e.g. `"MPL-1.1 OR LGPL-2.1-or-later"`), a `LicenseRef-` identifier (e.g. `"LicenseRef-scancode-commercial-license"`), or a plain name such as `"Commercial"`. Recognised identifiers are emitted as `license.id`, expressions and `LicenseRef-` identifiers as `expression`, anything else as `license.name`; each is acknowledged `"concluded"` (Validate Manifest warns about unrecognised values other than `Commercial` and `Proprietary`) |
 | `licence_url` | No | URL to licence text (not emitted for an expression, which CycloneDX does not allow a URL on) |
 | `type` | Yes | CycloneDX component type: `"library"`, `"framework"`, or `"application"`. Case-insensitive; emitted lower-case, and an unrecognised value is emitted as `"library"` |
 | `units_prefix` | No | Array of unit name prefixes for matching (case-insensitive) |
@@ -142,6 +149,13 @@ For commercially licenced libraries, use `"Commercial"` as the licence value:
 
 For a library that is neither open source nor sold — your own, or one licensed to you alone —
 use `"Proprietary"`. Both names are written as `license.name` without a validation warning.
+
+**BSI TR-03183-2 does not accept a licence name** (its section 6.1): a licence must be named by an
+SPDX identifier, else by a key from ScanCode LicenseDB, else by an identifier of your own of the
+form `LicenseRef-<your name>-<licence>`.  So for a TR-conformant SBOM write
+`"LicenseRef-scancode-commercial-license"` or `"LicenseRef-scancode-proprietary-license"` (both
+ScanCode keys) instead of `"Commercial"` or `"Proprietary"`; the SBOM's TR check reports a name as
+`TR-6.1-LICENCE`.  ScanCode LicenseDB: https://scancode-licensedb.aboutcode.org/
 
 ### Type Selection
 

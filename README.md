@@ -1,6 +1,7 @@
 # DelphiSBOM
 
-A CycloneDX 1.5 SBOM (Software Bill of Materials) generator for Delphi applications.
+A CycloneDX 1.6 SBOM (Software Bill of Materials) generator for Delphi applications,
+with a conformance check to BSI TR-03183-2 v2.1.0.
 
 ## What is an SBOM?
 
@@ -20,14 +21,25 @@ becoming a regulatory requirement in many jurisdictions:
 **CycloneDX** is an open standard for SBOMs maintained by OWASP (the Open
 Worldwide Application Security Project). It defines a structured format
 (JSON or XML) for describing software components, their versions, suppliers,
-licences, and relationships. DelphiSBOM generates CycloneDX 1.5 JSON — the
-current stable version of the specification.
+licences, and relationships. DelphiSBOM generates CycloneDX 1.6 JSON — the
+lowest version BSI TR-03183-2 v2.1.0 accepts.
 
 CycloneDX is one of two widely adopted SBOM formats (the other being SPDX).
 It was designed specifically for security and software supply chain use cases,
 making it the natural choice for compliance with regulations like the EU CRA.
 
 More information: https://cyclonedx.org
+
+## What is BSI TR-03183-2?
+
+**BSI TR-03183-2** is the German Federal Office for Information Security's
+technical guideline for SBOMs under the EU Cyber Resilience Act.  It names the
+data fields an SBOM must hold: the SBOM creator's contact, each component's
+creator, version, licence and dependencies, and the file name and SHA-512 of
+the deployable binary.  Version 2.1.0 (2025-08-20) requires CycloneDX 1.6 or
+later.  DelphiSBOM checks every SBOM it writes against these fields and logs
+each one missing as a `[WARNING]` led by its rule ID (e.g. `TR-5.2.2-LICENCE`);
+most are completed in `components.json`.
 
 ## Purpose
 
@@ -50,10 +62,11 @@ that have no awareness of the Delphi ecosystem.
    copyright holder most of its source headers name; licence from LICENSE files)
 5. **Review & Save** — confirm discovered libraries in the app, then save to
    `components.json` with one click
-6. **Generate** a CycloneDX 1.5 JSON SBOM file with a dependency graph — the
+6. **Generate** a CycloneDX 1.6 JSON SBOM file with a dependency graph — the
    application's libraries and, where a library's source is found, which other
-   libraries it uses — check the written file, and optionally write HTML and
-   Markdown reports beside it
+   libraries it uses, and the built binary's file name and SHA-512 — check the
+   written file and its conformance to BSI TR-03183-2, and optionally write HTML
+   and Markdown reports beside it
 
 An opt-in **online check** compares `components.json` with each library's
 GitHub repository — licence, latest release, archived — and lets you apply the
@@ -89,7 +102,7 @@ DelphiSBOMCLI MyApp.dproj --map=Win64\Release\MyApp.map --report=both --fail-on-
 | 0 | SBOM written and passed the check |
 | 1 | Usage error (unknown option, missing value, no project) |
 | 2 | File or parse error (project, manifest, config or MAP file) |
-| 3 | Validation error: the SBOM failed the check, `--validate-manifest` found the manifest invalid, or `--fail-on-unclassified` found units missing from the SBOM |
+| 3 | Validation error: the SBOM failed the check, `--validate-manifest` found the manifest invalid, `--fail-on-unclassified` found units missing from the SBOM, or `--fail-on-tr` found BSI TR-03183-2 data fields missing |
 
 Run `DelphiSBOMCLI --help` for every option. Settings can also live in a
 `.delphisbom.json` beside the project (see `Samples/delphisbom.sample.json`);
@@ -125,6 +138,7 @@ write are:
 | `.dcu` files | `<Delphi Install>\lib\<Platform>\release\` | Enumerates RTL/VCL unit names for classification |
 | `components.json` | Your project directory | Reads third-party library definitions and own-code unit lists |
 | `.map` file (optional) | Wherever your build wrote it | The units the linker used, instead of the uses clause (needs Linking > Map file = Detailed) |
+| Built binary (`.exe`, `.dll` or `.bpl`) | The `.dproj`'s Release output, or `--binary` | Its file name and SHA-512 describe the application; left out with a warning when the file does not exist |
 | `.pas` / `.dcu` files | Project folder, search paths, IDE library path, `D:\` and Program Files top-level folders | Locates unclassified units' libraries; `.dcu` files only in the search and library path folders themselves |
 | `.delphisbom.json` (optional) | Beside the project | Command-line settings |
 | Windows Registry | `HKCU\Software\Embarcadero\BDS\*`, `HKLM\SOFTWARE\WOW6432Node\Embarcadero\BDS\*` | **Read-only.** Detects installed Delphi versions and their installation paths — the version matching the project's `ProjectVersion` is preferred. Also reads IDE environment variables and the IDE library path |
@@ -133,7 +147,7 @@ write are:
 
 | What | Where | Purpose |
 |------|-------|---------|
-| `<Project>.cdx.json` | Output directory (defaults to project dir) | The generated CycloneDX 1.5 SBOM — this is the deliverable. UTF-8 without a BOM, written atomically, then read back and checked |
+| `<Project>.cdx.json` | Output directory (defaults to project dir) | The generated CycloneDX 1.6 SBOM — this is the deliverable. UTF-8 without a BOM, written atomically, then read back and checked |
 | `<Project>.sbom-report.html` / `.md` | Beside the SBOM | Optional human-readable reports: components, licences, units, what is still unclassified, check result |
 | `components.json` | Your project directory | Written when you click "Save & Regenerate" or "Mark as Own Code", and after a successful run that auto-detected own-code units |
 | `DelphiSBOM.ini` | `%APPDATA%\DelphiSBOM\` | Application settings (UTF-8): MRU project list (up to 10) with per-project manifest path, output directory, version override, DX.Comply file, MAP file and report choice. Created on first successful SBOM generation |
@@ -186,8 +200,8 @@ console suite covering the pipeline units (everything except the VCL forms):
 encoding detection, `.dproj` evaluation, unit-list parsing, MAP files, manifest
 safety, classification precedence, library discovery (including DCU-only
 libraries), CycloneDX output (licences, purls, timestamp, evidence, dependency
-graph), the post-write check, the reports, command-line parsing and exit codes,
-and end-to-end engine runs. DUnitX must be on your library path.
+graph, the built binary), the post-write check, the BSI TR-03183-2 check, the
+reports, command-line parsing and exit codes, and end-to-end engine runs. DUnitX must be on your library path.
 
 ```
 Tests\Win64\Debug\DelphiSBOMTests.exe --exitbehavior:Continue
