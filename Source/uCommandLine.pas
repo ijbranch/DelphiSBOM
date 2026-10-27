@@ -1,5 +1,5 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
@@ -42,7 +42,7 @@ type
   ///   A setting that can come from either the command line or the config file.
   /// </summary>
   TCLISetting = ( csManifest, csOutput, csDelphi, csProductVersion, csDXComply, csMap, csReports, csFailOnUnclassified,
-    csCheckOnline, csVersionFromGitTag );
+    csCheckOnline, csVersionFromGitTag, csBinary, csFailOnTR );
 
   /// <summary>
   ///   The settings given explicitly on the command line; the config file never overrides these.
@@ -63,6 +63,8 @@ type
     Explicit: TCLISettings;
     /// <summary>Exit 3 when units are missing from the SBOM</summary>
     FailOnUnclassified: Boolean;
+    /// <summary>--fail-on-tr: exit 3 when the SBOM does not meet BSI TR-03183-2</summary>
+    FailOnTR: Boolean;
     /// <summary>--validate-manifest: check components.json and stop</summary>
     ValidateManifestOnly: Boolean;
     /// <summary>--check-online: compare components.json with the libraries' GitHub repositories</summary>
@@ -200,7 +202,7 @@ begin
 
     // Flags take no value
     if ( Name = 'version' ) or ( Name = 'quiet' ) or ( Name = 'no-config' ) or ( Name = 'fail-on-unclassified' ) or
-      ( Name = 'validate-manifest' ) or ( Name = 'check-online' ) or ( Name = 'version-from-git-tag' ) then
+      ( Name = 'validate-manifest' ) or ( Name = 'check-online' ) or ( Name = 'version-from-git-tag' ) or ( Name = 'fail-on-tr' ) then
     begin
       if HasValue then
       begin
@@ -226,6 +228,11 @@ begin
         AOptions.VersionFromGitTag := True;
         Include( AOptions.Explicit, csVersionFromGitTag );
       end
+      else if Name = 'fail-on-tr' then
+      begin
+        AOptions.FailOnTR := True;
+        Include( AOptions.Explicit, csFailOnTR );
+      end
       else
       begin
         AOptions.FailOnUnclassified := True;
@@ -238,7 +245,7 @@ begin
     if ( not HasValue ) or ( Trim( Value ) = '' ) then
     begin
       if ( Name = 'manifest' ) or ( Name = 'output' ) or ( Name = 'delphi' ) or ( Name = 'product-version' ) or
-        ( Name = 'dxcomply' ) or ( Name = 'map' ) or ( Name = 'report' ) or ( Name = 'config' ) then
+        ( Name = 'dxcomply' ) or ( Name = 'map' ) or ( Name = 'report' ) or ( Name = 'config' ) or ( Name = 'binary' ) then
         AError      := Format( '--%s needs a value: --%0:s=<value>', [ Name ] )
       else
         AError      := Format( 'Unknown option --%s', [ Name ] );
@@ -275,6 +282,11 @@ begin
     begin
       AOptions.Options.MapFile := ResolvePath( Value, CurrentDir );
       Include( AOptions.Explicit, csMap );
+    end
+    else if Name = 'binary' then
+    begin
+      AOptions.Options.BinaryFile := ResolvePath( Value, CurrentDir );
+      Include( AOptions.Explicit, csBinary );
     end
     else if Name = 'report' then
     begin
@@ -353,6 +365,11 @@ begin
         if ( not ( csMap in AOptions.Explicit ) ) then
           AOptions.Options.MapFile := ResolvePath( StringOf( Pair ), BaseDir );
       end
+      else if Key = 'binary' then
+      begin
+        if ( not ( csBinary in AOptions.Explicit ) ) then
+          AOptions.Options.BinaryFile := ResolvePath( StringOf( Pair ), BaseDir );
+      end
       else if Key = 'report' then
       begin
         var Formats: TReportFormats;
@@ -370,6 +387,14 @@ begin
 
         if ( not ( csFailOnUnclassified in AOptions.Explicit ) ) then
           AOptions.FailOnUnclassified := TJSONBool( Pair.JsonValue ).AsBoolean;
+      end
+      else if Key = 'failOnTr' then
+      begin
+        if ( not ( Pair.JsonValue is TJSONBool ) ) then
+          raise ECommandLineConfig.CreateFmt( '%s: "failOnTr" must be true or false', [ AConfigFile ] );
+
+        if ( not ( csFailOnTR in AOptions.Explicit ) ) then
+          AOptions.FailOnTR := TJSONBool( Pair.JsonValue ).AsBoolean;
       end
       else if Key = 'checkOnline' then
       begin
@@ -400,7 +425,7 @@ function UsageText: string;
 begin
 
   Result            := string.Join( sLineBreak, [
-    AppName + ' ' + AppVersion + ' — CycloneDX 1.5 SBOM generator for Delphi projects',
+    AppName + ' ' + AppVersion + ' — CycloneDX 1.6 SBOM generator for Delphi projects (BSI TR-03183-2 v2.1.0)',
     '',
     'Usage: DelphiSBOMCLI <project.dproj | project.dpr | package.dpk> [options]',
     '',
@@ -408,6 +433,8 @@ begin
     '  --manifest=<file>         components.json to use (default: beside the project)',
     '  --output=<dir>            Folder for <Project>.cdx.json (default: the project folder)',
     '  --map=<file>              Detailed .map file: list the units the linker used, not the uses clause',
+    '  --binary=<file>           Built binary to describe: file name and SHA-512 (default: the .dproj''s',
+    '                            Release output)',
     '  --dxcomply=<file>         DX.Comply bom.json whose unit hashes are merged into the SBOM',
     '  --delphi=<dir>            Delphi installation to use (default: the project''s version)',
     '  --product-version=<ver>   Version for the application (default: from the .dproj)',
@@ -415,6 +442,7 @@ begin
     '                            (v1.2.3 gives 1.2.3); --product-version wins when both are given',
     '  --report=md|html|both|none  Write <Project>.sbom-report.md / .html beside the SBOM',
     '  --fail-on-unclassified    Exit 3 when any unit is missing from the SBOM',
+    '  --fail-on-tr              Exit 3 when the SBOM lacks a data field BSI TR-03183-2 v2.1.0 requires',
     '  --validate-manifest       Check components.json only, then stop',
     '  --check-online            Also compare components.json with each GitHub vendor_url (licence,',
     '                            latest release, archived). Advice only: the exit code is unchanged',
@@ -427,14 +455,15 @@ begin
     'Project config (' + ConfigFileName + '), every key optional; command-line options win:',
     '  { "manifest": "components.json", "output": "sbom", "map": "Win64\\Release\\App.map",',
     '    "dxcomply": "bom.json", "delphi": "C:\\...\\Studio\\37.0", "productVersion": "1.2.3",',
-    '    "report": "both", "failOnUnclassified": true, "checkOnline": false, "versionFromGitTag": true }',
+    '    "report": "both", "failOnUnclassified": true, "checkOnline": false, "versionFromGitTag": true,',
+    '    "binary": "Win64\\Release\\App.exe", "failOnTr": true }',
     '  Relative paths are resolved from the config file''s folder.',
     '',
     'Exit codes:',
     '  0  SBOM written and passed the check',
     '  1  Usage error',
     '  2  File or parse error (project, manifest, config or MAP file)',
-    '  3  Validation error (SBOM check, invalid manifest, or --fail-on-unclassified)'
+    '  3  Validation error (SBOM check, invalid manifest, --fail-on-unclassified or --fail-on-tr)'
     ] );
 
 end;
@@ -649,6 +678,13 @@ begin
             Names   := Names + ' ' + CU.OriginalName;
 
         AErr( Format( '[ERROR] %d units are not in the SBOM:%s', [ SBOM.Summary.UnclassifiedCount, Names ] ) );
+        Exit( ExitValidationError );
+      end;
+
+      // The findings were logged as warnings by the engine
+      if CLI.FailOnTR and ( Length( SBOM.TRFindings ) > 0 ) then
+      begin
+        AErr( Format( '[ERROR] the SBOM does not meet BSI TR-03183-2 v2.1.0 (%d findings)', [ Length( SBOM.TRFindings ) ] ) );
         Exit( ExitValidationError );
       end;
 
