@@ -94,6 +94,8 @@ type
     FileName: string;
     /// <summary>SHA-512 of the file in lower-case hex</summary>
     SHA512: string;
+    /// <summary>The file version in its version resource, Major.Minor.Release.Build ('' = none)</summary>
+    FileVersion: string;
   end;
 
   /// <summary>
