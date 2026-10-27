@@ -1,5 +1,5 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
@@ -136,6 +136,7 @@ type
     FFieldsProject: string; // Project the per-project fields were last populated for
     FLibrariesEdited: Boolean; // Editor changes not yet saved to components.json
 
+    /// <summary>Creates every control of the form at run time and sets its captions, hints and events.</summary>
     procedure CreateControls;
     procedure CreateInputRow( var ATop: Integer; const ACaption: string;
       out ALabel: TLabel; out AEdit: TEdit; out AButton: TButton;
@@ -568,7 +569,7 @@ begin
   FBtnGenerate.Width := 130;
   FBtnGenerate.Height := 30;
   FBtnGenerate.Caption := 'Generate SBOM';
-  FBtnGenerate.Hint := 'Parse the project, classify units, and generate a CycloneDX 1.5 JSON SBOM';
+  FBtnGenerate.Hint := 'Parse the project, classify units, and generate a CycloneDX 1.6 JSON SBOM';
   FBtnGenerate.OnClick := BtnGenerateClick;
 
   FBtnValidate      := TButton.Create( Self );

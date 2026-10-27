@@ -1,5 +1,5 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
@@ -224,7 +224,7 @@ begin
         Log( llInfo, Format( 'Merged %d duplicate DX.Comply entries for the same unit', [ Duplicates ] ) );
 
       if Unsupported > 0 then
-        Log( llWarning, Format( 'Ignored %d DX.Comply hashes with an algorithm CycloneDX 1.5 does not define', [ Unsupported ] ) );
+        Log( llWarning, Format( 'Ignored %d DX.Comply hashes with an algorithm CycloneDX 1.6 does not define', [ Unsupported ] ) );
     finally
       IndexByUnit.Free;
       EvidenceList.Free;
