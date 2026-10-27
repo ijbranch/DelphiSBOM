@@ -1,5 +1,5 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
@@ -32,6 +32,10 @@ type
     Vendor: string;
     VendorURL: string;
     VendorEmail: string; // Contact email of the vendor (empty = none); written as supplier.contact
+    /// <summary>Email of the entity that created the component (empty = use VendorEmail); written as manufacturer</summary>
+    CreatorEmail: string;
+    /// <summary>Web page of the component's creator (empty = use VendorURL); written as manufacturer.url</summary>
+    CreatorURL: string;
     Licence: string;
     LicenceURL: string;
     CompType: string; // CycloneDX type: 'library', 'framework', 'application'
@@ -47,6 +51,8 @@ type
   TSupplierInfo = record
     Name: string;
     URL: string;
+    /// <summary>Contact email; with URL it names the creator of the SBOM and of the application</summary>
+    Email: string;
   end;
 
   /// <summary>
@@ -56,6 +62,8 @@ type
     SchemaVersion: string;
     LastUpdated: string;
     Supplier: TSupplierInfo;
+    /// <summary>Licence under which the application itself is distributed (empty = none)</summary>
+    ApplicationLicence: string;
     Components: TArray<TComponentEntry>;
     OwnCodeUnits: TArray<string>; // Units explicitly marked as own code by the user
     OwnCodePrefixes: TArray<string>; // Unit name prefixes that classify as own code (e.g. 'gll')
@@ -74,6 +82,18 @@ type
     SearchPaths: TArray<string>; // DCC_UnitSearchPath entries (evaluated for Release + TargetPlatform)
     Units: TArray<string>; // Unit names from the .dpr uses clause (or the .dpk contains clause)
     OwnCodeUnits: TArray<string>; // Units with 'in' file references (own code)
+    /// <summary>Where a Release build of TargetPlatform puts the binary ('' = not known); the file may not exist</summary>
+    BinaryFile: string;
+  end;
+
+  /// <summary>
+  ///   The built binary the SBOM describes: the file that is deployed.
+  /// </summary>
+  TBinaryInfo = record
+    /// <summary>The file's name without its path ('' = no binary was found)</summary>
+    FileName: string;
+    /// <summary>SHA-512 of the file in lower-case hex</summary>
+    SHA512: string;
   end;
 
   /// <summary>
@@ -126,8 +146,10 @@ type
   ///   One hash of a unit's file, as DX.Comply listed it.
   /// </summary>
   TEvidenceHash = record
-    Algorithm: string; // CycloneDX 1.5 hash algorithm (e.g. 'SHA-256', 'SHA-512')
-    Content: string; // The digest in hex
+    /// <summary>CycloneDX 1.6 hash algorithm (e.g. 'SHA-256', 'SHA-512')</summary>
+    Algorithm: string;
+    /// <summary>The digest in hex</summary>
+    Content: string;
   end;
 
   /// <summary>
@@ -185,6 +207,10 @@ type
     UnitSource: string;
     /// <summary>Problems the post-write check found in the SBOM (empty = passed)</summary>
     ValidationErrors: TArray<string>;
+    /// <summary>BSI TR-03183-2 requirements the SBOM does not meet, each led by its rule ID (empty = conforms)</summary>
+    TRFindings: TArray<string>;
+    /// <summary>The binary described as the application's deployable file (FileName '' = none found)</summary>
+    Binary: TBinaryInfo;
     /// <summary>Companion reports written</summary>
     ReportFiles: TArray<string>;
     /// <summary>Populated only on failure</summary>
@@ -202,6 +228,8 @@ type
     VersionOverride: string; // Version string override (empty = read from .dproj)
     DXComplyFile: string; // Path to DX.Comply bom.json (empty = no evidence merge)
     MapFile: string; // Path to a detailed .map file (empty = units from the uses clause)
+    /// <summary>The built binary to describe (empty = where the .dproj puts a Release build)</summary>
+    BinaryFile: string;
     ReportFormats: TReportFormats; // Companion reports to write beside the SBOM
   end;
 
@@ -258,6 +286,18 @@ const
   RTLComponentIndex = -1;
 
   /// <summary>
+  ///   The licence the SBOM gives the Embarcadero RTL.  The RTL ships under the RAD Studio licence agreement, for which
+  ///   neither the SPDX list nor ScanCode LicenseDB has an identifier (checked 2026-10-28), so BSI TR-03183-2 section 6.1
+  ///   asks for a LicenseRef- identifier of the inventorying entity's own.
+  /// </summary>
+  RTLLicence        = 'LicenseRef-DelphiSBOM-Embarcadero-RAD-Studio-EULA';
+
+  /// <summary>
+  ///   The web page of the RTL's creator, written as its manufacturer (BSI TR-03183-2: component creator).
+  /// </summary>
+  RTLCreatorURL     = 'https://www.embarcadero.com';
+
+  /// <summary>
   ///   Application version string.
   /// </summary>
   AppVersion        = '1.0.0';
@@ -298,18 +338,19 @@ function EffectiveProductVersion( const AOverride, AProjectVersion: string ): st
 
 type
   /// <summary>
-  ///   How a licence value from components.json is emitted in CycloneDX 1.5.
+  ///   How a licence value from components.json is emitted in CycloneDX 1.6.
   /// </summary>
   TLicenceKind = (
     lkNone, // No licence value
     lkSPDX, // A known SPDX identifier, emitted as license.id
-    lkExpression, // An SPDX expression (contains OR / AND / WITH), emitted as expression
+    lkExpression, // An SPDX expression (contains OR / AND / WITH, or a LicenseRef- identifier), emitted as expression
     lkName // Anything else (e.g. 'Commercial'), emitted as license.name
     );
 
 /// <summary>
-///   Classifies a licence value. license.id is an SPDX enum in the CycloneDX 1.5 schema, so only
-///   recognised identifiers may go there; everything else must be an expression or a name.
+///   Classifies a licence value. license.id is an SPDX enum in the CycloneDX 1.6 schema, so only
+///   recognised identifiers may go there; everything else must be an expression or a name.  A
+///   LicenseRef- identifier (SPDX Annex B, e.g. LicenseRef-scancode-...) is a valid expression on its own.
 /// </summary>
 /// <param name="AValue">The licence value as written in components.json.</param>
 /// <param name="ANormalised">The value to emit: canonical SPDX casing for lkSPDX, otherwise the trimmed input.</param>
@@ -317,7 +358,7 @@ type
 function ClassifyLicence( const AValue: string; out ANormalised: string ): TLicenceKind;
 
 /// <summary>
-///   Maps a hash algorithm name to the CycloneDX 1.5 enum spelling ('SHA256' and 'sha-256' both
+///   Maps a hash algorithm name to the CycloneDX 1.6 enum spelling ('SHA256' and 'sha-256' both
 ///   become 'SHA-256'). Returns an empty string for an algorithm CycloneDX does not define.
 /// </summary>
 /// <param name="AAlgorithm">The algorithm name as found in the source data.</param>
@@ -334,6 +375,9 @@ function NormaliseHashAlgorithm( const AAlgorithm: string ): string;
 function IsEmailAddress( const AValue: string ): Boolean;
 
 implementation
+
+uses
+  System.RegularExpressions;
 
 const
   /// <summary>
@@ -354,7 +398,7 @@ const
     );
 
   /// <summary>
-  ///   Hash algorithm names defined by the CycloneDX 1.5 hash-alg enum.
+  ///   Hash algorithm names defined by the CycloneDX 1.6 hash-alg enum (unchanged from 1.5).
   /// </summary>
   CycloneDXHashAlgorithms: array[ 0..11 ] of string = (
     'MD5', 'SHA-1', 'SHA-256', 'SHA-384', 'SHA-512', 'SHA3-256', 'SHA3-384', 'SHA3-512',
@@ -442,6 +486,10 @@ begin
   var Padded        := ' ' + UpperCase( ANormalised ) + ' ';
 
   if Padded.Contains( ' OR ' ) or Padded.Contains( ' AND ' ) or Padded.Contains( ' WITH ' ) then
+    Exit( lkExpression );
+
+  // A user-defined identifier: 'LicenseRef-' and then letters, digits, '.' and '-' (SPDX Annex B idstring)
+  if TRegEx.IsMatch( ANormalised, '^LicenseRef-[A-Za-z0-9.-]+$' ) then
     Exit( lkExpression );
 
   Result            := lkName;
