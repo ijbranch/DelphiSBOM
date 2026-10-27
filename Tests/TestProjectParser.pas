@@ -1,5 +1,5 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
@@ -103,6 +103,36 @@ type
     /// </summary>
     [Test]
     procedure MainSourcePackageParsed;
+
+    /// <summary>
+    ///   Proves the binary of a Release build is located the way the compiler names it: DCC_ExeOutput with the
+    ///   platform and configuration expanded, the main source's name, and the extension of the AppType (a library
+    ///   is a .dll, a package a .bpl with its DllSuffix); no output folder means the project folder; and a package
+    ///   left on the IDE's default folder, which a macro names, gives '' instead of a guessed path.
+    /// </summary>
+    /// <param name="AAppType">The .dproj's AppType.</param>
+    /// <param name="AMainSource">The .dproj's MainSource.</param>
+    /// <param name="AOutputXml">The output-folder and suffix elements of the .dproj.</param>
+    /// <param name="AExpected">The expected path relative to the project folder, or '' for none.</param>
+    [Test]
+    [TestCase( 'application', 'Application|App.dpr|<DCC_ExeOutput>.\$(Platform)\$(Config)</DCC_ExeOutput>|Win64\Release\App.exe', '|' )]
+    [TestCase( 'library', 'Library|Lib.dpr|<DCC_ExeOutput>..\Bin</DCC_ExeOutput>|..\Bin\Lib.dll', '|' )]
+    [TestCase( 'no output folder', 'Console|Tool.dpr||Tool.exe', '|' )]
+    [TestCase( 'package with suffix', 'Package|Pkg.dpk|<DCC_BplOutput>.\Bpl</DCC_BplOutput><DllSuffix>370</DllSuffix>|Bpl\Pkg370.bpl', '|' )]
+    [TestCase( 'package on the IDE default', 'Package|Pkg.dpk||', '|' )]
+    [TestCase( 'suffix macro', 'Package|Pkg.dpk|<DCC_BplOutput>.\Bpl</DCC_BplOutput><DllSuffix>$(Auto)</DllSuffix>|', '|' )]
+    [TestCase( 'library with affixes', 'Library|Lib.dpr|<DCC_ExeOutput>Bin</DCC_ExeOutput><DllPrefix>pre</DllPrefix>' +
+      '<DllSuffix>370</DllSuffix>|Bin\preLib370.dll', '|' )]
+    [TestCase( 'unknown macro', 'Application|App.dpr|<DCC_ExeOutput>$(NoSuchDsblMacro)\Bin</DCC_ExeOutput>|', '|' )]
+    procedure BinaryFileOfReleaseBuild( const AAppType, AMainSource, AOutputXml, AExpected: string );
+
+    /// <summary>
+    ///   Proves the output folder is the one of the Release build, not of another configuration, and that a {$E}
+    ///   directive in the main source sets the extension (a control panel applet is a .cpl), even when the directive
+    ///   sits among other directives.
+    /// </summary>
+    [Test]
+    procedure BinaryFileFollowsReleaseAndExtensionDirective;
 
     /// <summary>
     ///   Proves ExtractUsedUnits reads both uses clauses of a unit, in order and each unit once, while a unit
@@ -320,6 +350,56 @@ begin
     Assert.AreEqual<NativeInt>( 2, Length( Info.Units ) );
     Assert.AreEqual( 'PkgUnitA', Info.Units[ 0 ], False );
     Assert.AreEqual<NativeInt>( 2, Length( Info.OwnCodeUnits ) );
+  finally
+    Parser.Free;
+  end;
+
+end;
+
+procedure TProjectParserTests.BinaryFileOfReleaseBuild( const AAppType, AMainSource, AOutputXml, AExpected: string );
+begin
+
+  var Dproj := FScratch.PathOf( 'Bin.dproj' );
+  WriteUtf8File( Dproj,
+    '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">' +
+    '<PropertyGroup><ProjectVersion>20.3</ProjectVersion><MainSource>' + AMainSource + '</MainSource>' +
+    '<AppType>' + AAppType + '</AppType>' + AOutputXml + '</PropertyGroup>' +
+    '<ProjectExtensions><BorlandProject><Platforms><Platform value="Win64">True</Platform></Platforms></BorlandProject>' +
+    '</ProjectExtensions></Project>' );
+
+  var Parser := TProjectParser.Create( NoLog() );
+  try
+    var Expected := '';
+
+    if AExpected <> '' then
+      Expected := ExpandFileName( FScratch.PathOf( AExpected ) );
+
+    Assert.AreEqual( Expected, Parser.Parse( Dproj ).BinaryFile );
+  finally
+    Parser.Free;
+  end;
+
+end;
+
+procedure TProjectParserTests.BinaryFileFollowsReleaseAndExtensionDirective;
+begin
+
+  var Dproj := FScratch.PathOf( 'Applet.dproj' );
+  WriteUtf8File( Dproj,
+    '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">' +
+    '<PropertyGroup><ProjectVersion>20.3</ProjectVersion><MainSource>Applet.dpr</MainSource><AppType>Library</AppType>' +
+    '<Config Condition="''$(Config)''==''''">Debug</Config></PropertyGroup>' +
+    '<PropertyGroup Condition="''$(Config)''==''Debug''"><DCC_ExeOutput>DebugOut</DCC_ExeOutput></PropertyGroup>' +
+    '<PropertyGroup Condition="''$(Config)''==''Release''"><DCC_ExeOutput>ReleaseOut</DCC_ExeOutput></PropertyGroup>' +
+    '<ProjectExtensions><BorlandProject><Platforms><Platform value="Win64">True</Platform></Platforms></BorlandProject>' +
+    '</ProjectExtensions></Project>' );
+  WriteUtf8File( FScratch.PathOf( 'Applet.dpr' ),
+    'library Applet;' + sLineBreak + '{$R *.res}' + sLineBreak + '{$E cpl}' + sLineBreak + 'uses' + sLineBreak + '  Unit1;' + sLineBreak +
+    'begin end.' );
+
+  var Parser := TProjectParser.Create( NoLog() );
+  try
+    Assert.AreEqual( ExpandFileName( FScratch.PathOf( 'ReleaseOut\Applet.cpl' ) ), Parser.Parse( Dproj ).BinaryFile );
   finally
     Parser.Free;
   end;

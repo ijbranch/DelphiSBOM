@@ -1,5 +1,5 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
@@ -112,6 +112,14 @@ type
     /// </summary>
     [Test]
     procedure VendorEmailIsReadAndChecked;
+
+    /// <summary>
+    ///   Proves the fields BSI TR-03183-2 needs are read: the supplier's email and the application_licence (both
+    ///   trimmed), and a component's creator_email and creator_url; and that a supplier email or creator_email that
+    ///   is not an email address is warned about, as the SBOM builder leaves it out.
+    /// </summary>
+    [Test]
+    procedure CreatorFieldsAreReadAndChecked;
   end;
 
 implementation
@@ -417,6 +425,64 @@ begin
   finally
     Warnings.Free;
   end;
+
+end;
+
+procedure TManifestLoaderTests.CreatorFieldsAreReadAndChecked;
+begin
+
+  var FileName := FScratch.PathOf( 'components.json' );
+  WriteUtf8File( FileName, '{ "schema_version": "1.0", "last_updated": "2026-10-08", ' +
+    '"supplier": { "name": "Me", "email": " sbom@me.example " }, "application_licence": " LicenseRef-Me-Commercial ", ' +
+    '"components": [ ' +
+    '{ "name": "A", "version": "1", "vendor": "V", "creator_email": " author@a.example ", "creator_url": " https://a.example ", ' +
+    '"licence": "MIT", "units_exact": [ "UA" ] }, ' +
+    '{ "name": "B", "version": "1", "vendor": "V", "creator_email": "B Author", "licence": "MIT", "units_exact": [ "UB" ] } ] }' );
+
+  var Warnings := TList<string>.Create;
+  try
+    var Loader := TManifestLoader.Create(
+      procedure( ALevel: TLogLevel; AMessage: string )
+      begin
+        if ALevel = llWarning then
+          Warnings.Add( AMessage );
+      end );
+    try
+      var Manifest := Loader.Load( FileName );
+      Assert.AreEqual( 'sbom@me.example', Manifest.Supplier.Email, 'Trimmed' );
+      Assert.AreEqual( 'LicenseRef-Me-Commercial', Manifest.ApplicationLicence, 'Trimmed' );
+      Assert.AreEqual( 'author@a.example', Manifest.Components[ 0 ].CreatorEmail, 'Trimmed' );
+      Assert.AreEqual( 'https://a.example', Manifest.Components[ 0 ].CreatorURL, 'Trimmed' );
+      Assert.AreEqual( 'B Author', Manifest.Components[ 1 ].CreatorEmail, 'Kept as written, for the warning' );
+      Assert.AreEqual( '', Manifest.Components[ 1 ].CreatorURL, 'Optional' );
+    finally
+      Loader.Free;
+    end;
+
+    Assert.AreEqual<Integer>( 1, Warnings.Count, string.Join( ' / ', Warnings.ToArray ) );
+    Assert.Contains( Warnings[ 0 ], 'creator_email "B Author"' );
+  finally
+    Warnings.Free;
+  end;
+
+  // A supplier email that is not an address is warned about too
+  WriteUtf8File( FileName, '{ "schema_version": "1.0", "last_updated": "2026-10-08", "supplier": { "name": "Me", "email": "Me Ltd" }, ' +
+    '"components": [ ] }' );
+
+  var Logged := '';
+  var Loader := TManifestLoader.Create(
+    procedure( ALevel: TLogLevel; AMessage: string )
+    begin
+      if ALevel = llWarning then
+        Logged := Logged + AMessage + ' / ';
+    end );
+  try
+    Loader.Load( FileName );
+  finally
+    Loader.Free;
+  end;
+
+  Assert.Contains( Logged, 'Supplier: email "Me Ltd" is not an email address' );
 
 end;
 

@@ -1,5 +1,5 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
@@ -40,7 +40,20 @@ type
     [TestCase( 'space instead of hyphen', 'MPL 1.1' )]
     [TestCase( 'commercial', 'Commercial' )]
     [TestCase( 'proprietary', 'Proprietary' )]
+    [TestCase( 'bare LicenseRef prefix', 'LicenseRef-' )]
+    [TestCase( 'LicenseRef with a space', 'LicenseRef-Acme Commercial' )]
     procedure UnknownValueIsName( const AInput: string );
+
+    /// <summary>
+    ///   Proves a LicenseRef- identifier (SPDX Annex B: letters, digits, '.' and '-') is an expression on its own,
+    ///   so it is written as one: BSI TR-03183-2 section 6.1 names a licence with no SPDX identifier this way, and as
+    ///   a licence name it would not count as identified.
+    /// </summary>
+    /// <param name="AInput">Licence value as written in components.json.</param>
+    [Test]
+    [TestCase( 'scancode key', 'LicenseRef-scancode-proprietary-license' )]
+    [TestCase( 'own identifier', 'LicenseRef-Acme-Commercial-1.2' )]
+    procedure LicenseRefIsExpression( const AInput: string );
 
     /// <summary>
     ///   Proves an SPDX expression (OR / AND / WITH) is classified as an expression, case-insensitively.
@@ -55,7 +68,7 @@ type
     procedure BlankIsNone;
 
     /// <summary>
-    ///   Proves hash algorithm spellings are mapped onto the CycloneDX 1.5 enum, and an algorithm
+    ///   Proves hash algorithm spellings are mapped onto the CycloneDX 1.6 enum, and an algorithm
     ///   outside the enum maps to '' so it can be dropped rather than invalidate the SBOM.
     /// </summary>
     [Test]
@@ -119,6 +132,16 @@ begin
   var Normalised := '';
 
   Assert.AreEqual<TLicenceKind>( lkName, ClassifyLicence( AInput, Normalised ) );
+  Assert.AreEqual( AInput, Normalised, False );
+
+end;
+
+procedure TTypesTests.LicenseRefIsExpression( const AInput: string );
+begin
+
+  var Normalised := '';
+
+  Assert.AreEqual<TLicenceKind>( lkExpression, ClassifyLicence( AInput, Normalised ) );
   Assert.AreEqual( AInput, Normalised, False );
 
 end;

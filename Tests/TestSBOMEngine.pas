@@ -1,5 +1,5 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
@@ -127,8 +127,8 @@ type
     ///   Proves the run records what X uses (the RTL, Y and the absent W, but not its own helper) and what D uses
     ///   (Y, read from the source under its DCU folder's library root), and nothing for Y or Z; that the written
     ///   SBOM gives X its own dependency entry naming the RTL and Y, W dropped; that Y (source read, no library
-    ///   used) and Z (source not on the compiler's paths) have no entry; that the result passes the post-write
-    ///   check; and that the log says how many sources were read.
+    ///   used) and Z (source not on the compiler's paths) have an empty entry, since every component must be in the
+    ///   graph; that the result passes the post-write check; and that the log says how many sources were read.
     /// </summary>
     [Test]
     procedure LibraryUsesReachTheDependencyGraph;
@@ -446,6 +446,8 @@ begin
           for var Target in D.GetValue<TJSONArray>( 'dependsOn' ) do
             DDependsOn := DDependsOn + Target.Value + ' ';
         end
+        else if ( Ref = Refs[ 'Lib Y' ] ) or ( Ref = Refs[ 'Lib Z' ] ) then
+          Assert.AreEqual<Integer>( 0, D.GetValue<TJSONArray>( 'dependsOn' ).Count, Ref + ': nothing is known of its uses' )
         else if ( Ref <> AppRef ) and ( Ref <> Refs[ 'Embarcadero Delphi RTL' ] ) then
           Assert.Fail( 'Unexpected dependency entry for ' + Ref );
       end;

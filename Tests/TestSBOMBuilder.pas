@@ -1,9 +1,9 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
-  TestSBOMBuilder.pas — Tests for uSBOMBuilder (CycloneDX 1.5 output)
+  TestSBOMBuilder.pas — Tests for uSBOMBuilder (CycloneDX 1.6 output)
 *)
 unit TestSBOMBuilder;
 
@@ -16,8 +16,8 @@ uses
 
 type
   /// <summary>
-  ///   Schema-relevant details of the generated CycloneDX 1.5 JSON: licences, purls, types,
-  ///   timestamp, evidence and the written file's encoding.
+  ///   Schema-relevant details of the generated CycloneDX 1.6 JSON: licences, purls, types,
+  ///   timestamp, evidence, the BSI TR-03183-2 fields and the written file's encoding.
   /// </summary>
   [TestFixture]
   TSBOMBuilderTests = class
@@ -27,6 +27,8 @@ type
     FUnits: TArray<TClassifiedUnit>;
     /// <summary>The library uses passed to the builder (none unless a test sets them).</summary>
     FLibraryDependencies: TArray<TLibraryDependency>;
+    /// <summary>The built binary passed to the builder (none unless a test sets it).</summary>
+    FBinary: TBinaryInfo;
 
     /// <summary>Builds the SBOM from the fixture's project, units, manifest and library uses.</summary>
     /// <param name="AEvidence">The DX.Comply evidence to merge.</param>
@@ -34,6 +36,10 @@ type
     function BuildJson( const AEvidence: TArray<TUnitEvidence> ): TJSONObject;
     function Component( ARoot: TJSONObject; AIndex: Integer ): TJSONObject;
   public
+    /// <summary>
+    ///   Gives every test the same project, three-library manifest and units, and clears the library uses and the
+    ///   binary, since one fixture instance serves every test.
+    /// </summary>
     [Setup]
     procedure Setup;
 
@@ -52,9 +58,9 @@ type
     procedure EveryComponentHasAUniqueBomRef;
 
     /// <summary>
-    ///   Proves the dependencies section links the application to the RTL and every library, and
-    ///   declares the RTL with no dependencies; libraries' own dependencies are unknown, so they are
-    ///   left out rather than declared empty (an empty list would claim they have none).
+    ///   Proves the dependencies section links the application to the RTL and every library, and gives
+    ///   the RTL and each library an entry of its own, empty when nothing is known of its uses: CycloneDX 1.6
+    ///   and BSI TR-03183-2 require every component in the graph, and the composition says it is incomplete.
     /// </summary>
     [Test]
     procedure DependenciesLinkApplicationToEveryComponent;
@@ -129,7 +135,8 @@ type
 
     /// <summary>
     ///   Proves the SBOM states its dependency graph is incomplete (libraries' own dependencies are not
-    ///   resolved): one composition, aggregate "incomplete", naming the application's bom-ref.
+    ///   fully resolved): one composition, aggregate "incomplete", naming the application and every
+    ///   component, so the completeness of each one's dependencies is stated (BSI TR-03183-2 5.2.2).
     /// </summary>
     [Test]
     procedure CompositionDeclaresTheGraphIncomplete;
@@ -137,7 +144,8 @@ type
     /// <summary>
     ///   Proves a library's uses become its own dependency entry, naming the other library and the RTL once
     ///   each, while an edge to a manifest row that is not in the SBOM, to itself, or a repeat, is left out; and
-    ///   that a library with no edge left gets no entry, since an empty dependsOn would claim it uses nothing.
+    ///   that a library with no edge left keeps an empty entry (the composition, not the entry, says how complete
+    ///   it is).
     /// </summary>
     [Test]
     procedure LibraryUsesBecomeDependencyEntries;
@@ -149,6 +157,53 @@ type
     /// </summary>
     [Test]
     procedure VendorEmailWrittenAsSupplierContact;
+
+    /// <summary>
+    ///   Proves the document is CycloneDX 1.6, the version BSI TR-03183-2 v2.1.0 requires at least, and that the
+    ///   supplier is written as the SBOM's creator (metadata.manufacturer) with its email, not its URL, since the
+    ///   TR asks for the email and takes a URL only without one.
+    /// </summary>
+    [Test]
+    procedure SpecVersionAndSBOMCreator;
+
+    /// <summary>
+    ///   Proves each component's creator becomes its manufacturer: creator_email when given (and the vendor name
+    ///   is then not claimed for it), else the vendor's email, else the vendor's URL; and that a creator email which
+    ///   is not an email address falls back to the creator URL rather than making the SBOM invalid.
+    /// </summary>
+    [Test]
+    procedure CreatorWrittenAsManufacturer;
+
+    /// <summary>
+    ///   Proves every licence the builder writes, as an id, a name or an expression, is acknowledged "concluded"
+    ///   (the TR's distribution licence); that the application gets the manifest's application_licence; and that
+    ///   the RTL gets the LicenseRef- identifier and Embarcadero's web page as its creator.
+    /// </summary>
+    [Test]
+    procedure LicencesAcknowledgedAndRTLDescribed;
+
+    /// <summary>
+    ///   Proves a described binary gives the application its SHA-512 (in hashes and in a distribution reference
+    ///   named by the file) and the four bsi:component properties of an unstructured executable, and that without
+    ///   one none of them is written: a hash must never be invented.
+    /// </summary>
+    [Test]
+    procedure BinaryWrittenAsFileFields;
+
+    /// <summary>
+    ///   Proves a creator_email that is not an email address, with no creator_url, does not count as a creator: the
+    ///   vendor still stands in, so the component keeps a manufacturer rather than losing it.
+    /// </summary>
+    [Test]
+    procedure InvalidCreatorEmailFallsBackToVendor;
+
+    /// <summary>
+    ///   Proves a binary whose name holds characters an IRI-reference may not (a space, '#') gets them percent-encoded
+    ///   in the distribution reference's url, which the schema checks as iri-reference, while bsi:component:filename
+    ///   keeps the name as it is.
+    /// </summary>
+    [Test]
+    procedure BinaryNameEncodedAsIriReference;
 
     /// <summary>
     ///   Proves BuildAndSave writes UTF-8 without a BOM and the file parses as JSON.
@@ -171,6 +226,10 @@ begin
   FProject := Default( TProjectInfo );
   FProject.ProjectName   := 'App';
   FProject.DelphiVersion := '37.0';
+
+  // One fixture instance serves every test, so what a test sets must not reach the next
+  FLibraryDependencies := nil;
+  FBinary := Default( TBinaryInfo );
 
   FManifest := Default( TManifest );
   SetLength( FManifest.Components, 3 );
@@ -212,6 +271,7 @@ begin
 
   var Builder := TSBOMBuilder.Create( NoLog() );
   try
+    Builder.Binary := FBinary;
     Result := TJSONObject.ParseJSONValue( Builder.Build( FProject, FUnits, FManifest, '', AEvidence, FLibraryDependencies ) ) as TJSONObject;
   finally
     Builder.Free;
@@ -287,31 +347,25 @@ begin
     var Deps   := Root.GetValue<TJSONArray>( 'dependencies' );
     Assert.IsNotNull( Deps, 'No dependencies section' );
 
-    var AppEntry: TJSONObject := nil;
-    var RTLEntry: TJSONObject := nil;
-    var RTLRef := BomRef( Component( Root, 0 ) );
+    // One entry per component: the application, then the RTL and the three libraries in component order
+    Assert.AreEqual<Integer>( 5, Deps.Count, 'An entry for the application and for each of the four components' );
 
-    for var D in Deps do
-    begin
-      var Entry := D as TJSONObject;
+    var AppEntry := Deps.Items[ 0 ] as TJSONObject;
+    Assert.AreEqual( AppRef, AppEntry.GetValue<string>( 'ref' ), 'The application''s entry comes first' );
 
-      if Entry.GetValue<string>( 'ref' ) = AppRef then
-        AppEntry := Entry
-      else if Entry.GetValue<string>( 'ref' ) = RTLRef then
-        RTLEntry := Entry
-      else
-        Assert.Fail( 'Unexpected dependency entry for ' + Entry.GetValue<string>( 'ref' ) );
-    end;
-
-    Assert.IsNotNull( AppEntry, 'No entry for the application' );
     var DependsOn := AppEntry.GetValue<TJSONArray>( 'dependsOn' );
     Assert.AreEqual<Integer>( 4, DependsOn.Count, 'The application depends on the RTL and three libraries' );
 
     for var I := 0 to 3 do
       Assert.AreEqual( BomRef( Component( Root, I ) ), DependsOn.Items[ I ].Value );
 
-    Assert.IsNotNull( RTLEntry, 'No entry for the RTL' );
-    Assert.AreEqual<Integer>( 0, RTLEntry.GetValue<TJSONArray>( 'dependsOn' ).Count, 'The RTL depends on nothing' );
+    // No library uses were read, so the RTL and every library have an empty entry
+    for var I := 0 to 3 do
+    begin
+      var Entry := Deps.Items[ I + 1 ] as TJSONObject;
+      Assert.AreEqual( BomRef( Component( Root, I ) ), Entry.GetValue<string>( 'ref' ) );
+      Assert.AreEqual<Integer>( 0, Entry.GetValue<TJSONArray>( 'dependsOn' ).Count, Entry.GetValue<string>( 'ref' ) + ' lists uses' );
+    end;
   finally
     Root.Free;
   end;
@@ -495,8 +549,11 @@ begin
     Assert.AreEqual( 'incomplete', Compositions.Items[ 0 ].GetValue<string>( 'aggregate' ) );
 
     var Refs := Compositions.Items[ 0 ].GetValue<TJSONArray>( 'dependencies' );
-    Assert.AreEqual<Integer>( 1, Refs.Count );
+    Assert.AreEqual<Integer>( 5, Refs.Count, 'The application, the RTL and the three libraries' );
     Assert.AreEqual( BomRef( Root.GetValue<TJSONObject>( 'metadata.component' ) ), Refs.Items[ 0 ].Value, 'Names the application' );
+
+    for var I := 0 to 3 do
+      Assert.AreEqual( BomRef( Component( Root, I ) ), Refs.Items[ I + 1 ].Value, 'Names component ' + IntToStr( I ) );
   finally
     Root.Free;
   end;
@@ -524,6 +581,7 @@ begin
     var Lib0Ref := BomRef( Component( Root, 1 ) );
     var Lib1Ref := BomRef( Component( Root, 2 ) );
     var Lib0Entry: TJSONObject := nil;
+    var Lib1Entry: TJSONObject := nil;
 
     for var D in Root.GetValue<TJSONArray>( 'dependencies' ) do
     begin
@@ -531,8 +589,11 @@ begin
 
       if Ref = Lib0Ref then
         Lib0Entry := D as TJSONObject
-      else if ( Ref <> AppRef ) and ( Ref <> RTLRef ) then
-        Assert.Fail( 'Unexpected dependency entry for ' + Ref );
+      else if Ref = Lib1Ref then
+        Lib1Entry := D as TJSONObject
+      else
+        Assert.IsTrue( ( Ref = AppRef ) or ( Ref = RTLRef ) or ( Ref = BomRef( Component( Root, 3 ) ) ),
+          'Unexpected dependency entry for ' + Ref );
     end;
 
     Assert.IsNotNull( Lib0Entry, 'No entry for the library whose uses were read' );
@@ -540,6 +601,10 @@ begin
     Assert.AreEqual<Integer>( 2, DependsOn.Count, 'The other library and the RTL, once each' );
     Assert.AreEqual( Lib1Ref, DependsOn.Items[ 0 ].Value );
     Assert.AreEqual( RTLRef, DependsOn.Items[ 1 ].Value );
+
+    // Its only edge goes to a manifest row that is not in the SBOM, so its entry is empty
+    Assert.IsNotNull( Lib1Entry, 'No entry for the library whose only edge was dropped' );
+    Assert.AreEqual<Integer>( 0, Lib1Entry.GetValue<TJSONArray>( 'dependsOn' ).Count, 'The edge to the unused row is left out' );
   finally
     Root.Free;
   end;
@@ -591,6 +656,210 @@ begin
     end;
   finally
     Scratch.Free;
+  end;
+
+end;
+
+/// <summary>The email of an organizationalEntity's first contact, or '' when it has none.</summary>
+function ContactEmail( AEntity: TJSONObject ): string;
+begin
+
+  Result := '';
+  var Contacts: TJSONArray;
+
+  if Assigned( AEntity ) and AEntity.TryGetValue<TJSONArray>( 'contact', Contacts ) and ( Contacts.Count > 0 ) then
+    Contacts.Items[ 0 ].TryGetValue<string>( 'email', Result );
+
+end;
+
+/// <summary>The first URL of an organizationalEntity, or '' when it has none.</summary>
+function EntityURL( AEntity: TJSONObject ): string;
+begin
+
+  Result := '';
+  var Urls: TJSONArray;
+
+  if Assigned( AEntity ) and AEntity.TryGetValue<TJSONArray>( 'url', Urls ) and ( Urls.Count > 0 ) then
+    Result := Urls.Items[ 0 ].Value;
+
+end;
+
+procedure TSBOMBuilderTests.SpecVersionAndSBOMCreator;
+begin
+
+  FManifest.Supplier.Name  := 'Me';
+  FManifest.Supplier.URL   := 'https://example.com';
+  FManifest.Supplier.Email := 'sbom@example.com';
+
+  var Root := BuildJson( nil );
+  try
+    Assert.AreEqual( '1.6', Root.GetValue<string>( 'specVersion' ) );
+
+    var Creator := Root.GetValue<TJSONObject>( 'metadata.manufacturer' );
+    Assert.IsNotNull( Creator, 'No metadata.manufacturer' );
+    Assert.AreEqual( 'Me', Creator.GetValue<string>( 'name' ) );
+    Assert.AreEqual( 'sbom@example.com', ContactEmail( Creator ) );
+    Assert.AreEqual( '', EntityURL( Creator ), 'The URL is written only without an email' );
+
+    // The application's creator is the supplier too
+    Assert.AreEqual( 'sbom@example.com', ContactEmail( Root.GetValue<TJSONObject>( 'metadata.component.manufacturer' ) ) );
+  finally
+    Root.Free;
+  end;
+
+  // Without an email, the URL names the creator
+  FManifest.Supplier.Email := '';
+  Root := BuildJson( nil );
+  try
+    Assert.AreEqual( 'https://example.com', EntityURL( Root.GetValue<TJSONObject>( 'metadata.manufacturer' ) ) );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.CreatorWrittenAsManufacturer;
+begin
+
+  FManifest.Components[ 0 ].Vendor       := 'Reseller';
+  FManifest.Components[ 0 ].VendorEmail  := 'sales@reseller.example.com';
+  FManifest.Components[ 0 ].CreatorEmail := 'author@example.com';
+
+  FManifest.Components[ 1 ].Vendor      := 'Closed Ltd';
+  FManifest.Components[ 1 ].VendorEmail := 'info@closed.example.com';
+  FManifest.Components[ 1 ].VendorURL   := 'https://closed.example.com';
+
+  FManifest.Components[ 2 ].VendorURL    := 'https://dual.example.com';
+  FManifest.Components[ 2 ].CreatorEmail := 'not an email';
+  FManifest.Components[ 2 ].CreatorURL   := 'https://author.example.com';
+
+  var Root := BuildJson( nil );
+  try
+    var Creator := Component( Root, 1 ).GetValue<TJSONObject>( 'manufacturer' );
+    Assert.AreEqual( 'author@example.com', ContactEmail( Creator ), 'creator_email wins over the vendor' );
+    Assert.IsNull( Creator.GetValue( 'name' ), 'The vendor''s name is not claimed for a separate creator' );
+    Assert.AreEqual( 'Reseller', Component( Root, 1 ).GetValue<string>( 'supplier.name' ), 'The supplier stays the vendor' );
+
+    Creator := Component( Root, 2 ).GetValue<TJSONObject>( 'manufacturer' );
+    Assert.AreEqual( 'Closed Ltd', Creator.GetValue<string>( 'name' ), 'Without creator fields the vendor is the creator' );
+    Assert.AreEqual( 'info@closed.example.com', ContactEmail( Creator ) );
+    Assert.AreEqual( '', EntityURL( Creator ), 'An email wins over a URL' );
+
+    Creator := Component( Root, 3 ).GetValue<TJSONObject>( 'manufacturer' );
+    Assert.AreEqual( '', ContactEmail( Creator ), 'A value that is not an email address is left out' );
+    Assert.AreEqual( 'https://author.example.com', EntityURL( Creator ), 'The creator URL, not the vendor URL' );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.LicencesAcknowledgedAndRTLDescribed;
+begin
+
+  FManifest.ApplicationLicence := 'LicenseRef-Me-Commercial';
+
+  var Root := BuildJson( nil );
+  try
+    // The application's licence, a LicenseRef- identifier, is an expression
+    var AppLicences := Root.GetValue<TJSONArray>( 'metadata.component.licenses' );
+    Assert.IsNotNull( AppLicences, 'The application has no licence' );
+    Assert.AreEqual( 'LicenseRef-Me-Commercial', AppLicences.Items[ 0 ].GetValue<string>( 'expression' ) );
+    Assert.AreEqual( 'concluded', AppLicences.Items[ 0 ].GetValue<string>( 'acknowledgement' ) );
+
+    // The RTL
+    var RTL := Component( Root, 0 );
+    Assert.AreEqual( RTLLicence, RTL.GetValue<string>( 'licenses[0].expression' ) );
+    Assert.AreEqual( 'concluded', RTL.GetValue<string>( 'licenses[0].acknowledgement' ) );
+    Assert.AreEqual( RTLCreatorURL, EntityURL( RTL.GetValue<TJSONObject>( 'manufacturer' ) ) );
+
+    // An SPDX id (TMS: mit), a name (Closed: Proprietary) and an expression (Dual)
+    Assert.AreEqual( 'concluded', Component( Root, 1 ).GetValue<string>( 'licenses[0].license.acknowledgement' ), 'id' );
+    Assert.AreEqual( 'concluded', Component( Root, 2 ).GetValue<string>( 'licenses[0].license.acknowledgement' ), 'name' );
+    Assert.AreEqual( 'concluded', Component( Root, 3 ).GetValue<string>( 'licenses[0].acknowledgement' ), 'expression' );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.BinaryWrittenAsFileFields;
+begin
+
+  // Without a binary: no file data at all
+  var Root := BuildJson( nil );
+  try
+    var App := Root.GetValue<TJSONObject>( 'metadata.component' );
+    Assert.IsNull( App.GetValue( 'hashes' ), 'A hash was written without a binary' );
+    Assert.IsNull( App.GetValue( 'externalReferences' ), 'A distribution reference was written without a binary' );
+    Assert.IsNull( App.GetValue( 'properties' ), 'File properties were written without a binary' );
+  finally
+    Root.Free;
+  end;
+
+  var Digest := StringOfChar( 'd', 128 );
+  FBinary.FileName := 'App.exe';
+  FBinary.SHA512 := Digest;
+
+  Root := BuildJson( nil );
+  try
+    var App := Root.GetValue<TJSONObject>( 'metadata.component' );
+    Assert.AreEqual( 'SHA-512', App.GetValue<string>( 'hashes[0].alg' ) );
+    Assert.AreEqual( Digest, App.GetValue<string>( 'hashes[0].content' ) );
+
+    Assert.AreEqual( 'distribution', App.GetValue<string>( 'externalReferences[0].type' ) );
+    Assert.AreEqual( 'App.exe', App.GetValue<string>( 'externalReferences[0].url' ) );
+    Assert.AreEqual( 'SHA-512', App.GetValue<string>( 'externalReferences[0].hashes[0].alg' ) );
+    Assert.AreEqual( Digest, App.GetValue<string>( 'externalReferences[0].hashes[0].content' ) );
+
+    var Props := '';
+
+    for var Prop in App.GetValue<TJSONArray>( 'properties' ) do
+      Props := Props + Prop.GetValue<string>( 'name' ) + '=' + Prop.GetValue<string>( 'value' ) + '; ';
+
+    Assert.AreEqual( 'bsi:component:filename=App.exe; bsi:component:executable=executable; bsi:component:archive=no archive; ' +
+      'bsi:component:structured=unstructured; ', Props );
+
+    // A linked library is a logical component: no file properties
+    Assert.IsNull( Component( Root, 1 ).GetValue( 'properties' ), 'A library was given file properties' );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.InvalidCreatorEmailFallsBackToVendor;
+begin
+
+  FManifest.Components[ 0 ].Vendor       := 'TMS';
+  FManifest.Components[ 0 ].VendorURL    := 'https://www.tmssoftware.com';
+  FManifest.Components[ 0 ].CreatorEmail := 'TMS Software';
+
+  var Root := BuildJson( nil );
+  try
+    var Creator := Component( Root, 1 ).GetValue<TJSONObject>( 'manufacturer' );
+    Assert.IsNotNull( Creator, 'The component lost its manufacturer' );
+    Assert.AreEqual( 'TMS', Creator.GetValue<string>( 'name' ) );
+    Assert.AreEqual( 'https://www.tmssoftware.com', EntityURL( Creator ) );
+  finally
+    Root.Free;
+  end;
+
+end;
+
+procedure TSBOMBuilderTests.BinaryNameEncodedAsIriReference;
+begin
+
+  FBinary.FileName := 'My App#1.exe';
+  FBinary.SHA512 := StringOfChar( 'e', 128 );
+
+  var Root := BuildJson( nil );
+  try
+    var App := Root.GetValue<TJSONObject>( 'metadata.component' );
+    Assert.AreEqual( 'My%20App%231.exe', App.GetValue<string>( 'externalReferences[0].url' ) );
+    Assert.AreEqual( 'My App#1.exe', App.GetValue<string>( 'properties[0].value' ), 'The file name property is the name itself' );
+  finally
+    Root.Free;
   end;
 
 end;
