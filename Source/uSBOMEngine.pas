@@ -1,5 +1,5 @@
 ﻿(*
-  DelphiSBOM — CycloneDX 1.5 SBOM Generator for Delphi Applications
+  DelphiSBOM — CycloneDX 1.6 SBOM Generator for Delphi Applications
   Copyright (c) 2026 Ian
   MIT Licence — see LICENCE file
 
@@ -42,6 +42,17 @@ type
     /// <returns>One record per library that uses something, in the order of the project's units.</returns>
     function ResolveLibraryDependencies( const AResult: TSBOMResult; AScanner: TRTLScanner; ADiscovery: TLibraryDiscovery;
       const ADelphiPath, ABDSVersion: string ): TArray<TLibraryDependency>;
+    /// <summary>
+    ///   The deployable binary: ABinaryFile when given, else where the .dproj puts a Release build.  A file that
+    ///   exists is hashed with SHA-512.  One that does not exist, is empty or cannot be opened (a linker or scanner
+    ///   holding it) is logged, and the SBOM then goes without file data rather than the run failing.  A file version
+    ///   that differs from the version the SBOM gives the application is warned about: the file may be a stale build.
+    /// </summary>
+    /// <param name="ABinaryFile">The binary named by the caller ('' = the project's Release output).</param>
+    /// <param name="AProjectInfo">The parsed project, whose BinaryFile is the default.</param>
+    /// <param name="AVersion">The application version the SBOM states.</param>
+    /// <returns>The file's name and SHA-512; FileName is '' when there is no binary to describe.</returns>
+    function DescribeBinary( const ABinaryFile: string; const AProjectInfo: TProjectInfo; const AVersion: string ): TBinaryInfo;
   public
     constructor Create( ALogProc: TProc<TLogLevel, string> );
 
@@ -67,7 +78,7 @@ type
 implementation
 
 uses
-  System.Classes, System.IOUtils, System.Generics.Collections, System.Generics.Defaults,
+  Winapi.Windows, System.Classes, System.IOUtils, System.Generics.Collections, System.Generics.Defaults, System.Hash,
   uMapFile, uSBOMValidator, uReportWriter, uTextFiles, uProjectParser, uManifestLoader, uUnitClassifier, uSBOMBuilder, uEvidenceMerger,
   uDelphiInstall;
 
@@ -150,6 +161,130 @@ begin
     InMap.Free;
     InUses.Free;
   end;
+
+end;
+
+/// <summary>The file version in a binary's version resource as Major.Minor.Release.Build, or '' when it has none.</summary>
+function FileVersionOf( const AFileName: string ): string;
+begin
+
+  Result            := '';
+  var Handle: DWORD;
+  var Size          := GetFileVersionInfoSize( PChar( AFileName ), Handle );
+
+  if Size = 0 then Exit;
+
+  var Buffer: TBytes;
+  SetLength( Buffer, Size );
+
+  if ( not GetFileVersionInfo( PChar( AFileName ), 0, Size, @Buffer[ 0 ] ) ) then Exit;
+
+  var Info: PVSFixedFileInfo;
+  var InfoSize: UINT;
+
+  if VerQueryValue( @Buffer[ 0 ], '\', Pointer( Info ), InfoSize ) and ( InfoSize >= SizeOf( TVSFixedFileInfo ) ) then
+    Result          := Format( '%d.%d.%d.%d', [ HiWord( Info.dwFileVersionMS ), LoWord( Info.dwFileVersionMS ),
+      HiWord( Info.dwFileVersionLS ), LoWord( Info.dwFileVersionLS ) ] );
+
+end;
+
+/// <summary>
+///   Whether a binary's file version contradicts the version the SBOM states: each numeric part the SBOM gives is
+///   compared with the file's ('2.4' is matched by 2.4.x.y).  A version that is not dotted numbers, or a file
+///   without a version resource, is no contradiction.
+/// </summary>
+function VersionsDiffer( const AFileVersion, AVersion: string ): Boolean;
+begin
+
+  Result            := False;
+
+  if AFileVersion = '' then Exit;
+
+  var Stated        := AVersion.Split( [ '.' ] );
+  var Actual        := AFileVersion.Split( [ '.' ] );
+
+  for var I := 0 to High( Stated ) do
+  begin
+    var StatedPart: Integer;
+
+    if ( I > High( Actual ) ) or ( not TryStrToInt( Stated[ I ], StatedPart ) ) then Exit( False );
+
+    if StatedPart <> StrToIntDef( Actual[ I ], -1 ) then
+      Result        := True;
+  end;
+
+end;
+
+function TSBOMEngine.DescribeBinary( const ABinaryFile: string; const AProjectInfo: TProjectInfo; const AVersion: string ): TBinaryInfo;
+begin
+
+  Result            := Default( TBinaryInfo );
+
+  var BinaryFile    := ABinaryFile;
+
+  if BinaryFile = '' then
+    BinaryFile      := AProjectInfo.BinaryFile;
+
+  if BinaryFile = '' then
+  begin
+    Log( llWarning, 'No built binary to describe: its file name and SHA-512 are left out (name it to include them)' );
+    Exit;
+  end;
+
+  if ( not FileExists( BinaryFile ) ) then
+  begin
+    Log( llWarning, Format( 'Built binary %s not found: its file name and SHA-512 are left out (build Release first)', [ BinaryFile ] ) );
+    Exit;
+  end;
+
+  // A failed link can leave an empty file, whose hash would describe nothing
+  var Size: Int64;
+
+  try
+    Size            := TFile.GetSize( BinaryFile );
+  except
+    on E: EInOutError do
+    begin
+      Log( llWarning, Format( 'Built binary %s could not be read (%s): its file name and SHA-512 are left out', [ BinaryFile, E.Message ] ) );
+      Exit;
+    end;
+  end;
+
+  if Size = 0 then
+  begin
+    Log( llWarning, Format( 'Built binary %s is empty: its file name and SHA-512 are left out (rebuild Release)', [ BinaryFile ] ) );
+    Exit;
+  end;
+
+  try
+    Result.SHA512   := LowerCase( THashSHA2.GetHashStringFromFile( BinaryFile, THashSHA2.TSHA2Version.SHA512 ) );
+  except
+    on E: EFOpenError do
+    begin
+      Log( llWarning, Format( 'Built binary %s could not be opened (%s): its file name and SHA-512 are left out', [ BinaryFile, E.Message ] ) );
+      Exit;
+    end;
+    on E: EReadError do
+    begin
+      Log( llWarning, Format( 'Built binary %s could not be read (%s): its file name and SHA-512 are left out', [ BinaryFile, E.Message ] ) );
+      Exit;
+    end;
+  end;
+
+  Result.FileName   := ExtractFileName( BinaryFile );
+
+  var FileVersion   := FileVersionOf( BinaryFile );
+
+  if VersionsDiffer( FileVersion, AVersion ) then
+    Log( llWarning, Format( 'Built binary %s has file version %s, but the SBOM gives the application version %s — a stale build, ' +
+      'or a version set elsewhere: check that the hash describes the release', [ ExtractFileName( BinaryFile ), FileVersion, AVersion ] ) );
+
+  var Age: TDateTime;
+
+  if FileAge( BinaryFile, Age ) then
+    Log( llInfo, Format( 'Binary: %s, built %s', [ BinaryFile, FormatDateTime( 'yyyy"-"mm"-"dd hh":"nn', Age ) ] ) )
+  else
+    Log( llInfo, Format( 'Binary: %s', [ BinaryFile ] ) );
 
 end;
 
@@ -437,9 +572,14 @@ begin
         [ MatchCount, Length( Result.Evidence ), Length( Result.Evidence ) - MatchCount ] ) );
   end;
 
+  // Step 4c: the deployable binary the application component describes (BSI TR-03183-2: filename and SHA-512)
+  Result.Binary     := DescribeBinary( AOptions.BinaryFile, Result.ProjectInfo,
+    EffectiveProductVersion( AOptions.VersionOverride, Result.ProjectInfo.ProjectVersion ) );
+
   // Step 5: Build and save SBOM
   var Builder       := TSBOMBuilder.Create( FLog );
   try
+    Builder.Binary  := Result.Binary;
     Result.OutputFile := Builder.BuildAndSave(
       Result.ProjectInfo,
       Result.ClassifiedUnits,
@@ -466,6 +606,26 @@ begin
       Log( llError, 'SBOM check: ' + E );
 
     Log( llError, Format( 'SBOM check found %d problems in %s', [ Length( Result.ValidationErrors ), ExtractFileName( Result.OutputFile ) ] ) );
+  end;
+
+  // Step 5a': conformance to BSI TR-03183-2 v2.1.0.  Mostly a matter of the manifest's data, so it is advice: the
+  // command line's --fail-on-tr turns it into a failure
+  Result.TRFindings := CheckTR03183( ReadTextFile( Result.OutputFile ) );
+
+  if Length( Result.TRFindings ) = 0 then
+    Log( llInfo, 'BSI TR-03183-2 v2.1.0: every required data field is present' )
+  else
+  begin
+    for var F in Result.TRFindings do
+      Log( llWarning, 'BSI TR-03183-2: ' + F );
+
+    // No conditional expression: the language floor is Delphi 10.3
+    var Noun        := 'requirements';
+
+    if Length( Result.TRFindings ) = 1 then
+      Noun          := 'requirement';
+
+    Log( llWarning, Format( 'BSI TR-03183-2 v2.1.0: %d %s not met (rule IDs above)', [ Length( Result.TRFindings ), Noun ] ) );
   end;
 
   // Step 5b: companion reports
