@@ -10,7 +10,7 @@
 | **Manifest** | Path to `components.json`. Defaults to the project directory when a project is selected; the file itself is only created when you first save to it |
 | **Output Dir** | Directory where the SBOM `.cdx.json` file will be written. Defaults to the project directory |
 | **Delphi Path** | Path to your Delphi installation. Leave blank (the default) to use the installed Delphi version that matches the project's `ProjectVersion`, or the newest installed version if that one is missing |
-| **Version Override** | Optional. If set, overrides the project version read from the `.dproj` file |
+| **Version Override** | Optional. If set, overrides the version otherwise taken from the built binary (or, without one, from the `.dproj` file) |
 | **Write HTML and Markdown reports** | Optional. Also writes `<ProjectName>.sbom-report.html` and `.md` beside the SBOM: run details, components with supplier and licence, the units of each, own code, what is still unclassified, and the SBOM check result |
 | **DX.Comply SBOM** | Optional. Path to a DX.Comply `bom.json` file. If provided, the hashes from DX.Comply's MAP file analysis (every algorithm it lists, e.g. SHA-256 and SHA-512) are merged into the SBOM output as nested sub-components |
 | **MAP File** | Optional. A detailed `.map` file from a build of the project (Project Options > Building > Delphi Compiler > Linking > Map file = Detailed). The units the linker used replace the uses-clause list: units used only indirectly are added, and units excluded by `{$IFDEF}`s are left out. The log warns when the map is older than the `.dpr` |
@@ -198,10 +198,11 @@ guessed, and the BSI TR-03183-2 check reports them missing.  The same happens,
 with its own warning, when the file is empty ("is empty") or another program
 holds it ("could not be opened").
 
-A warning that the binary "has file version X, but the SBOM gives the
-application version Y" means the file may be a stale build: rebuild Release, or
-check that the version you gave (`--product-version`, a git tag) is the
-release's.
+The application version is the binary's own file version unless you give one
+(Version Override, `--product-version`, a git tag).  A warning that the binary
+"has file version X, but the SBOM gives the application version Y" means the
+version you gave differs from the binary's, so the file may be a stale build:
+rebuild Release, or check that the version you gave is the release's.
 
 **Fix:** build the Release configuration first, then Generate again.  From the
 command line, `--binary=<file>` names the binary instead.
@@ -214,7 +215,7 @@ The output `.exe` or `.cdx.json` file is locked by another process.
 
 ### Version shows as "0.0.0.0"
 
-The `.dproj` file does not contain version information, or the version fields could not be parsed. The version is read the way MSBuild evaluates the `.dproj` for a **Release** build of the target platform (Win64 when it is active), so an auto-incremented build number in the Release configuration is picked up.
+No built binary with a version resource was found, and the `.dproj` file does not contain version information, or the version fields could not be parsed. The version is read the way MSBuild evaluates the `.dproj` for a **Release** build of the target platform (Win64 when it is active), so an auto-incremented build number in the Release configuration is picked up.
 
 **Fix:** Set the version in the Version Override field, or configure version info in your Delphi project options (Project > Options > Version Info).
 

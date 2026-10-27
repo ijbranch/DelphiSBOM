@@ -118,9 +118,20 @@ variable), is treated as having no binary rather than given a guessed path.  The
 command line's `--binary` names the file instead.
 
 A binary that exists but is empty (a failed link) or cannot be opened (a linker
-or scanner holding it) is warned about and left out; the run does not fail.  When
-the file's version resource differs from the version the SBOM gives the
-application, the log warns that it may be a stale build.
+or scanner holding it) is warned about and left out; the run does not fail.
+
+**The application's version is the binary's own** (its version resource) unless a
+version is given explicitly (`--product-version`, `--version-from-git-tag`, the
+Version Override field), so the version and the hash describe the same build;
+BSI TR-03183-2 asks for the creator's version identifier to be kept as it is.
+With build-number auto-increment the `.dproj` has moved on by one build after
+every build, so its version would name a build that does not exist yet.  Without a
+binary, or one without a version resource, the `.dproj` version is used.  An
+explicit version that differs from the binary's is written as given, and the log
+warns that the binary may be a stale build.  A binary named with `--binary` whose
+version differs from the `.dproj`'s is warned about too, since it may not be the
+release's; the Release output found from the `.dproj` is normally a build behind
+it, which is only noted.
 
 When the file exists, the application gets its SHA-512 in `hashes`, in a
 `distribution` external reference, and the four file properties of BSI

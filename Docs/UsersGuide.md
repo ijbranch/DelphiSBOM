@@ -81,7 +81,7 @@ over from the previous project:
   file is not created yet — DelphiSBOM writes it only when you first save
   libraries or own-code units
 - The **Version Override** and **DX.Comply SBOM** fields are cleared (the
-  version will be read from the `.dproj`)
+  version will be taken from the built binary, or from the `.dproj` without one)
 - If you have used the project before, its remembered settings are then restored
 
 ### Step 2: Generate
@@ -538,9 +538,13 @@ another project as a starting point.
 
 ### Overriding the Version
 
-If your `.dproj` doesn't contain version information (or you want to use a
-different version for the SBOM), type the version in the **Version Override**
-field before generating. This overrides whatever the `.dproj` contains.
+By default the application's version is the built binary's own file version,
+so the SBOM's version and its SHA-512 describe the same build (with build-number
+auto-increment the `.dproj` is already one build ahead after every build).  With
+no binary, or one without version information, the `.dproj` version is used.  To
+use a different version, type it in the **Version Override** field before
+generating; it overrides both, and if the binary's version differs the log warns
+that the binary may be a stale build.
 
 ### CI/CD Integration
 

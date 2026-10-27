@@ -54,7 +54,7 @@ the newest git tag reachable from the checked-out commit in the project folder
 (`git describe --tags --abbrev=0`); the version is the tag from its first digit, so `v2.1.0`
 gives `2.1.0`. `--product-version` wins when both are given; the tag wins over a
 `productVersion` in the config file. With no tag (git not installed, not a work tree, or no tag
-reachable) the log warns and the version comes from the config file or the `.dproj`. A shallow
+reachable) the log warns and the version comes from the config file, else from the built binary, else from the `.dproj`. A shallow
 CI checkout may have no tags: fetch them (`fetch-depth: 0` in `actions/checkout`, or
 `git fetch --tags`).
 
