@@ -37,15 +37,15 @@ type
     /// <param name="AProjectVersion">.dproj ProjectVersion value.</param>
     /// <param name="AExpected">Expected BDS version ('' for unknown).</param>
     [Test]
-    [TestCase( 'D13 20.4', '20.4,37.0' )]
-    [TestCase( 'D13 20.6', '20.6,37.0' )]
-    [TestCase( 'D12 20.3', '20.3,23.0' )]
-    [TestCase( 'D12 20.1', '20.1,23.0' )]
-    [TestCase( 'D11 19.5', '19.5,22.0' )]
-    [TestCase( 'D11 19.3', '19.3,22.0' )]
-    [TestCase( '10.4 19.0', '19.0,21.0' )]
-    [TestCase( '10.3 18.8', '18.8,20.0' )]
-    [TestCase( '10.2 18.3', '18.3,19.0' )]
+    [NamedTestCase( 'D13 20.4', '20.4,37.0' )]
+    [NamedTestCase( 'D13 20.6', '20.6,37.0' )]
+    [NamedTestCase( 'D12 20.3', '20.3,23.0' )]
+    [NamedTestCase( 'D12 20.1', '20.1,23.0' )]
+    [NamedTestCase( 'D11 19.5', '19.5,22.0' )]
+    [NamedTestCase( 'D11 19.3', '19.3,22.0' )]
+    [NamedTestCase( '10.4 19.0', '19.0,21.0' )]
+    [NamedTestCase( '10.3 18.8', '18.8,20.0' )]
+    [NamedTestCase( '10.2 18.3', '18.3,19.0' )]
     procedure ProjectVersionMapsToBDSVersion( const AProjectVersion, AExpected: string );
 
     /// <summary>
@@ -115,15 +115,15 @@ type
     /// <param name="AOutputXml">The output-folder and suffix elements of the .dproj.</param>
     /// <param name="AExpected">The expected path relative to the project folder, or '' for none.</param>
     [Test]
-    [TestCase( 'application', 'Application|App.dpr|<DCC_ExeOutput>.\$(Platform)\$(Config)</DCC_ExeOutput>|Win64\Release\App.exe', '|' )]
-    [TestCase( 'library', 'Library|Lib.dpr|<DCC_ExeOutput>..\Bin</DCC_ExeOutput>|..\Bin\Lib.dll', '|' )]
-    [TestCase( 'no output folder', 'Console|Tool.dpr||Tool.exe', '|' )]
-    [TestCase( 'package with suffix', 'Package|Pkg.dpk|<DCC_BplOutput>.\Bpl</DCC_BplOutput><DllSuffix>370</DllSuffix>|Bpl\Pkg370.bpl', '|' )]
-    [TestCase( 'package on the IDE default', 'Package|Pkg.dpk||', '|' )]
-    [TestCase( 'suffix macro', 'Package|Pkg.dpk|<DCC_BplOutput>.\Bpl</DCC_BplOutput><DllSuffix>$(Auto)</DllSuffix>|', '|' )]
-    [TestCase( 'library with affixes', 'Library|Lib.dpr|<DCC_ExeOutput>Bin</DCC_ExeOutput><DllPrefix>pre</DllPrefix>' +
+    [NamedTestCase( 'application', 'Application|App.dpr|<DCC_ExeOutput>.\$(Platform)\$(Config)</DCC_ExeOutput>|Win64\Release\App.exe', '|' )]
+    [NamedTestCase( 'library', 'Library|Lib.dpr|<DCC_ExeOutput>..\Bin</DCC_ExeOutput>|..\Bin\Lib.dll', '|' )]
+    [NamedTestCase( 'no output folder', 'Console|Tool.dpr||Tool.exe', '|' )]
+    [NamedTestCase( 'package with suffix', 'Package|Pkg.dpk|<DCC_BplOutput>.\Bpl</DCC_BplOutput><DllSuffix>370</DllSuffix>|Bpl\Pkg370.bpl', '|' )]
+    [NamedTestCase( 'package on the IDE default', 'Package|Pkg.dpk||', '|' )]
+    [NamedTestCase( 'suffix macro', 'Package|Pkg.dpk|<DCC_BplOutput>.\Bpl</DCC_BplOutput><DllSuffix>$(Auto)</DllSuffix>|', '|' )]
+    [NamedTestCase( 'library with affixes', 'Library|Lib.dpr|<DCC_ExeOutput>Bin</DCC_ExeOutput><DllPrefix>pre</DllPrefix>' +
       '<DllSuffix>370</DllSuffix>|Bin\preLib370.dll', '|' )]
-    [TestCase( 'unknown macro', 'Application|App.dpr|<DCC_ExeOutput>$(NoSuchDsblMacro)\Bin</DCC_ExeOutput>|', '|' )]
+    [NamedTestCase( 'unknown macro', 'Application|App.dpr|<DCC_ExeOutput>$(NoSuchDsblMacro)\Bin</DCC_ExeOutput>|', '|' )]
     procedure BinaryFileOfReleaseBuild( const AAppType, AMainSource, AOutputXml, AExpected: string );
 
     /// <summary>

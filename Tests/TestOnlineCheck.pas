@@ -44,12 +44,12 @@ type
     /// <param name="AUrl">The vendor_url.</param>
     /// <param name="AExpected">"owner/repo", or "" when the URL is not a repository.</param>
     [Test]
-    [TestCase( 'plain', 'https://github.com/pleriche/FastMM5|pleriche/FastMM5', '|' )]
-    [TestCase( 'git suffix', 'https://github.com/acme/widgets.git|acme/widgets', '|' )]
-    [TestCase( 'deeper path, www, http', 'http://www.github.com/acme/widgets/tree/master/src|acme/widgets', '|' )]
-    [TestCase( 'trailing slash', 'https://github.com/acme/widgets/|acme/widgets', '|' )]
-    [TestCase( 'other host', 'https://vendor.example.com/acme/widgets|', '|' )]
-    [TestCase( 'owner only', 'https://github.com/acme|', '|' )]
+    [NamedTestCase( 'plain', 'https://github.com/pleriche/FastMM5|pleriche/FastMM5', '|' )]
+    [NamedTestCase( 'git suffix', 'https://github.com/acme/widgets.git|acme/widgets', '|' )]
+    [NamedTestCase( 'deeper path, www, http', 'http://www.github.com/acme/widgets/tree/master/src|acme/widgets', '|' )]
+    [NamedTestCase( 'trailing slash', 'https://github.com/acme/widgets/|acme/widgets', '|' )]
+    [NamedTestCase( 'other host', 'https://vendor.example.com/acme/widgets|', '|' )]
+    [NamedTestCase( 'owner only', 'https://github.com/acme|', '|' )]
     procedure RepoUrlsAreParsed( const AUrl, AExpected: string );
 
     /// <summary>

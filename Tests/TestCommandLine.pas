@@ -41,11 +41,11 @@ type
     /// <param name="AArgs">The arguments, separated by spaces.</param>
     /// <param name="AExpected">Text the error must contain.</param>
     [Test]
-    [TestCase( 'unknown option', 'App.dproj --colour=red|Unknown option --colour', '|' )]
-    [TestCase( 'missing value', 'App.dproj --manifest|--manifest needs a value', '|' )]
-    [TestCase( 'bad report', 'App.dproj --report=pdf|--report must be', '|' )]
-    [TestCase( 'value on flag', 'App.dproj --quiet=yes|--quiet takes no value', '|' )]
-    [TestCase( 'two projects', 'App.dproj Other.dproj|More than one project file', '|' )]
+    [NamedTestCase( 'unknown option', 'App.dproj --colour=red|Unknown option --colour', '|' )]
+    [NamedTestCase( 'missing value', 'App.dproj --manifest|--manifest needs a value', '|' )]
+    [NamedTestCase( 'bad report', 'App.dproj --report=pdf|--report must be', '|' )]
+    [NamedTestCase( 'value on flag', 'App.dproj --quiet=yes|--quiet takes no value', '|' )]
+    [NamedTestCase( 'two projects', 'App.dproj Other.dproj|More than one project file', '|' )]
     procedure BadCommandLineIsRefused( const AArgs, AExpected: string );
 
     /// <summary>

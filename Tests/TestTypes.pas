@@ -26,9 +26,9 @@ type
     /// <param name="AInput">Licence value as written in components.json.</param>
     /// <param name="AExpected">Canonical SPDX identifier.</param>
     [Test]
-    [TestCase( 'lower mit', 'mit,MIT' )]
-    [TestCase( 'upper APACHE', 'APACHE-2.0,Apache-2.0' )]
-    [TestCase( 'or-later form', 'lgpl-2.1-or-later,LGPL-2.1-or-later' )]
+    [NamedTestCase( 'lower mit', 'mit,MIT' )]
+    [NamedTestCase( 'upper APACHE', 'APACHE-2.0,Apache-2.0' )]
+    [NamedTestCase( 'or-later form', 'lgpl-2.1-or-later,LGPL-2.1-or-later' )]
     procedure KnownIdIsSPDXInCanonicalCase( const AInput, AExpected: string );
 
     /// <summary>
@@ -37,11 +37,11 @@ type
     /// </summary>
     /// <param name="AInput">Licence value as written in components.json.</param>
     [Test]
-    [TestCase( 'space instead of hyphen', 'MPL 1.1' )]
-    [TestCase( 'commercial', 'Commercial' )]
-    [TestCase( 'proprietary', 'Proprietary' )]
-    [TestCase( 'bare LicenseRef prefix', 'LicenseRef-' )]
-    [TestCase( 'LicenseRef with a space', 'LicenseRef-Acme Commercial' )]
+    [NamedTestCase( 'space instead of hyphen', 'MPL 1.1' )]
+    [NamedTestCase( 'commercial', 'Commercial' )]
+    [NamedTestCase( 'proprietary', 'Proprietary' )]
+    [NamedTestCase( 'bare LicenseRef prefix', 'LicenseRef-' )]
+    [NamedTestCase( 'LicenseRef with a space', 'LicenseRef-Acme Commercial' )]
     procedure UnknownValueIsName( const AInput: string );
 
     /// <summary>
@@ -51,8 +51,8 @@ type
     /// </summary>
     /// <param name="AInput">Licence value as written in components.json.</param>
     [Test]
-    [TestCase( 'scancode key', 'LicenseRef-scancode-proprietary-license' )]
-    [TestCase( 'own identifier', 'LicenseRef-Acme-Commercial-1.2' )]
+    [NamedTestCase( 'scancode key', 'LicenseRef-scancode-proprietary-license' )]
+    [NamedTestCase( 'own identifier', 'LicenseRef-Acme-Commercial-1.2' )]
     procedure LicenseRefIsExpression( const AInput: string );
 
     /// <summary>
@@ -95,16 +95,16 @@ type
     /// <param name="AValue">The value to check.</param>
     /// <param name="AExpected">Whether it should be accepted.</param>
     [Test]
-    [TestCase( 'address', 'info@example.com,True' )]
-    [TestCase( 'subdomain and plus', 'a.b+sbom@mail.example.co.uk,True' )]
-    [TestCase( 'url', 'https://example.com,False' )]
-    [TestCase( 'name', 'Acme Pty Ltd,False' )]
-    [TestCase( 'space', 'info @example.com,False' )]
-    [TestCase( 'two at signs', 'a@b@example.com,False' )]
-    [TestCase( 'no local part', '@example.com,False' )]
-    [TestCase( 'undotted domain', 'info@localhost,False' )]
-    [TestCase( 'trailing dot', 'info@example.,False' )]
-    [TestCase( 'empty', ',False' )]
+    [NamedTestCase( 'address', 'info@example.com,True' )]
+    [NamedTestCase( 'subdomain and plus', 'a.b+sbom@mail.example.co.uk,True' )]
+    [NamedTestCase( 'url', 'https://example.com,False' )]
+    [NamedTestCase( 'name', 'Acme Pty Ltd,False' )]
+    [NamedTestCase( 'space', 'info @example.com,False' )]
+    [NamedTestCase( 'two at signs', 'a@b@example.com,False' )]
+    [NamedTestCase( 'no local part', '@example.com,False' )]
+    [NamedTestCase( 'undotted domain', 'info@localhost,False' )]
+    [NamedTestCase( 'trailing dot', 'info@example.,False' )]
+    [NamedTestCase( 'empty', ',False' )]
     procedure EmailAddressesRecognised( const AValue: string; AExpected: Boolean );
   end;
 

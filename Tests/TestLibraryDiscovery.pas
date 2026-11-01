@@ -27,10 +27,10 @@ type
     /// </summary>
     /// <param name="ADirectory">A library directory whose parent is a root.</param>
     [Test]
-    [TestCase( 'drive child', 'E:\EurekaLog' )]
-    [TestCase( 'drive child with delimiter', 'D:\LoggerPro\' )]
-    [TestCase( 'drive root itself', 'E:\' )]
-    [TestCase( 'share child', '\\server\share\Lib' )]
+    [NamedTestCase( 'drive child', 'E:\EurekaLog' )]
+    [NamedTestCase( 'drive child with delimiter', 'D:\LoggerPro\' )]
+    [NamedTestCase( 'drive root itself', 'E:\' )]
+    [NamedTestCase( 'share child', '\\server\share\Lib' )]
     procedure RootParentIsNotSearched( const ADirectory: string );
 
     /// <summary>
@@ -48,13 +48,13 @@ type
     /// <param name="AInput">Text after the copyright marker.</param>
     /// <param name="AExpected">Holder's name.</param>
     [Test]
-    [TestCase( 'bracketed company then rights', 'Jane Doe (Acme Software). All rights reserved.|Jane Doe (Acme Software)', '|' )]
-    [TestCase( 'bracketed country', '2024 Acme Widgets (UK)|Acme Widgets (UK)', '|' )]
-    [TestCase( 'unmatched closer', '2024 Jane Doe)|Jane Doe', '|' )]
-    [TestCase( 'years and full stop', '(c) 2020-2026 Acme Ltd.|Acme Ltd', '|' )]
-    [TestCase( 'whole name bracketed', '(Acme Widgets)|Acme Widgets', '|' )]
-    [TestCase( 'trailing dash', '2015 Jane Doe -|Jane Doe', '|' )]
-    [TestCase( 'banner lettering', 'RRRRRR|', '|' )]
+    [NamedTestCase( 'bracketed company then rights', 'Jane Doe (Acme Software). All rights reserved.|Jane Doe (Acme Software)', '|' )]
+    [NamedTestCase( 'bracketed country', '2024 Acme Widgets (UK)|Acme Widgets (UK)', '|' )]
+    [NamedTestCase( 'unmatched closer', '2024 Jane Doe)|Jane Doe', '|' )]
+    [NamedTestCase( 'years and full stop', '(c) 2020-2026 Acme Ltd.|Acme Ltd', '|' )]
+    [NamedTestCase( 'whole name bracketed', '(Acme Widgets)|Acme Widgets', '|' )]
+    [NamedTestCase( 'trailing dash', '2015 Jane Doe -|Jane Doe', '|' )]
+    [NamedTestCase( 'banner lettering', 'RRRRRR|', '|' )]
     procedure HolderNameKeepsItsBrackets( const AInput, AExpected: string );
 
     /// <summary>
@@ -66,16 +66,16 @@ type
     /// <param name="ADcuDirectory">A folder of .dcu files.</param>
     /// <param name="AExpected">The library root.</param>
     [Test]
-    [TestCase( 'version platform config', 'D:\Acme\37.0\Win64\Release|D:\Acme', '|' )]
-    [TestCase( 'lib platform config', 'C:\Libs\Acme Widgets\Lib\Win32\Debug|C:\Libs\Acme Widgets', '|' )]
-    [TestCase( 'compiler folder', 'C:\Vendor\Acme UI Pack\Delphi13\Win64\Release|C:\Vendor\Acme UI Pack', '|' )]
-    [TestCase( 'short compiler folder', 'C:\Acme\Lib\D13\Win64|C:\Acme', '|' )]
-    [TestCase( 'studio folder', 'C:\Acme 7\Lib\Win64\Release\Studio37|C:\Acme 7', '|' )]
-    [TestCase( 'dcu folder', 'E:\Work\Acme\dcu\Win64|E:\Work\Acme', '|' )]
-    [TestCase( 'packages and named release', 'D:\Acme\packages\Delphi 13 Florence\Win64\Release|D:\Acme', '|' )]
-    [TestCase( 'library folder', 'D:\Acme4D\Library\Delphi13\Win64\Release|D:\Acme4D', '|' )]
-    [TestCase( 'already a root', 'E:\Work\Acme|E:\Work\Acme', '|' )]
-    [TestCase( 'only build names to the drive', 'E:\Lib\Win64\Release|E:\Lib\Win64\Release', '|' )]
+    [NamedTestCase( 'version platform config', 'D:\Acme\37.0\Win64\Release|D:\Acme', '|' )]
+    [NamedTestCase( 'lib platform config', 'C:\Libs\Acme Widgets\Lib\Win32\Debug|C:\Libs\Acme Widgets', '|' )]
+    [NamedTestCase( 'compiler folder', 'C:\Vendor\Acme UI Pack\Delphi13\Win64\Release|C:\Vendor\Acme UI Pack', '|' )]
+    [NamedTestCase( 'short compiler folder', 'C:\Acme\Lib\D13\Win64|C:\Acme', '|' )]
+    [NamedTestCase( 'studio folder', 'C:\Acme 7\Lib\Win64\Release\Studio37|C:\Acme 7', '|' )]
+    [NamedTestCase( 'dcu folder', 'E:\Work\Acme\dcu\Win64|E:\Work\Acme', '|' )]
+    [NamedTestCase( 'packages and named release', 'D:\Acme\packages\Delphi 13 Florence\Win64\Release|D:\Acme', '|' )]
+    [NamedTestCase( 'library folder', 'D:\Acme4D\Library\Delphi13\Win64\Release|D:\Acme4D', '|' )]
+    [NamedTestCase( 'already a root', 'E:\Work\Acme|E:\Work\Acme', '|' )]
+    [NamedTestCase( 'only build names to the drive', 'E:\Lib\Win64\Release|E:\Lib\Win64\Release', '|' )]
     procedure DcuFolderMapsToLibraryRoot( const ADcuDirectory, AExpected: string );
   end;
 

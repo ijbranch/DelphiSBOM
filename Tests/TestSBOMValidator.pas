@@ -44,43 +44,43 @@ type
     /// <param name="AReplace">The broken text.</param>
     /// <param name="AExpected">Text the single error must contain.</param>
     [Test]
-    [TestCase( 'format', '"bomFormat": "CycloneDX"|"bomFormat": "SPDX"|bomFormat', '|' )]
-    [TestCase( 'spec version', '"specVersion": "1.6"|"specVersion": "1.5"|specVersion', '|' )]
-    [TestCase( 'serial number', 'urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79|urn:uuid:not-a-uuid|serialNumber', '|' )]
-    [TestCase( 'bom version', '"version": 1,|"version": 0,|version', '|' )]
-    [TestCase( 'timestamp', '2026-10-07T01:02:03Z|07/10/2026|timestamp', '|' )]
-    [TestCase( 'component type', '"type": "framework"|"type": "Framework"|components[0].type', '|' )]
-    [TestCase( 'missing name', '"name": "Acme Widgets",|"name": "",|components[1].name', '|' )]
-    [TestCase( 'licence id casing', '"id": "MIT"|"id": "mit"|components[1].licenses[0].license.id', '|' )]
-    [TestCase( 'licence id and name', '"id": "MIT"|"id": "MIT", "name": "MIT"|components[1].licenses[0].license', '|' )]
-    [TestCase( 'licence and expression', '{ "expression": "MPL-1.1 OR LGPL-2.1-or-later" }|' +
+    [NamedTestCase( 'format', '"bomFormat": "CycloneDX"|"bomFormat": "SPDX"|bomFormat', '|' )]
+    [NamedTestCase( 'spec version', '"specVersion": "1.6"|"specVersion": "1.5"|specVersion', '|' )]
+    [NamedTestCase( 'serial number', 'urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79|urn:uuid:not-a-uuid|serialNumber', '|' )]
+    [NamedTestCase( 'bom version', '"version": 1,|"version": 0,|version', '|' )]
+    [NamedTestCase( 'timestamp', '2026-10-07T01:02:03Z|07/10/2026|timestamp', '|' )]
+    [NamedTestCase( 'component type', '"type": "framework"|"type": "Framework"|components[0].type', '|' )]
+    [NamedTestCase( 'missing name', '"name": "Acme Widgets",|"name": "",|components[1].name', '|' )]
+    [NamedTestCase( 'licence id casing', '"id": "MIT"|"id": "mit"|components[1].licenses[0].license.id', '|' )]
+    [NamedTestCase( 'licence id and name', '"id": "MIT"|"id": "MIT", "name": "MIT"|components[1].licenses[0].license', '|' )]
+    [NamedTestCase( 'licence and expression', '{ "expression": "MPL-1.1 OR LGPL-2.1-or-later" }|' +
       '{ "expression": "MPL-1.1", "license": { "id": "MIT" } }|components[2].licenses[0]', '|' )]
-    [TestCase( 'expression not alone', '{ "expression": "MPL-1.1 OR LGPL-2.1-or-later" }|' +
+    [NamedTestCase( 'expression not alone', '{ "expression": "MPL-1.1 OR LGPL-2.1-or-later" }|' +
       '{ "expression": "MPL-1.1 OR LGPL-2.1-or-later" }, { "license": { "id": "MIT" } }|components[2].licenses[0].expression', '|' )]
-    [TestCase( 'licence acknowledgement', '"acknowledgement": "concluded", "url"|"acknowledgement": "assumed", "url"|' +
+    [NamedTestCase( 'licence acknowledgement', '"acknowledgement": "concluded", "url"|"acknowledgement": "assumed", "url"|' +
       'components[1].licenses[0].license.acknowledgement', '|' )]
-    [TestCase( 'expression acknowledgement', '"expression": "LicenseRef-Me-Commercial", "acknowledgement": "concluded"|' +
+    [NamedTestCase( 'expression acknowledgement', '"expression": "LicenseRef-Me-Commercial", "acknowledgement": "concluded"|' +
       '"expression": "LicenseRef-Me-Commercial", "acknowledgement": "yes"|metadata.component.licenses[0].acknowledgement', '|' )]
-    [TestCase( 'hash algorithm', '"alg": "SHA-256"|"alg": "SHA256"|components[0].components[0].hashes[0].alg', '|' )]
-    [TestCase( 'hash length', '88de45b3a6f2c1d0e9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6|88de45|' +
+    [NamedTestCase( 'hash algorithm', '"alg": "SHA-256"|"alg": "SHA256"|components[0].components[0].hashes[0].alg', '|' )]
+    [NamedTestCase( 'hash length', '88de45b3a6f2c1d0e9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6|88de45|' +
       'components[0].components[0].hashes[0].content', '|' )]
-    [TestCase( 'purl scheme', '"purl": "pkg:delphi/acme-widgets@2.1"|"purl": "file:Acme.Widgets.pas"|components[1].purl', '|' )]
-    [TestCase( 'duplicate ref', '"name": "DelphiSBOM",|"bom-ref": "pkg:delphi/dual@3", "name": "DelphiSBOM",|bom-ref', '|' )]
-    [TestCase( 'unknown dependency', '"dependsOn": [ "pkg:delphi/embarcadero-rtl@37.0", "pkg:delphi/acme-widgets@2.1"|' +
+    [NamedTestCase( 'purl scheme', '"purl": "pkg:delphi/acme-widgets@2.1"|"purl": "file:Acme.Widgets.pas"|components[1].purl', '|' )]
+    [NamedTestCase( 'duplicate ref', '"name": "DelphiSBOM",|"bom-ref": "pkg:delphi/dual@3", "name": "DelphiSBOM",|bom-ref', '|' )]
+    [NamedTestCase( 'unknown dependency', '"dependsOn": [ "pkg:delphi/embarcadero-rtl@37.0", "pkg:delphi/acme-widgets@2.1"|' +
       '"dependsOn": [ "pkg:delphi/embarcadero-rtl@37.0", "pkg:delphi/nowhere@1"|dependencies[0].dependsOn', '|' )]
-    [TestCase( 'unknown dependency owner', '{ "ref": "pkg:delphi/embarcadero-rtl@37.0", "dependsOn": [] }|' +
+    [NamedTestCase( 'unknown dependency owner', '{ "ref": "pkg:delphi/embarcadero-rtl@37.0", "dependsOn": [] }|' +
       '{ "ref": "pkg:delphi/nowhere@1", "dependsOn": [] }|dependencies[1].ref', '|' )]
-    [TestCase( 'repeated dependency', '"dependsOn": [ "pkg:delphi/dual@3", "pkg:delphi/embarcadero-rtl@37.0" ]|' +
+    [NamedTestCase( 'repeated dependency', '"dependsOn": [ "pkg:delphi/dual@3", "pkg:delphi/embarcadero-rtl@37.0" ]|' +
       '"dependsOn": [ "pkg:delphi/dual@3", "pkg:delphi/dual@3" ]|dependencies[2].dependsOn[1]', '|' )]
-    [TestCase( 'external reference type', '"type": "website"|"type": "homepage"|externalReferences[0].type', '|' )]
-    [TestCase( 'supplier contact', '"contact": [ { "email": "acme@example.com" } ]|"contact": { "email": "acme@example.com" }|' +
+    [NamedTestCase( 'external reference type', '"type": "website"|"type": "homepage"|externalReferences[0].type', '|' )]
+    [NamedTestCase( 'supplier contact', '"contact": [ { "email": "acme@example.com" } ]|"contact": { "email": "acme@example.com" }|' +
       'components[1].supplier', '|' )]
-    [TestCase( 'manufacturer url', '"manufacturer": { "url": [ "https://acme.example.com" ] }|' +
+    [NamedTestCase( 'manufacturer url', '"manufacturer": { "url": [ "https://acme.example.com" ] }|' +
       '"manufacturer": { "url": "https://acme.example.com" }|components[1].manufacturer', '|' )]
-    [TestCase( 'sbom creator contact', '"manufacturer": { "name": "Me", "contact": [ { "email": "sbom@example.com" } ] }|' +
+    [NamedTestCase( 'sbom creator contact', '"manufacturer": { "name": "Me", "contact": [ { "email": "sbom@example.com" } ] }|' +
       '"manufacturer": { "name": "Me", "contact": { "email": "sbom@example.com" } }|metadata.manufacturer', '|' )]
-    [TestCase( 'composition aggregate', '"aggregate": "incomplete"|"aggregate": "partial"|compositions[0].aggregate', '|' )]
-    [TestCase( 'unknown composition ref', '"dependencies": [ "application:App@1.0.0.0"|"dependencies": [ "application:Other@1"|' +
+    [NamedTestCase( 'composition aggregate', '"aggregate": "incomplete"|"aggregate": "partial"|compositions[0].aggregate', '|' )]
+    [NamedTestCase( 'unknown composition ref', '"dependencies": [ "application:App@1.0.0.0"|"dependencies": [ "application:Other@1"|' +
       'compositions[0].dependencies[0]', '|' )]
     procedure BrokenRuleIsReported( const AFind, AReplace, AExpected: string );
 
@@ -133,43 +133,43 @@ type
     /// <param name="AReplace">The broken text.</param>
     /// <param name="ARule">The rule ID the single finding must start with.</param>
     [Test]
-    [TestCase( 'format', '"specVersion": "1.6"|"specVersion": "1.5"|TR-4-FORMAT', '|' )]
-    [TestCase( 'sbom creator', '"manufacturer": { "contact": [ { "email": "sbom@example.com" } ] }, |' +
+    [NamedTestCase( 'format', '"specVersion": "1.6"|"specVersion": "1.5"|TR-4-FORMAT', '|' )]
+    [NamedTestCase( 'sbom creator', '"manufacturer": { "contact": [ { "email": "sbom@example.com" } ] }, |' +
       '"manufacturer": { "name": "Me" }, |TR-5.2.1-CREATOR', '|' )]
-    [TestCase( 'timestamp', '"timestamp": "2026-10-07T01:02:03Z", |"timestamp": "", |TR-5.2.1-TIMESTAMP', '|' )]
-    [TestCase( 'component creator', '"manufacturer": { "url": [ "https://acme.example.com" ] }, |' +
+    [NamedTestCase( 'timestamp', '"timestamp": "2026-10-07T01:02:03Z", |"timestamp": "", |TR-5.2.1-TIMESTAMP', '|' )]
+    [NamedTestCase( 'component creator', '"manufacturer": { "url": [ "https://acme.example.com" ] }, |' +
       '"manufacturer": { "url": [ ] }, |TR-5.2.2-CREATOR', '|' )]
-    [TestCase( 'application creator', '"manufacturer": { "contact": [ { "email": "me@example.com" } ] }, |' +
+    [NamedTestCase( 'application creator', '"manufacturer": { "contact": [ { "email": "me@example.com" } ] }, |' +
       '|TR-5.2.2-CREATOR', '|' )]
-    [TestCase( 'name', '"name": "Acme Widgets", |"name": "", |TR-5.2.2-NAME', '|' )]
-    [TestCase( 'version', '"version": "2.1", |"version": "", |TR-5.2.2-VERSION', '|' )]
-    [TestCase( 'not in graph', ',   { "ref": "pkg:delphi/acme-widgets@2.1", "dependsOn": [] }|' +
+    [NamedTestCase( 'name', '"name": "Acme Widgets", |"name": "", |TR-5.2.2-NAME', '|' )]
+    [NamedTestCase( 'version', '"version": "2.1", |"version": "", |TR-5.2.2-VERSION', '|' )]
+    [NamedTestCase( 'not in graph', ',   { "ref": "pkg:delphi/acme-widgets@2.1", "dependsOn": [] }|' +
       '|TR-5.2.2-DEPENDENCIES', '|' )]
-    [TestCase( 'completeness', ', "pkg:delphi/acme-widgets@2.1" ] } ] }|' +
+    [NamedTestCase( 'completeness', ', "pkg:delphi/acme-widgets@2.1" ] } ] }|' +
       ' ] } ] }|TR-5.2.2-DEPENDENCIES', '|' )]
-    [TestCase( 'no licence', '"licenses": [ { "license": { "id": "MIT", "acknowledgement": "concluded" } } ], |' +
+    [NamedTestCase( 'no licence', '"licenses": [ { "license": { "id": "MIT", "acknowledgement": "concluded" } } ], |' +
       '|TR-5.2.2-LICENCE', '|' )]
-    [TestCase( 'not concluded', '{ "id": "MIT", "acknowledgement": "concluded" }|{ "id": "MIT", "acknowledgement": "declared" }|' +
+    [NamedTestCase( 'not concluded', '{ "id": "MIT", "acknowledgement": "concluded" }|{ "id": "MIT", "acknowledgement": "declared" }|' +
       'TR-5.2.2-LICENCE', '|' )]
-    [TestCase( 'licence name', '{ "id": "MIT", "acknowledgement": "concluded" }|{ "name": "Commercial", "acknowledgement": "concluded" }|' +
+    [NamedTestCase( 'licence name', '{ "id": "MIT", "acknowledgement": "concluded" }|{ "name": "Commercial", "acknowledgement": "concluded" }|' +
       'TR-6.1-LICENCE', '|' )]
-    [TestCase( 'filename', '{ "name": "bsi:component:filename", "value": "App.exe" }, |' +
+    [NamedTestCase( 'filename', '{ "name": "bsi:component:filename", "value": "App.exe" }, |' +
       '|TR-5.2.2-FILENAME', '|' )]
-    [TestCase( 'hash', '"hashes": [ { "alg": "SHA-512", "content": "deployable" } ]|"hashes": [ { "alg": "SHA-256", "content": "deployable" } ]|' +
+    [NamedTestCase( 'hash', '"hashes": [ { "alg": "SHA-512", "content": "deployable" } ]|"hashes": [ { "alg": "SHA-256", "content": "deployable" } ]|' +
       'TR-5.2.2-HASH', '|' )]
-    [TestCase( 'executable', '"value": "executable"|"value": "yes"|TR-5.2.2-EXECUTABLE', '|' )]
-    [TestCase( 'archive', '"value": "no archive"|"value": "none"|TR-5.2.2-ARCHIVE', '|' )]
-    [TestCase( 'structured', '"value": "unstructured"|"value": "flat"|TR-5.2.2-STRUCTURED', '|' )]
-    [TestCase( 'vulnerabilities', '"dependencies": [ |"vulnerabilities": [ { "id": "CVE-2026-0001" } ], "dependencies": [ |' +
+    [NamedTestCase( 'executable', '"value": "executable"|"value": "yes"|TR-5.2.2-EXECUTABLE', '|' )]
+    [NamedTestCase( 'archive', '"value": "no archive"|"value": "none"|TR-5.2.2-ARCHIVE', '|' )]
+    [NamedTestCase( 'structured', '"value": "unstructured"|"value": "flat"|TR-5.2.2-STRUCTURED', '|' )]
+    [NamedTestCase( 'vulnerabilities', '"dependencies": [ |"vulnerabilities": [ { "id": "CVE-2026-0001" } ], "dependencies": [ |' +
       'TR-3.1-VULNERABILITIES', '|' )]
-    [TestCase( 'vulnerabilities object', '"dependencies": [ |"vulnerabilities": { "id": "CVE-2026-0001" }, "dependencies": [ |' +
+    [NamedTestCase( 'vulnerabilities object', '"dependencies": [ |"vulnerabilities": { "id": "CVE-2026-0001" }, "dependencies": [ |' +
       'TR-3.1-VULNERABILITIES', '|' )]
-    [TestCase( 'bom format', '"bomFormat": "CycloneDX"|"bomFormat": "SPDX"|TR-4-FORMAT', '|' )]
-    [TestCase( 'free-text expression', '"expression": "LicenseRef-Me-Commercial"|"expression": "Apache License 2.0 or later"|' +
+    [NamedTestCase( 'bom format', '"bomFormat": "CycloneDX"|"bomFormat": "SPDX"|TR-4-FORMAT', '|' )]
+    [NamedTestCase( 'free-text expression', '"expression": "LicenseRef-Me-Commercial"|"expression": "Apache License 2.0 or later"|' +
       'TR-6.1-LICENCE', '|' )]
-    [TestCase( 'lower-case operator', '"expression": "LicenseRef-Me-Commercial"|"expression": "MIT or Apache-2.0"|' +
+    [NamedTestCase( 'lower-case operator', '"expression": "LicenseRef-Me-Commercial"|"expression": "MIT or Apache-2.0"|' +
       'TR-6.1-LICENCE', '|' )]
-    [TestCase( 'unbalanced bracket', '"expression": "LicenseRef-Me-Commercial"|"expression": "(MIT OR Apache-2.0"|' +
+    [NamedTestCase( 'unbalanced bracket', '"expression": "LicenseRef-Me-Commercial"|"expression": "(MIT OR Apache-2.0"|' +
       'TR-6.1-LICENCE', '|' )]
     procedure MissingFieldIsReported( const AFind, AReplace, ARule: string );
 
@@ -179,9 +179,9 @@ type
     /// </summary>
     /// <param name="AExpression">The expression the application's licence is given.</param>
     [Test]
-    [TestCase( 'compound', 'MPL-1.1 OR (LGPL-2.1-or-later WITH LLVM-exception)' )]
-    [TestCase( 'or later', 'GPL-2.0+ AND MIT' )]
-    [TestCase( 'document ref', 'DocumentRef-spdx-tool-1.2:LicenseRef-MIT-Style-2' )]
+    [NamedTestCase( 'compound', 'MPL-1.1 OR (LGPL-2.1-or-later WITH LLVM-exception)' )]
+    [NamedTestCase( 'or later', 'GPL-2.0+ AND MIT' )]
+    [NamedTestCase( 'document ref', 'DocumentRef-spdx-tool-1.2:LicenseRef-MIT-Style-2' )]
     procedure SPDXExpressionsPass( const AExpression: string );
 
     /// <summary>
@@ -191,9 +191,9 @@ type
     /// </summary>
     /// <param name="AVersion">The specVersion to give the document.</param>
     [Test]
-    [TestCase( 'two digit minor', '1.10' )]
-    [TestCase( 'patch level', '1.6.1' )]
-    [TestCase( 'major only', '2' )]
+    [NamedTestCase( 'two digit minor', '1.10' )]
+    [NamedTestCase( 'patch level', '1.6.1' )]
+    [NamedTestCase( 'major only', '2' )]
     procedure LaterSpecVersionsPass( const AVersion: string );
 
     /// <summary>
