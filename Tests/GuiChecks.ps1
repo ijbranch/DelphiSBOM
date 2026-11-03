@@ -8,6 +8,7 @@
 # is backed up before the run and restored afterwards. Test projects are created under %TEMP% and removed.
 # The library editor's grid cell is focused with a click posted in client coordinates that assume the editor's
 # default column widths at 100% logical scale (the app is DPI-unaware).
+#Requires -PSEdition Core
 
 param(
   [string]$Exe = ( Join-Path $PSScriptRoot '..\Source\Win64\Release\DelphiSBOM.exe' )
