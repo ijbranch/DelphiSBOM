@@ -128,6 +128,15 @@ type
     /// </summary>
     [Test]
     procedure InjectedFetchNeverReadsACredential;
+
+    /// <summary>
+    ///   Proves a redirect answered to a request carrying the GitHub token is followed with the token only to
+    ///   the same scheme, host and port (GitHub's own renamed-repository redirects, absolute or a bare path,
+    ///   and the loopback fake API), and never to another host, a look-alike host, a userinfo trick, a
+    ///   downgrade to http, another port, a protocol-relative or path-relative Location, or no Location.
+    /// </summary>
+    [Test]
+    procedure RedirectCarriesTheTokenOnlyToTheSameOrigin;
   end;
 
 implementation
@@ -426,6 +435,26 @@ begin
   finally
     OnlineCredentialSource := Saved;
   end;
+
+end;
+
+procedure TOnlineCheckTests.RedirectCarriesTheTokenOnlyToTheSameOrigin;
+const
+  From = 'https://api.github.com/repos/acme/widgets';
+begin
+
+  // Followed, with the token
+  Assert.AreEqual( 'https://api.github.com/repositories/42', TokenRedirectTarget( From, 'https://api.github.com/repositories/42' ) );
+  Assert.AreEqual( 'https://api.github.com/repositories/42', TokenRedirectTarget( From, '/repositories/42' ) );
+  Assert.AreEqual( 'https://API.GitHub.com/repositories/42', TokenRedirectTarget( From, 'https://API.GitHub.com/repositories/42' ) );
+  Assert.AreEqual( 'https://api.github.com:443/repositories/42', TokenRedirectTarget( From, 'https://api.github.com:443/repositories/42' ) );
+  Assert.AreEqual( 'http://127.0.0.1:5000/repositories/42', TokenRedirectTarget( 'http://127.0.0.1:5000/repos/acme/widgets', '/repositories/42' ) );
+
+  // Refused: the token must not go there
+  for var Location in [ 'https://evil.example/repositories/42', 'https://api.github.com.evil.example/x',
+    'https://api.github.com@evil.example/x', 'http://api.github.com/repositories/42', 'http://api.github.com:443/x', 'https://api.github.com:8443/x',
+    '//evil.example/x', 'repositories/42', '', 'not a url' ] do
+    Assert.AreEqual( '', TokenRedirectTarget( From, Location ), 'Token would follow to: ' + Location );
 
 end;
 

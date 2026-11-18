@@ -119,6 +119,17 @@ function VersionsMatch( const AVersion, ATagVersion: string ): Boolean;
 function DefaultHttpGet( const AToken: string = '' ): THttpGet;
 
 /// <summary>
+///   Where a redirect answered to a request that carries the GitHub token may be followed, still carrying
+///   it: the redirect's absolute URL when it names the same scheme, host and port as the request, else ''.
+///   THTTPClient's own redirect handling sends custom headers, the Authorization header included, to
+///   whatever host a redirect names, so DefaultHttpGet follows a token's redirects itself through this.
+/// </summary>
+/// <param name="AFromUrl">The absolute URL that was requested.</param>
+/// <param name="ALocation">The redirect's Location header: an absolute URL, or a path starting with one '/'.</param>
+/// <returns>The absolute URL to request next with the token, or '' when the token must not go there.</returns>
+function TokenRedirectTarget( const AFromUrl, ALocation: string ): string;
+
+/// <summary>
 ///   The GitHub token for the online check, and where it came from: the GITHUB_TOKEN environment value
 ///   when set; otherwise, only when requests go to https://api.github.com, the github.com credential from
 ///   ACredential (Git Credential Manager); otherwise none. A credential is never looked up for another API
@@ -255,6 +266,42 @@ begin
 
 end;
 
+function TokenRedirectTarget( const AFromUrl, ALocation: string ): string;
+begin
+
+  Result            := '';
+
+  var Location      := Trim( ALocation );
+
+  // A protocol-relative Location ('//host/...') may name any host, so it is not resolved
+  if ( Location = '' ) or Location.StartsWith( '//' ) then Exit;
+
+  try
+    var FromUri     := TURI.Create( AFromUrl );
+
+    // A bare path keeps the request's scheme, host and port
+    if Location.StartsWith( '/' ) then
+    begin
+      var PathStart := AFromUrl.IndexOf( '/', AFromUrl.IndexOf( '://' ) + Length( '://' ) );
+
+      if PathStart < 0 then
+        Location    := AFromUrl + Location
+      else
+        Location    := AFromUrl.Substring( 0, PathStart ) + Location;
+    end;
+
+    var ToUri       := TURI.Create( Location );
+
+    if SameText( ToUri.Scheme, FromUri.Scheme ) and SameText( ToUri.Host, FromUri.Host ) and ( ToUri.Port = FromUri.Port ) then
+      Result        := Location;
+  except
+    // Not an absolute URL: the token does not follow it
+    on ENetException do Result := '';
+    on EConvertError do Result := '';
+  end;
+
+end;
+
 function DefaultHttpGet( const AToken: string ): THttpGet;
 begin
 
@@ -275,8 +322,30 @@ begin
         if Token <> '' then
           Headers   := [ TNameValuePair.Create( 'Authorization', 'Bearer ' + Token ) ];
 
+        // THTTPClient replays custom headers to whatever host a redirect names, so a request carrying the
+        // token follows its redirects here, and only to the same scheme, host and port (TokenRedirectTarget).
+        // A redirect anywhere else is not followed: its status is the answer.
+        Client.HandleRedirects := Token = '';
+
         try
-          var Response := Client.Get( AUrl, nil, Headers );
+          var Url   := AUrl;
+          var Hops  := 0;
+          var Response := Client.Get( Url, nil, Headers );
+
+          while ( Token <> '' ) and ( Hops < 5 ) and
+            ( ( Response.StatusCode = 301 ) or ( Response.StatusCode = 302 ) or ( Response.StatusCode = 303 ) or
+              ( Response.StatusCode = 307 ) or ( Response.StatusCode = 308 ) ) do
+          begin
+            var Next := TokenRedirectTarget( Url, Response.HeaderValue[ 'Location' ] );
+
+            if Next = '' then
+              Break;
+
+            Url     := Next;
+            Inc( Hops );
+            Response := Client.Get( Url, nil, Headers );
+          end;
+
           AStatus   := Response.StatusCode;
           Result    := Response.ContentAsString( TEncoding.UTF8 );
         except
