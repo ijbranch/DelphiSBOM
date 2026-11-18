@@ -10,6 +10,9 @@ unit uGit;
 
 interface
 
+uses
+  System.SysUtils;
+
 /// <summary>
 ///   Runs git with AArguments in AWorkingDir, without a window and non-interactively
 ///   (GCM_INTERACTIVE=never, GIT_TERMINAL_PROMPT=0), writes AInput to its standard input, and returns
@@ -21,8 +24,19 @@ interface
 /// <param name="AInput">Text sent to git's standard input as UTF-8 ('' = none).</param>
 /// <param name="AOutput">What git wrote, decoded as UTF-8.</param>
 /// <returns>True when git ran and exited with code 0 within ten seconds; False when it is not installed,
-///   failed, or took longer.</returns>
+///   failed, took longer, or its output could not be read in full.</returns>
 function RunGit( const AArguments, AWorkingDir, AInput: string; out AOutput: string ): Boolean;
+
+/// <summary>
+///   Reads AHandle (the read end of a child's output pipe) to the end of its output. ReadFile returning True
+///   with no bytes, or failing with ERROR_BROKEN_PIPE (the writer closed its end) or ERROR_HANDLE_EOF, is
+///   the end; any other failure means the output was cut short.
+/// </summary>
+/// <param name="AHandle">The handle to read.</param>
+/// <param name="ABytes">Every byte read, also those read before a failure.</param>
+/// <param name="AError">The Windows error code of a failed read; otherwise 0.</param>
+/// <returns>True when the whole output was read; False when a read failed part way.</returns>
+function ReadPipeToEnd( const AHandle: THandle; out ABytes: TBytes; out AError: Cardinal ): Boolean;
 
 /// <summary>
 ///   The newest tag reachable from the checked-out commit in AWorkingDir ("git describe --tags --abbrev=0"),
@@ -35,7 +49,7 @@ function LatestGitTag( const AWorkingDir: string ): string;
 implementation
 
 uses
-  Winapi.Windows, System.SysUtils, System.Classes;
+  Winapi.Windows, System.Classes;
 
 /// <summary>
 ///   This process's environment as a Unicode environment block, with AOverrides (NAME=value) replacing
@@ -79,6 +93,37 @@ begin
   finally
     Names.Free;
   end;
+
+end;
+
+function ReadPipeToEnd( const AHandle: THandle; out ABytes: TBytes; out AError: Cardinal ): Boolean;
+begin
+
+  ABytes            := nil;
+  AError            := 0;
+
+  var Buffer: array[ 0..4095 ] of Byte;
+  var Read: DWORD;
+
+  repeat
+    if ( not ReadFile( AHandle, Buffer, SizeOf( Buffer ), Read, nil ) ) then
+    begin
+      // Read at once: any later API call may replace it
+      var LastError := Winapi.Windows.GetLastError;
+
+      // The writer closed its end: the normal end once the child has exited
+      if ( LastError = ERROR_BROKEN_PIPE ) or ( LastError = ERROR_HANDLE_EOF ) then Exit( True );
+
+      AError        := LastError;
+      Exit( False );
+    end;
+
+    if Read = 0 then Exit( True );
+
+    var Used        := Length( ABytes );
+    SetLength( ABytes, Used + Integer( Read ) );
+    Move( Buffer[ 0 ], ABytes[ Used ], Read );
+  until False;
 
 end;
 
@@ -148,18 +193,14 @@ begin
           Exit;
         end;
 
-        var Bytes: TBytes := nil;
-        var Buffer: array[ 0..4095 ] of Byte;
-        var Read: DWORD;
-
-        while ReadFile( OutRead, Buffer, SizeOf( Buffer ), Read, nil ) and ( Read > 0 ) do
-        begin
-          var Used  := Length( Bytes );
-          SetLength( Bytes, Used + Integer( Read ) );
-          Move( Buffer[ 0 ], Bytes[ Used ], Read );
-        end;
+        var Bytes: TBytes;
+        var ReadError: Cardinal;
+        var ReadAll := ReadPipeToEnd( OutRead, Bytes, ReadError );
 
         AOutput     := TEncoding.UTF8.GetString( Bytes );
+
+        // Cut-short output is not git's answer, whatever its exit code
+        if ( not ReadAll ) then Exit;
 
         var ExitCode: DWORD;
         Result      := GetExitCodeProcess( Process.hProcess, ExitCode ) and ( ExitCode = 0 );

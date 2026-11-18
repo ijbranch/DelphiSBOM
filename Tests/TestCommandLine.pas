@@ -181,6 +181,21 @@ type
     /// </summary>
     [Test]
     procedure LatestGitTagReadsTheWorkTree;
+
+    /// <summary>
+    ///   Proves ReadPipeToEnd gives back every byte from a pipe whose writer has closed (more than one read's
+    ///   worth) and takes the ERROR_BROKEN_PIPE that follows for the end of the output, not a failure.
+    /// </summary>
+    [Test]
+    procedure ClosedPipeGivesAllDataThenTheEnd;
+
+    /// <summary>
+    ///   Proves a read that FAILS for another reason (a write-only handle, ERROR_ACCESS_DENIED) is reported as
+    ///   a failure with its error code, not taken for the end of the output, which passed a cut-short git
+    ///   answer off as complete.
+    /// </summary>
+    [Test]
+    procedure FailedReadIsReportedNotTakenForTheEnd;
   end;
 
 implementation
@@ -657,6 +672,58 @@ begin
       for var F in TDirectory.GetFiles( Scratch.PathOf( 'Repo' ), '*', TSearchOption.soAllDirectories ) do
         SetFileAttributes( PChar( F ), FILE_ATTRIBUTE_NORMAL );
 
+    Scratch.Free;
+  end;
+
+end;
+
+procedure TGitTests.ClosedPipeGivesAllDataThenTheEnd;
+begin
+
+  var Sent := TEncoding.UTF8.GetBytes( StringOfChar( 'x', 10000 ) );
+  var ReadEnd, WriteEnd: THandle;
+
+  Assert.IsTrue( CreatePipe( ReadEnd, WriteEnd, nil, 65536 ), 'CreatePipe' );
+  try
+    var Written: DWORD;
+    Assert.IsTrue( WriteFile( WriteEnd, Sent[ 0 ], Length( Sent ), Written, nil ), 'WriteFile' );
+    CloseHandle( WriteEnd );
+    WriteEnd := 0;
+
+    var Got: TBytes;
+    var Error: Cardinal;
+    Assert.IsTrue( ReadPipeToEnd( ReadEnd, Got, Error ), Format( 'the read failed with %d', [ Error ] ) );
+    Assert.AreEqual( Cardinal( 0 ), Error, 'no error at the normal end' );
+    Assert.AreEqual( Length( Sent ), Length( Got ), 'every byte written comes back' );
+    Assert.IsTrue( CompareMem( @Sent[ 0 ], @Got[ 0 ], Length( Sent ) ), 'the bytes are the ones written' );
+  finally
+    CloseHandle( ReadEnd );
+
+    if WriteEnd <> 0 then
+      CloseHandle( WriteEnd );
+  end;
+
+end;
+
+procedure TGitTests.FailedReadIsReportedNotTakenForTheEnd;
+begin
+
+  var Scratch := TScratchDir.Create;
+  try
+    var FileName := Scratch.PathOf( 'data.txt' );
+    TFile.WriteAllText( FileName, 'some text' );
+
+    var Handle := CreateFile( PChar( FileName ), GENERIC_WRITE, 0, nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0 );
+    Assert.IsTrue( Handle <> INVALID_HANDLE_VALUE, 'CreateFile' );
+    try
+      var Got: TBytes;
+      var Error: Cardinal;
+      Assert.IsFalse( ReadPipeToEnd( Handle, Got, Error ), 'a failed read is not the end' );
+      Assert.AreEqual( Cardinal( ERROR_ACCESS_DENIED ), Error, 'the Windows error is handed back' );
+    finally
+      CloseHandle( Handle );
+    end;
+  finally
     Scratch.Free;
   end;
 
